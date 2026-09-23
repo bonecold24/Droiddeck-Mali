@@ -27,9 +27,9 @@ _From the repository's pull requests; rewritten when one is opened, merged or cl
 | Contributor | Pull request | Opened | State |
 |---|---|---|---|
 | [@xXJSONDeruloXx](https://github.com/xXJSONDeruloXx) | [#1](https://github.com/The412Banner/SteamDeck/pull/1) initial decky installer stuff | 2026-09-23 | draft |
-| [@xXJSONDeruloXx](https://github.com/xXJSONDeruloXx) | [#3](https://github.com/The412Banner/SteamDeck/pull/3) Fix hardware back in Steam session | 2026-09-23 | open |
+| [@xXJSONDeruloXx](https://github.com/xXJSONDeruloXx) | [#3](https://github.com/The412Banner/SteamDeck/pull/3) Fix hardware back in Steam session | 2026-09-23 | merged 2026-09-23 |
 
-- **@xXJSONDeruloXx**: 2 submitted, 0 merged
+- **@xXJSONDeruloXx**: 2 submitted, 1 merged
 <!-- contributions:end -->
 
 ## Requirements
