@@ -29,9 +29,9 @@ _From the repository's pull requests; rewritten when one is opened, merged or cl
 | [@xXJSONDeruloXx](https://github.com/xXJSONDeruloXx) | [#1](https://github.com/The412Banner/SteamDeck/pull/1) initial decky installer stuff | 2026-09-23 | draft |
 | [@xXJSONDeruloXx](https://github.com/xXJSONDeruloXx) | [#3](https://github.com/The412Banner/SteamDeck/pull/3) Fix hardware back in Steam session | 2026-09-23 | merged 2026-09-23 |
 | [@xXJSONDeruloXx](https://github.com/xXJSONDeruloXx) | [#4](https://github.com/The412Banner/SteamDeck/pull/4) Update app launcher icon | 2026-09-23 | merged 2026-09-23 |
-| [@xXJSONDeruloXx](https://github.com/xXJSONDeruloXx) | [#5](https://github.com/The412Banner/SteamDeck/pull/5) Add reproducible local build and deploy helpers | 2026-09-23 | open |
+| [@xXJSONDeruloXx](https://github.com/xXJSONDeruloXx) | [#5](https://github.com/The412Banner/SteamDeck/pull/5) Add reproducible local build and deploy helpers | 2026-09-23 | merged 2026-09-23 |
 
-- **@xXJSONDeruloXx**: 4 submitted, 2 merged
+- **@xXJSONDeruloXx**: 4 submitted, 3 merged
 <!-- contributions:end -->
 
 ## Requirements
