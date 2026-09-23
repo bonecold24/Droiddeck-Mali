@@ -19,19 +19,19 @@ object FexPreset {
     )
 
     val all: List<Preset> = listOf(
-        Preset("", "FEX defaults", "No variables set; what every session ran on until now.", emptyList()),
-        Preset("STABILITY", "Stability", "Every TSO emulation on, single-block: the slowest and the surest.", tso(1, 1, 1, 1) + listOf("FEX_X87REDUCEDPRECISION=0", "FEX_MULTIBLOCK=0")),
-        Preset("COMPATIBILITY", "Compatibility", "Every TSO emulation on, multiblock.", tso(1, 1, 1, 1) + listOf("FEX_X87REDUCEDPRECISION=0", "FEX_MULTIBLOCK=1")),
-        Preset("INTERMEDIATE", "Intermediate", "Main and half-barrier TSO on, vector and memcpy off, reduced x87.", tso(1, 0, 0, 1) + listOf("FEX_X87REDUCEDPRECISION=1", "FEX_MULTIBLOCK=1")),
-        Preset("PERFORMANCE", "Performance", "All TSO off, reduced x87, multiblock.", tso(0, 0, 0, 0) + listOf("FEX_X87REDUCEDPRECISION=1", "FEX_MULTIBLOCK=1")),
-        Preset("PERFORMANCE_TSO", "Performance + TSO", "Performance with the main store ordering kept on, for the many games that need it.", tso(1, 0, 0, 0) + listOf("FEX_X87REDUCEDPRECISION=1", "FEX_MULTIBLOCK=1")),
-        Preset("EXTREME", "Extreme", "Performance plus no self-modifying-code checks and FEX's block caches retuned. JIT-heavy titles and DRM can break.",
+        Preset("", "FEX defaults", "Uses FEX defaults.", emptyList()),
+        Preset("STABILITY", "Stability", "Safest, slowest settings.", tso(1, 1, 1, 1) + listOf("FEX_X87REDUCEDPRECISION=0", "FEX_MULTIBLOCK=0")),
+        Preset("COMPATIBILITY", "Compatibility", "Full TSO with multiblock.", tso(1, 1, 1, 1) + listOf("FEX_X87REDUCEDPRECISION=0", "FEX_MULTIBLOCK=1")),
+        Preset("INTERMEDIATE", "Intermediate", "Balanced TSO with reduced x87 precision.", tso(1, 0, 0, 1) + listOf("FEX_X87REDUCEDPRECISION=1", "FEX_MULTIBLOCK=1")),
+        Preset("PERFORMANCE", "Performance", "All TSO disabled; multiblock.", tso(0, 0, 0, 0) + listOf("FEX_X87REDUCEDPRECISION=1", "FEX_MULTIBLOCK=1")),
+        Preset("PERFORMANCE_TSO", "Performance + TSO", "Performance settings with main TSO enabled.", tso(1, 0, 0, 0) + listOf("FEX_X87REDUCEDPRECISION=1", "FEX_MULTIBLOCK=1")),
+        Preset("EXTREME", "Extreme", "Disables self-modifying-code checks. JIT games and DRM may break.",
             tso(0, 0, 0, 0) + listOf("FEX_X87REDUCEDPRECISION=1", "FEX_MULTIBLOCK=1", "FEX_SMCCHECKS=none", "FEX_DISABLEL2CACHE=1", "FEX_DYNAMICL1CACHE=1", "FEX_DYNAMICL1CACHEINCREASECOUNTHEURISTIC=250", "FEX_DYNAMICL1CACHEDECREASECOUNTHEURISTIC=50")),
-        Preset("EXTREME_TSO", "Extreme + TSO", "Extreme with the main store ordering kept on.",
+        Preset("EXTREME_TSO", "Extreme + TSO", "Extreme settings with main TSO enabled.",
             tso(1, 0, 0, 0) + listOf("FEX_X87REDUCEDPRECISION=1", "FEX_MULTIBLOCK=1", "FEX_SMCCHECKS=none", "FEX_DISABLEL2CACHE=1", "FEX_DYNAMICL1CACHE=1", "FEX_DYNAMICL1CACHEINCREASECOUNTHEURISTIC=250", "FEX_DYNAMICL1CACHEDECREASECOUNTHEURISTIC=50")),
-        Preset("EXTREME_GN", "Extreme-gn", "Performance plus the small TSC scale and volatile-metadata hints; SMC checks stay on. Try before Extreme.",
+        Preset("EXTREME_GN", "Extreme-gn", "Performance with TSC and metadata hints. Try before Extreme.",
             tso(0, 0, 0, 0) + listOf("FEX_X87REDUCEDPRECISION=1", "FEX_MULTIBLOCK=1", "FEX_SMALLTSCSCALE=1", "FEX_VOLATILEMETADATA=1")),
-        Preset("DENUVO", "Denuvo", "Performance with full SMC checks and the hypervisor bit hidden, for titles whose anti-tamper looks for either.",
+        Preset("DENUVO", "Denuvo", "Performance with full code checks and the hypervisor bit hidden.",
             tso(0, 0, 0, 0) + listOf("FEX_X87REDUCEDPRECISION=1", "FEX_MULTIBLOCK=1", "FEX_SMCCHECKS=full", "FEX_HIDEHYPERVISORBIT=1")),
     )
 
