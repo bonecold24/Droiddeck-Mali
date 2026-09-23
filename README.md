@@ -30,9 +30,9 @@ _From the repository's pull requests; rewritten when one is opened, merged or cl
 | [@xXJSONDeruloXx](https://github.com/xXJSONDeruloXx) | [#3](https://github.com/The412Banner/SteamDeck/pull/3) Fix hardware back in Steam session | 2026-09-23 | merged 2026-09-23 |
 | [@xXJSONDeruloXx](https://github.com/xXJSONDeruloXx) | [#4](https://github.com/The412Banner/SteamDeck/pull/4) Update app launcher icon | 2026-09-23 | merged 2026-09-23 |
 | [@xXJSONDeruloXx](https://github.com/xXJSONDeruloXx) | [#5](https://github.com/The412Banner/SteamDeck/pull/5) Add reproducible local build and deploy helpers | 2026-09-23 | merged 2026-09-23 |
-| [@xXJSONDeruloXx](https://github.com/xXJSONDeruloXx) | [#6](https://github.com/The412Banner/SteamDeck/pull/6) Add Steam and QAM touch controls | 2026-09-23 | open |
+| [@xXJSONDeruloXx](https://github.com/xXJSONDeruloXx) | [#6](https://github.com/The412Banner/SteamDeck/pull/6) Add Steam and QAM touch controls | 2026-09-23 | merged 2026-09-23 |
 
-- **@xXJSONDeruloXx**: 5 submitted, 3 merged
+- **@xXJSONDeruloXx**: 5 submitted, 4 merged
 <!-- contributions:end -->
 
 ## Requirements
