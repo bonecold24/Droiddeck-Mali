@@ -67,6 +67,8 @@ import androidx.compose.ui.text.font.FontWeight
 import com.steamdeck.launcher.core.FexPreset
 import com.steamdeck.launcher.gpu.FrameGen
 import com.steamdeck.launcher.session.SessionPrefs
+import com.steamdeck.launcher.input.SecondScreenDisplay
+import com.steamdeck.launcher.input.SecondScreenMode
 import kotlinx.coroutines.flow.collect
 
 @Composable
@@ -149,6 +151,9 @@ class DrawerActions(
     val touchAuto: String,
     val shapeMode: String,
     val fexPreset: String,
+    val secondScreenMode: SecondScreenMode,
+    val secondScreenDisplays: List<SecondScreenDisplay>,
+    val selectedSecondScreenDisplay: Int,
     val onHud: (Boolean) -> Unit,
     val onFrameGenPick: (engine: String, multiplier: Int) -> Unit,
     val onKeyboard: () -> Unit,
@@ -159,6 +164,8 @@ class DrawerActions(
     val onTouch: (String) -> Unit,
     val onShape: (String) -> Unit,
     val onFexPreset: (String) -> Unit,
+    val onSecondScreenMode: (SecondScreenMode) -> Unit,
+    val onSecondScreenDisplay: (Int) -> Unit,
     val onHomeApp: () -> Unit,
     val onLaunchAndroidApp: (HomeApp.LaunchableApp) -> Unit,
     val onBackground: () -> Unit,
@@ -299,6 +306,20 @@ fun SessionDrawer(open: Boolean, a: DrawerActions) {
                         onPick = a.onOsc,
                     )
                     ActionRow("Keyboard", null, "Show") { host.open = null; a.onKeyboard() }
+                }
+
+                if (a.steam && a.secondScreenDisplays.isNotEmpty()) SettingsGroup("Second screen") {
+                    ChoiceRow(
+                        host, "second-screen-mode", "Controls", null,
+                        listOf(SecondScreenMode.NONE, SecondScreenMode.KEYBOARD_TRACKPAD, SecondScreenMode.TERMINAL)
+                            .map { it to it.label }, a.secondScreenMode,
+                        onPick = a.onSecondScreenMode,
+                    )
+                    if (a.secondScreenDisplays.size > 1) ChoiceRow(
+                        host, "second-screen-display", "Display", null,
+                        a.secondScreenDisplays.map { it.id to it.label }, a.selectedSecondScreenDisplay,
+                        onPick = a.onSecondScreenDisplay,
+                    )
                 }
 
                 SettingsGroup("Next session") {

@@ -60,6 +60,9 @@ class SessionService : Service() {
     private var wakeLock: PowerManager.WakeLock? = null
     private var wifiLock: WifiManager.WifiLock? = null
     private var sessionPid = -1
+    /** Auxiliary PTY-backed proot shells launched from a secondary-display terminal. */
+    private val auxiliaryProcesses = HashMap<Int, Long>()
+    private val auxiliaryProcessesLock = Any()
     private val mainHandler = Handler(Looper.getMainLooper())
     private var suspendController: SessionSuspendController? = null
     private var suspendPolicy = SessionPrefs.SUSPEND_MANUAL
@@ -96,6 +99,34 @@ class SessionService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
+            ACTION_TRACK_AUXILIARY -> {
+                val pid = intent.getIntExtra(EXTRA_AUXILIARY_PID, -1)
+                val started = if (pid > 1) readStat(pid)?.second else null
+                if (started != null) {
+                    val tracked = synchronized(auxiliaryProcessesLock) {
+                        if (SessionState.running) {
+                            auxiliaryProcesses[pid] = started
+                            true
+                        } else false
+                    }
+                    if (!tracked) Thread({ teardown(pid, started) }, "auxiliary-stop-$pid").start()
+                }
+                return START_NOT_STICKY
+            }
+            ACTION_STOP_AUXILIARY -> {
+                val pid = intent.getIntExtra(EXTRA_AUXILIARY_PID, -1)
+                if (pid > 1) {
+                    val started = synchronized(auxiliaryProcessesLock) { auxiliaryProcesses.remove(pid) } ?: readStat(pid)?.second
+                    if (started != null) Thread({ teardown(pid, started) }, "auxiliary-stop-$pid").start()
+                }
+                return START_NOT_STICKY
+            }
+            ACTION_AUXILIARY_EXITED -> {
+                synchronized(auxiliaryProcessesLock) {
+                    auxiliaryProcesses.remove(intent.getIntExtra(EXTRA_AUXILIARY_PID, -1))
+                }
+                return START_NOT_STICKY
+            }
             ACTION_STOP -> {
                 Log.i(TAG, "stop requested from the notification")
                 stopSession(0)
@@ -198,6 +229,7 @@ class SessionService : Service() {
     // ── The session ─────────────────────────────────────────────────────────────────────────
 
     private fun runSession(gen: Int) {
+        SessionTerminal.clear()
         try {
             LinuxRuntime.writeAccounts(this)
         } catch (e: Exception) {
@@ -399,6 +431,13 @@ class SessionService : Service() {
         // The second library's name, for bannerlator-steam-library; the bind itself is made below.
         GameStorage.effective(this)?.let { guest.add("BL_LIBRARY_LABEL=" + it.label.replace('"', ' ')) }
         if (SessionState.mode == MODE_STEAM && SessionState.steamUi == "desktop") guest.add("BL_STEAM_UI=desktop")
+        val shellGuest = ArrayList(guest).apply {
+            add("SHELL=/bin/bash")
+            add("TERM=xterm-256color")
+            add("/bin/bash")
+            add("-c")
+            add("cd \"\$HOME\" && exec /bin/bash -i")
+        }
         guest.add(LinuxRuntime.SESSION_SCRIPT)
         guest.add(SessionState.mode)
         if (SessionState.mode == MODE_STEAM) SessionState.steamUrl?.takeIf { it.startsWith("steam://") }?.let {
@@ -502,6 +541,18 @@ class SessionService : Service() {
         val prootLibs = LinuxRuntime.prootLibraryPath(this)
         if (prootLibs.isNotEmpty()) hostEnv["LD_LIBRARY_PATH"] = prootLibs
 
+        val terminalCommand = LinuxRuntime.command(
+            this, sessionRoot, runtimeDir, Environment.getExternalStorageDirectory(), binds, shellGuest,
+        )
+        val terminalHostEnvironment = LinkedHashMap(System.getenv())
+        hostEnv.asArray().forEach { entry ->
+            val separator = entry.indexOf('=')
+            if (separator > 0) terminalHostEnvironment[entry.substring(0, separator)] = entry.substring(separator + 1)
+        }
+        if (gen == sessionGen && SessionState.running) {
+            SessionTerminal.prepare(terminalCommand, terminalHostEnvironment.map { (key, value) -> "$key=$value" }.toTypedArray(), root, gen)
+        }
+
         // Whether the client signs in to Valve or starts offline: read once, while it starts, and
         // rewritten by the client when it exits, so it is set again here at every session start.
         if (SessionState.mode == MODE_STEAM) OfflineMode.apply(this, root)
@@ -542,10 +593,14 @@ class SessionService : Service() {
         }
     }
 
-    private fun teardown(prootPid: Int) {
+    private fun teardown(prootPid: Int, expectedStartTime: Long? = null) {
+        fun stillSameProcess(): Boolean = expectedStartTime == null || readStat(prootPid)?.second == expectedStartTime
+        if (!stillSameProcess()) return
         val tree = descendants(prootPid)
+        if (!stillSameProcess()) return
         android.os.Process.sendSignal(prootPid, 15) // SIGTERM
         if (!waitForExit(prootPid, GRACE_MS)) {
+            if (!stillSameProcess()) return
             Log.w(TAG, "proot $prootPid did not exit on SIGTERM; killing it")
             android.os.Process.killProcess(prootPid)
         }
@@ -738,6 +793,10 @@ class SessionService : Service() {
         // reused by a new process is never touched.
         val prootPid = sessionPid
         sessionPid = -1
+        val auxiliary = synchronized(auxiliaryProcessesLock) {
+            auxiliaryProcesses.toMap().also { auxiliaryProcesses.clear() }
+        }
+        SessionTerminal.clear(sessionGen)
         val controller = suspendController
         suspendController = null
         // On its own thread, never here: stopSession runs on the main thread (the notification's
@@ -757,9 +816,10 @@ class SessionService : Service() {
         components.clear()
         FakeInputWriter.releaseAllRingSlots()
         val finishAfterTeardown: () -> Unit = {
-            if (prootPid > 1) {
+            if (prootPid > 1 || auxiliary.isNotEmpty()) {
                 Thread({
-                    teardown(prootPid)
+                    auxiliary.forEach { (pid, started) -> teardown(pid, started) }
+                    if (prootPid > 1) teardown(prootPid)
                     finishSessionStop(status)
                 }, "session-teardown").start()
             } else {
@@ -904,6 +964,10 @@ class SessionService : Service() {
         const val ACTION_HOME_GUIDE = "com.steamdeck.launcher.HOME_GUIDE"
         private const val ACTION_ACTIVITY_VISIBLE = "com.steamdeck.launcher.ACTIVITY_VISIBLE"
         private const val ACTION_ACTIVITY_HIDDEN = "com.steamdeck.launcher.ACTIVITY_HIDDEN"
+        private const val ACTION_TRACK_AUXILIARY = "com.steamdeck.launcher.TRACK_AUXILIARY"
+        private const val ACTION_STOP_AUXILIARY = "com.steamdeck.launcher.STOP_AUXILIARY"
+        private const val ACTION_AUXILIARY_EXITED = "com.steamdeck.launcher.AUXILIARY_EXITED"
+        private const val EXTRA_AUXILIARY_PID = "auxiliaryPid"
         /** Command lines that can only belong to a session of ours. */
         private val STRAGGLERS = listOf("bannerlator-session", "gamescope", "Xwayland", "steamrtarm64",
             "steamwebhelper", "linuxfs/opt/android-host/proot", "pulseaudio/libpulseaudio.so")
@@ -950,6 +1014,31 @@ class SessionService : Service() {
         fun resume(context: Context) {
             if (!SessionState.running) return
             context.startService(Intent(context, SessionService::class.java).setAction(ACTION_RESUME))
+        }
+
+        /** Let the session service clean up the PTY's proot tree if the control screen closes. */
+        fun stopTerminalProcess(context: Context, pid: Int) {
+            if (pid > 1) context.startService(
+                Intent(context, SessionService::class.java)
+                    .setAction(ACTION_STOP_AUXILIARY)
+                    .putExtra(EXTRA_AUXILIARY_PID, pid),
+            )
+        }
+
+        fun registerTerminalProcess(context: Context, pid: Int) {
+            if (pid > 1) context.startService(
+                Intent(context, SessionService::class.java)
+                    .setAction(ACTION_TRACK_AUXILIARY)
+                    .putExtra(EXTRA_AUXILIARY_PID, pid),
+            )
+        }
+
+        fun terminalProcessExited(context: Context, pid: Int) {
+            if (pid > 1) context.startService(
+                Intent(context, SessionService::class.java)
+                    .setAction(ACTION_AUXILIARY_EXITED)
+                    .putExtra(EXTRA_AUXILIARY_PID, pid),
+            )
         }
     }
 }

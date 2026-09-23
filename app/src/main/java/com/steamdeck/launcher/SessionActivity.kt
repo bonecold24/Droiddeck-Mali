@@ -1,6 +1,7 @@
 package com.steamdeck.launcher
 
 import android.hardware.input.InputManager
+import android.hardware.display.DisplayManager
 import android.content.Intent
 import android.os.Build
 import android.os.Bundle
@@ -10,6 +11,7 @@ import android.os.Looper
 import android.util.Log
 import android.view.KeyEvent
 import android.view.MotionEvent
+import android.view.Display
 import android.view.SurfaceHolder
 import android.view.SurfaceView
 import android.view.View
@@ -32,6 +34,8 @@ import com.steamdeck.launcher.input.KeyboardHost
 import com.steamdeck.launcher.input.OnScreenControls
 import com.steamdeck.launcher.input.PadBridge
 import com.steamdeck.launcher.input.PointerGestures
+import com.steamdeck.launcher.input.SecondScreenDisplay
+import com.steamdeck.launcher.input.SecondScreenMode
 import com.steamdeck.launcher.input.TouchpadGestures
 import com.steamdeck.launcher.runtime.LinuxRuntime
 import com.steamdeck.launcher.session.LoadingState
@@ -52,6 +56,7 @@ import com.steamdeck.launcher.ui.ProtonDialog
 import com.steamdeck.launcher.ui.ProtonRow
 import com.steamdeck.launcher.ui.SessionDrawer
 import com.steamdeck.launcher.ui.SessionPausedOverlay
+import com.steamdeck.launcher.ui.SecondScreenPresentation
 import com.steamdeck.launcher.ui.SteamDeckTheme
 import com.steamdeck.launcher.wayland.CompositorHost
 import com.steamdeck.launcher.wayland.WaylandCompositor
@@ -95,6 +100,16 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
     private var fexPreset by mutableStateOf("")
     private var oscMode by mutableStateOf(SessionPrefs.OSC_AUTO)
     private var shapeMode by mutableStateOf(SessionPrefs.SHAPE_AUTO)
+    private var secondScreenMode by mutableStateOf(SecondScreenMode.NONE)
+    private var secondScreenDisplays by mutableStateOf<List<SecondScreenDisplay>>(emptyList())
+    private var selectedSecondScreenDisplay by mutableStateOf(-1)
+    private lateinit var displayManager: DisplayManager
+    private var secondScreenPresentation: SecondScreenPresentation? = null
+    private val displayListener = object : DisplayManager.DisplayListener {
+        override fun onDisplayAdded(displayId: Int) = refreshSecondScreenDisplays()
+        override fun onDisplayRemoved(displayId: Int) = refreshSecondScreenDisplays()
+        override fun onDisplayChanged(displayId: Int) = refreshSecondScreenDisplays()
+    }
     private var isHomeApp by mutableStateOf(false)
     private var defaultHomeLabel by mutableStateOf<String?>(null)
     private var androidApps by mutableStateOf<List<HomeApp.LaunchableApp>>(emptyList())
@@ -123,6 +138,8 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
         // The device's volume keys change the stream the session plays on (the relay and
         // PulseAudio are media playback); they are never forwarded to the guest.
         volumeControlStream = android.media.AudioManager.STREAM_MUSIC
+        displayManager = getSystemService(DISPLAY_SERVICE) as DisplayManager
+        refreshSecondScreenDisplays()
 
         // No runtime is not a reason to leave: the loading screen installs it (installThenStart,
         // below) and the session starts when it is in.
@@ -182,6 +199,9 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
                         oscMode = oscMode, touchMode = touchMode,
                         touchAuto = if (usingTouchpad()) "touchpad" else "direct",
                         shapeMode = shapeMode, fexPreset = fexPreset,
+                        secondScreenMode = secondScreenMode,
+                        secondScreenDisplays = secondScreenDisplays,
+                        selectedSecondScreenDisplay = selectedSecondScreenDisplay,
                         onHud = { on -> SessionPrefs.setHudEnabled(this@SessionActivity, on); hudOn = on; hud.refresh() },
                         onFrameGenPick = { engine, multiplier ->
                             FrameGen.set(this@SessionActivity, engine, multiplier)
@@ -199,6 +219,8 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
                         onTouch = { v -> SessionPrefs.setTouchMode(this@SessionActivity, v); readPrefs() },
                         onShape = { v -> SessionPrefs.setShapeMode(this@SessionActivity, v); readPrefs() },
                         onFexPreset = { v -> SessionPrefs.setFexPreset(this@SessionActivity, v); readPrefs() },
+                        onSecondScreenMode = ::selectSecondScreenMode,
+                        onSecondScreenDisplay = ::selectSecondScreenDisplay,
                         onHomeApp = ::manageHomeApp,
                         onLaunchAndroidApp = { app ->
                             drawerOpen = false
@@ -540,6 +562,7 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
     }
 
     private fun onSessionEnded(status: Int) {
+        closeSecondScreen(reset = true)
         if (status == 0) {
             runOnUiThread {
                 if (isFinishing || isDestroyed) return@runOnUiThread
@@ -707,6 +730,106 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
         if (SessionState.mode == SessionService.MODE_STEAM && SessionState.steamUi != "desktop") uiHandler.postDelayed(cursorHide, 2500)
     }
 
+    private fun refreshSecondScreenDisplays() {
+        if (!::displayManager.isInitialized) return
+        val primaryId = display?.displayId ?: windowManager.defaultDisplay.displayId
+        val candidates = displayManager.getDisplays(DisplayManager.DISPLAY_CATEGORY_PRESENTATION)
+            .asSequence()
+            .filter { it.isValid && it.displayId != primaryId && (it.flags and Display.FLAG_PRESENTATION) != 0 }
+            .map { target ->
+                val mode = target.mode
+                SecondScreenDisplay(target.displayId, "${target.name} · ${mode.physicalWidth}×${mode.physicalHeight}")
+            }
+            .toList()
+        val oldIds = secondScreenDisplays.map { it.id }.toSet()
+        secondScreenDisplays = candidates
+        val newIds = candidates.map { it.id }.toSet()
+        if (secondScreenMode != SecondScreenMode.NONE && oldIds.isNotEmpty() && selectedSecondScreenDisplay !in newIds) {
+            closeSecondScreen(reset = true)
+            return
+        }
+        if (selectedSecondScreenDisplay !in newIds) selectedSecondScreenDisplay = candidates.firstOrNull()?.id ?: -1
+        if (secondScreenMode != SecondScreenMode.NONE && candidates.isEmpty()) closeSecondScreen(reset = true)
+    }
+
+    private fun selectSecondScreenDisplay(displayId: Int) {
+        if (secondScreenDisplays.none { it.id == displayId }) return
+        selectedSecondScreenDisplay = displayId
+        if (secondScreenMode != SecondScreenMode.NONE) showSecondScreen(secondScreenMode)
+    }
+
+    private fun selectSecondScreenMode(mode: SecondScreenMode) {
+        if (mode == SecondScreenMode.NONE) {
+            closeSecondScreen(reset = true)
+            return
+        }
+        if (secondScreenDisplays.isEmpty()) {
+            secondScreenMode = SecondScreenMode.NONE
+            return
+        }
+        if (selectedSecondScreenDisplay !in secondScreenDisplays.map { it.id }) {
+            selectedSecondScreenDisplay = secondScreenDisplays.first().id
+        }
+        showSecondScreen(mode)
+    }
+
+    private fun showSecondScreen(mode: SecondScreenMode) {
+        val target = displayManager.getDisplay(selectedSecondScreenDisplay)
+        if (target == null || !target.isValid || (target.flags and Display.FLAG_PRESENTATION) == 0) {
+            closeSecondScreen(reset = true)
+            refreshSecondScreenDisplays()
+            return
+        }
+        var presentation = secondScreenPresentation
+        if (presentation?.display?.displayId != target.displayId) {
+            presentation?.closeControls()
+            presentation = SecondScreenPresentation(
+                this, target,
+                sendPointer = ::moveSecondScreenPointer,
+                sendButton = { button, pressed ->
+                    WaylandCompositor.nativeSendSceneInput(3, button, if (pressed) 1 else 0)
+                },
+                sendWheel = { steps -> WaylandCompositor.nativeSendSceneInput(4, steps, 0) },
+                onSteamMenu = {
+                    if (SessionState.mode == SessionService.MODE_STEAM) {
+                        padBridge?.applyTouch { st -> st.press(com.steamdeck.launcher.input.PadState.GUIDE, true) }
+                        Handler(Looper.getMainLooper()).postDelayed({
+                            padBridge?.applyTouch { st -> st.press(com.steamdeck.launcher.input.PadState.GUIDE, false) }
+                        }, 90)
+                    }
+                },
+                onQam = {
+                    if (SessionState.mode == SessionService.MODE_STEAM) padBridge?.triggerQam()
+                },
+            )
+            secondScreenPresentation = presentation
+        }
+        try {
+            if (!presentation.isShowing) presentation.show()
+            presentation.showMode(mode)
+            secondScreenMode = mode
+        } catch (e: Exception) {
+            Log.w(TAG, "could not show second-screen controls on ${target.name}", e)
+            closeSecondScreen(reset = true)
+        }
+    }
+
+    private fun moveSecondScreenPointer(x: Float, y: Float, width: Float, height: Float) {
+        if (width <= 0f || height <= 0f) return
+        val nx = (x / width).coerceIn(0f, 1f)
+        val ny = (y / height).coerceIn(0f, 1f)
+        WaylandCompositor.nativeSendPointer(1, (nx * 1919f).toInt(), (ny * 1079f).toInt())
+        drawnRect()?.let { rect ->
+            showCursor(rect.left + nx * rect.width(), rect.top + ny * rect.height())
+        }
+    }
+
+    private fun closeSecondScreen(reset: Boolean) {
+        secondScreenPresentation?.closeControls()
+        secondScreenPresentation = null
+        if (reset) secondScreenMode = SecondScreenMode.NONE
+    }
+
     /** Touchpad on the desktop, direct in Steam, unless the drawer says otherwise. */
     private fun usingTouchpad(): Boolean = when (SessionPrefs.touchMode(this)) {
         SessionPrefs.TOUCH_PAD -> true
@@ -795,10 +918,15 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
 
     override fun onStart() {
         super.onStart()
+        displayManager.registerDisplayListener(displayListener, Handler(Looper.getMainLooper()))
+        refreshSecondScreenDisplays()
+        if (secondScreenMode != SecondScreenMode.NONE) showSecondScreen(secondScreenMode)
         SessionService.setActivityVisible(this, true)
     }
 
     override fun onStop() {
+        displayManager.unregisterDisplayListener(displayListener)
+        closeSecondScreen(reset = true)
         SessionService.setActivityVisible(this, false)
         super.onStop()
     }
@@ -864,6 +992,7 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
         // Deliberately does NOT end the session: this activity can be destroyed while the user is
         // in another app, and the whole point of the service is that Steam survives that.
         watching = false
+        closeSecondScreen(reset = true)
         if (::hud.isInitialized) hud.stop()
         padBridge?.stop()
         if (SessionState.endListener === endListener) SessionState.endListener = null

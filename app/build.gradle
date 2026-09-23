@@ -80,6 +80,8 @@ android {
             // libraries are read out of the apk by the class loader: both want the old,
             // uncompressed-and-extracted layout.
             useLegacyPackaging = true
+            // Prefer the PTY helper built by this app's NDK target over Termux's prebuilt copy.
+            pickFirsts += ['**/libtermux.so']
         }
     }
 
@@ -111,4 +113,6 @@ dependencies {
     implementation 'androidx.compose.material:material-icons-extended'
     implementation 'io.coil-kt:coil-compose:2.6.0'
     implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3'
+    // Android terminal view/emulator used by the in-session secondary-display Linux shell.
+    implementation 'com.termux.termux-app:terminal-view:0.118.0'
 }

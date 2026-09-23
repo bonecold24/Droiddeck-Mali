@@ -43,3 +43,7 @@ message(STATUS "win-fg chain: ${WINFG_UPSTREAM} (src ${WINFG_CHAIN_HASH})")
 add_subdirectory(waylandcomp)
 add_library(sdnative SHARED sdnative/sdnative.c)
 target_link_libraries(sdnative log)
+
+# Rebuild Termux terminal-emulator's PTY JNI helper with the app's NDK instead of carrying its
+# prebuilt libtermux.so with a redundant libstdc++.so dependency.
+add_library(termux SHARED termux/termux.c)

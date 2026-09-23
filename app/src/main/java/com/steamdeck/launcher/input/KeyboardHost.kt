@@ -22,8 +22,13 @@ import android.view.inputmethod.InputMethodManager
  * Invisible and unfocusable until asked for: a focused View would take D-pad and stick motion
  * away from the pad.
  */
-class KeyboardHost(private val activity: Activity) : View(activity) {
-    private val imm = activity.getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
+class KeyboardHost(
+    context: Context,
+    private val sendKeyEvent: (KeyEvent) -> Boolean,
+) : View(context) {
+    constructor(activity: Activity) : this(activity, { activity.dispatchKeyEvent(it) })
+
+    private val imm = context.getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
     private val map: KeyCharacterMap = KeyCharacterMap.load(KeyCharacterMap.VIRTUAL_KEYBOARD)
     var shown = false
         private set
@@ -75,14 +80,14 @@ class KeyboardHost(private val activity: Activity) : View(activity) {
             // key event carrying the character, which the activity's key path works back from.
             val events = map.getEvents(text.toString().toCharArray())
             if (events != null) {
-                for (event in events) activity.dispatchKeyEvent(event)
+                for (event in events) sendKeyEvent(event)
             } else {
                 for (ch in text) {
                     val t = System.currentTimeMillis()
                     val down = KeyEvent(t, t, KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_UNKNOWN, 0, 0,
                         KeyCharacterMap.VIRTUAL_KEYBOARD, 0, 0, 0)
-                    activity.dispatchKeyEvent(CharKeyEvent(down, ch))
-                    activity.dispatchKeyEvent(CharKeyEvent(KeyEvent.changeAction(down, KeyEvent.ACTION_UP), ch))
+                    sendKeyEvent(CharKeyEvent(down, ch))
+                    sendKeyEvent(CharKeyEvent(KeyEvent.changeAction(down, KeyEvent.ACTION_UP), ch))
                 }
             }
             return true
@@ -97,7 +102,7 @@ class KeyboardHost(private val activity: Activity) : View(activity) {
             return true
         }
 
-        override fun sendKeyEvent(event: KeyEvent): Boolean = activity.dispatchKeyEvent(event)
+        override fun sendKeyEvent(event: KeyEvent): Boolean = this@KeyboardHost.sendKeyEvent(event)
 
         override fun performEditorAction(actionCode: Int): Boolean {
             tap(KeyEvent.KEYCODE_ENTER)
@@ -106,8 +111,8 @@ class KeyboardHost(private val activity: Activity) : View(activity) {
 
         private fun tap(keyCode: Int) {
             val t = System.currentTimeMillis()
-            activity.dispatchKeyEvent(KeyEvent(t, t, KeyEvent.ACTION_DOWN, keyCode, 0))
-            activity.dispatchKeyEvent(KeyEvent(t, t, KeyEvent.ACTION_UP, keyCode, 0))
+            sendKeyEvent(KeyEvent(t, t, KeyEvent.ACTION_DOWN, keyCode, 0))
+            sendKeyEvent(KeyEvent(t, t, KeyEvent.ACTION_UP, keyCode, 0))
         }
 
         override fun getTextBeforeCursor(n: Int, flags: Int): CharSequence = ""
