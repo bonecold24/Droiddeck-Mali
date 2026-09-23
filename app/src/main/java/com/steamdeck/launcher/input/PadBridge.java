@@ -1,5 +1,7 @@
 package com.steamdeck.launcher.input;
 
+import android.os.Handler;
+import android.os.Looper;
 import android.util.Log;
 import android.view.InputDevice;
 import android.view.KeyEvent;
@@ -24,10 +26,20 @@ public final class PadBridge {
     /** Slot 0 is the one the session exports; extra slots would each show as another pad. */
     private static final int SLOT = 0;
     private static final float DEAD_ZONE = 0.12f;
+    private static final long QAM_GUIDE_LEAD_MS = 80;
+    private static final long QAM_A_HOLD_MS = 120;
+    private static final long QAM_GUIDE_TAIL_MS = 40;
 
     private final FakeInputWriter writer;
     private final GamepadState state = new GamepadState();
+    private final GamepadState effectiveState = new GamepadState();
+    private final Handler mainHandler = new Handler(Looper.getMainLooper());
     private boolean open;
+    private boolean systemGuidePressed;
+    private boolean systemQamPressed;
+    private boolean qamChordActive;
+    private boolean qamSyntheticAPressed;
+    private int qamChordGeneration;
 
     public PadBridge(File fakeInputDir) {
         writer = new FakeInputWriter(fakeInputDir.getAbsolutePath(), SLOT);
@@ -43,6 +55,11 @@ public final class PadBridge {
     }
 
     public synchronized void stop() {
+        systemGuidePressed = false;
+        systemQamPressed = false;
+        qamChordActive = false;
+        qamSyntheticAPressed = false;
+        qamChordGeneration++;
         if (open) {
             state.reset();
             writer.writeGamepadState(state);
@@ -139,9 +156,54 @@ public final class PadBridge {
         publish();
     }
 
+    /** Touch-only Steam and QAM buttons, merged with physical input without changing its state. */
+    public synchronized void setSystemButtons(boolean guidePressed, boolean qamPressed) {
+        if (systemGuidePressed == guidePressed && systemQamPressed == qamPressed) return;
+        boolean qamStarted = qamPressed && !systemQamPressed;
+        systemGuidePressed = guidePressed;
+        systemQamPressed = qamPressed;
+        if (qamStarted && !qamChordActive) {
+            qamChordActive = true;
+            int generation = ++qamChordGeneration;
+            publish();
+            mainHandler.postDelayed(() -> pressQamA(generation), QAM_GUIDE_LEAD_MS);
+        } else {
+            publish();
+        }
+    }
+
+    private synchronized void pressQamA(int generation) {
+        if (generation != qamChordGeneration || !qamChordActive) return;
+        qamSyntheticAPressed = true;
+        publish();
+        mainHandler.postDelayed(() -> releaseQamA(generation), QAM_A_HOLD_MS);
+    }
+
+    private synchronized void releaseQamA(int generation) {
+        if (generation != qamChordGeneration || !qamChordActive) return;
+        qamSyntheticAPressed = false;
+        publish();
+        mainHandler.postDelayed(() -> releaseQamGuide(generation), QAM_GUIDE_TAIL_MS);
+    }
+
+    private synchronized void releaseQamGuide(int generation) {
+        if (generation != qamChordGeneration || !qamChordActive) return;
+        qamChordActive = false;
+        publish();
+    }
+
     private void publish() {
         if (!open && !start()) return;
-        writer.writeGamepadState(state);
+        if (systemGuidePressed || qamChordActive) {
+            effectiveState.copy(state);
+            effectiveState.setPressed(GamepadState.IDX_BUTTON_MODE, true);
+            if (qamSyntheticAPressed) {
+                effectiveState.setPressed(0, state.isPressed(0) || qamSyntheticAPressed);
+            }
+            writer.writeGamepadState(effectiveState);
+        } else {
+            writer.writeGamepadState(state);
+        }
     }
 
     private static float axis(MotionEvent event, int axis) {

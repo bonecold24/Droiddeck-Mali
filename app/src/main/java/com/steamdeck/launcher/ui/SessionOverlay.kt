@@ -205,8 +205,8 @@ fun SessionDrawer(open: Boolean, a: DrawerActions) {
                     )
                     if (a.steam) ChoiceRow(
                         host, "osc", "On-screen controls", "The virtual pad drawn over a game.",
-                        listOf(SessionPrefs.OSC_AUTO to "Auto", SessionPrefs.OSC_ALWAYS to "Always", SessionPrefs.OSC_NEVER to "Never"), a.oscMode,
-                        note = "Auto shows it when no controller is attached.", onPick = a.onOsc,
+                        listOf(SessionPrefs.OSC_AUTO to "Auto", SessionPrefs.OSC_ALWAYS to "Always", SessionPrefs.OSC_STEAM_QAM to "Steam + QAM", SessionPrefs.OSC_NEVER to "Never"), a.oscMode,
+                        note = "Auto shows the full pad when no controller is attached. Steam + QAM shows only those two buttons.", onPick = a.onOsc,
                     )
                     ActionRow("Keyboard", "The on-screen keyboard, for a field the client or a program is waiting on.", "Show") { host.open = null; a.onKeyboard() }
                     if (a.onSteamMenu != null) ActionRow("Steam menu", "The Guide button: the client's own overlay, for a pad without one.", "Open  ◉") { host.open = null; a.onSteamMenu.invoke() }

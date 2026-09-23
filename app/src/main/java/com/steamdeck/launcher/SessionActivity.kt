@@ -651,25 +651,29 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
         return true
     }
 
-    /**
-     * The drawer's mode ("always" / "never") decides outright; on "auto" the controls follow
-     * what is attached. `steamdeck-osc` in Downloads still overrides, for a device we cannot reach.
-     */
+    /** The mode decides which controls appear; `steamdeck-osc` in Downloads still overrides. */
     private fun updateOnScreenControls() {
         val forced = File(Environment.getExternalStorageDirectory(), "Download/steamdeck-osc")
             .takeIf { it.isFile }
             ?.let { FileUtils.readString(it)?.trim()?.lowercase() }
             ?: SessionPrefs.oscMode(this)
+        val controls = onScreenControls ?: return
+        val buttonsOnly = forced == SessionPrefs.OSC_STEAM_QAM
+        controls.setButtonsOnly(buttonsOnly)
         val show = when (forced) {
             SessionPrefs.OSC_ALWAYS -> true
+            SessionPrefs.OSC_STEAM_QAM -> true
             SessionPrefs.OSC_NEVER -> false
             else -> !PadBridge.anyControllerConnected()
         }
-        val controls = onScreenControls ?: return
         if (show == (controls.visibility == View.VISIBLE)) return
         if (!show) controls.releaseAll()
         controls.visibility = if (show) View.VISIBLE else View.GONE
-        Log.i(TAG, "on-screen controls " + (if (show) "shown" else "hidden"))
+        Log.i(TAG, "on-screen controls " + when {
+            !show -> "hidden"
+            buttonsOnly -> "Steam + QAM"
+            else -> "full pad"
+        })
     }
 
     // ── Lifecycle ───────────────────────────────────────────────────────────────────────────
