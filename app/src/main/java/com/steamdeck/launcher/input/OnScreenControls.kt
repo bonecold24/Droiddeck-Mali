@@ -46,7 +46,7 @@ class OnScreenControls(context: Context, private val pad: PadBridge) : View(cont
         var ky = 0f
         /** A stick that moved or was let go: its axes are written once, then left alone. */
         var dirty = false
-        fun contains(x: Float, y: Float): Boolean {
+        fun contains(x: Float, y: Float, radius: Float = this.radius): Boolean {
             val dx = x - cx
             val dy = y - cy
             // A generous hit area: a finger on glass is not a mouse, and a miss in Big Picture
@@ -84,7 +84,10 @@ class OnScreenControls(context: Context, private val pad: PadBridge) : View(cont
         Control("start", "☰", 7, -1, -1, dp(20f)),
         // The client's own in-game menu; the interposer publishes it as BTN_MODE.
         Control("guide", "◉", GamepadState.IDX_BUTTON_MODE.toInt(), -1, -1, dp(22f)),
+        Control("qam", "⋯", -1, -1, -1, dp(22f)),
     )
+
+    private var buttonsOnly = false
 
     private val fill = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
     private val stroke = Paint(Paint.ANTI_ALIAS_FLAG).apply {
@@ -107,6 +110,14 @@ class OnScreenControls(context: Context, private val pad: PadBridge) : View(cont
         if (width > 0 && height > 0) { layoutControls(width.toFloat(), height.toFloat()); invalidate() }
     }
 
+    fun setButtonsOnly(enabled: Boolean) {
+        if (buttonsOnly == enabled) return
+        releaseAll()
+        buttonsOnly = enabled
+        if (width > 0 && height > 0) layoutControls(width.toFloat(), height.toFloat())
+        invalidate()
+    }
+
     override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
         super.onSizeChanged(w, h, oldw, oldh)
         layoutControls(w.toFloat(), h.toFloat())
@@ -118,6 +129,12 @@ class OnScreenControls(context: Context, private val pad: PadBridge) : View(cont
      * the bottom corners in every one; nothing is placed where a game's own HUD usually is.
      */
     private fun layoutControls(w: Float, h: Float) {
+        if (buttonsOnly) {
+            val inset = dp(44f)
+            place("guide", inset, h - inset)
+            place("qam", w - inset, h - inset)
+            return
+        }
         val p = picture
         val sideBar = if (p != null) minOf(p.left, w - p.right) else 0f
         val bottomBand = if (p != null) h - p.bottom else 0f
@@ -195,14 +212,16 @@ class OnScreenControls(context: Context, private val pad: PadBridge) : View(cont
 
     override fun onDraw(canvas: Canvas) {
         for (control in controls) {
+            if (!isVisible(control)) continue
             val held = control.pressedBy != -1
+            val radius = controlRadius(control)
             if (control.stick >= 0) {
                 // The base, then the knob where the finger holds it.
                 fill.color = if (held) Color.argb(60, 199, 125, 255) else Color.argb(50, 20, 12, 30)
-                canvas.drawCircle(control.cx, control.cy, control.radius, fill)
+                canvas.drawCircle(control.cx, control.cy, radius, fill)
                 stroke.color = if (held) Color.argb(200, 235, 212, 255) else Color.argb(90, 201, 160, 255)
-                canvas.drawCircle(control.cx, control.cy, control.radius, stroke)
-                val knob = control.radius * 0.46f
+                canvas.drawCircle(control.cx, control.cy, radius, stroke)
+                val knob = radius * 0.46f
                 fill.color = if (held) Color.argb(170, 199, 125, 255) else Color.argb(110, 60, 40, 90)
                 canvas.drawCircle(control.cx + control.kx, control.cy + control.ky, knob, fill)
                 stroke.color = if (held) Color.argb(230, 245, 230, 255) else Color.argb(140, 201, 160, 255)
@@ -213,12 +232,13 @@ class OnScreenControls(context: Context, private val pad: PadBridge) : View(cont
                 continue
             }
             fill.color = if (held) Color.argb(150, 199, 125, 255) else Color.argb(70, 20, 12, 30)
-            canvas.drawCircle(control.cx, control.cy, control.radius, fill)
+            canvas.drawCircle(control.cx, control.cy, radius, fill)
             stroke.color = if (held) Color.argb(220, 235, 212, 255) else Color.argb(110, 201, 160, 255)
-            canvas.drawCircle(control.cx, control.cy, control.radius, stroke)
+            canvas.drawCircle(control.cx, control.cy, radius, stroke)
             text.color = if (held) Color.WHITE else Color.argb(190, 225, 210, 245)
-            text.textSize = control.radius * 0.85f
-            canvas.drawText(control.label, control.cx, control.cy + text.textSize * 0.35f, text)
+            val label = if (buttonsOnly && control.id == "guide") "Steam" else control.label
+            text.textSize = if (buttonsOnly && control.id == "guide") dp(11f) else radius * 0.85f
+            canvas.drawText(label, control.cx, control.cy + text.textSize * 0.35f, text)
         }
     }
 
@@ -277,18 +297,32 @@ class OnScreenControls(context: Context, private val pad: PadBridge) : View(cont
         return false
     }
 
-    private fun controlAt(x: Float, y: Float): Control? = controls.firstOrNull { it.contains(x, y) }
+    private fun controlAt(x: Float, y: Float): Control? =
+        controls.firstOrNull { isVisible(it) && it.contains(x, y, controlRadius(it)) }
+
+    private fun isVisible(control: Control): Boolean =
+        !buttonsOnly || control.id == "guide" || control.id == "qam"
+
+    private fun controlRadius(control: Control): Float =
+        if (buttonsOnly && (control.id == "guide" || control.id == "qam")) dp(30f) else control.radius
 
     private fun apply() {
-        pad.applyTouch { state ->
-            for (control in controls) {
-                val held = control.pressedBy != -1
-                when {
-                    control.stick >= 0 && !control.dirty -> {}
-                    control.stick == 0 -> { state.thumbLX = control.kx / control.radius; state.thumbLY = control.ky / control.radius; control.dirty = false }
-                    control.stick == 1 -> { state.thumbRX = control.kx / control.radius; state.thumbRY = control.ky / control.radius; control.dirty = false }
-                    control.dpad >= 0 -> state.dpad[control.dpad] = held
-                    control.button >= 0 -> state.setPressed(control.button, held)
+        if (buttonsOnly) {
+            val guidePressed = controls.first { it.id == "guide" }.pressedBy != -1
+            val qamPressed = controls.first { it.id == "qam" }.pressedBy != -1
+            pad.setSystemButtons(guidePressed, qamPressed)
+        } else {
+            pad.setSystemButtons(false, false)
+            pad.applyTouch { state ->
+                for (control in controls) {
+                    val held = control.pressedBy != -1
+                    when {
+                        control.stick >= 0 && !control.dirty -> {}
+                        control.stick == 0 -> { state.thumbLX = control.kx / control.radius; state.thumbLY = control.ky / control.radius; control.dirty = false }
+                        control.stick == 1 -> { state.thumbRX = control.kx / control.radius; state.thumbRY = control.ky / control.radius; control.dirty = false }
+                        control.dpad >= 0 -> state.dpad[control.dpad] = held
+                        control.button >= 0 -> state.setPressed(control.button, held)
+                    }
                 }
             }
         }
@@ -297,7 +331,7 @@ class OnScreenControls(context: Context, private val pad: PadBridge) : View(cont
 
     /** Everything up, for when the controls are hidden mid-press. */
     fun releaseAll() {
-        if (controls.none { it.pressedBy != -1 }) return
+        if (controls.none { it.pressedBy != -1 } && !buttonsOnly) return
         controls.forEach { it.pressedBy = -1; if (it.stick >= 0 && (it.kx != 0f || it.ky != 0f)) it.dirty = true; it.kx = 0f; it.ky = 0f }
         apply()
     }

@@ -6,6 +6,7 @@ import android.content.Context
 object SessionPrefs {
     const val OSC_AUTO = "auto"
     const val OSC_ALWAYS = "always"
+    const val OSC_STEAM_QAM = "steam-qam"
     const val OSC_NEVER = "never"
 
     private fun prefs(context: Context) = context.getSharedPreferences("session", Context.MODE_PRIVATE)

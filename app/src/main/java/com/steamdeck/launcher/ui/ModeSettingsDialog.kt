@@ -128,8 +128,13 @@ fun ModeSettingsPage(s: ModeSettings, a: ModeSettingsActions) {
             )
             if (steam && s.oscMode != null) ChoiceRow(
                 host, "osc", "On-screen controls", "The virtual pad drawn over a game.",
-                listOf("auto" to "Auto", "always" to "Always", "never" to "Never"), s.oscMode,
-                note = "Auto shows it when no controller is attached.", onPick = a.onOsc,
+                listOf(
+                    SessionPrefs.OSC_AUTO to "Auto",
+                    SessionPrefs.OSC_ALWAYS to "Always",
+                    SessionPrefs.OSC_STEAM_QAM to "Steam + QAM",
+                    SessionPrefs.OSC_NEVER to "Never",
+                ), s.oscMode,
+                note = "Auto shows the full pad when no controller is attached. Steam + QAM shows only those two buttons.", onPick = a.onOsc,
             )
         }
         if (steam && s.fexPreset != null) SettingsGroup("Games") {
