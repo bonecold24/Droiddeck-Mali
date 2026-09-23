@@ -55,7 +55,8 @@ PA_MODULE_USAGE(
         "sink_properties=<properties for the sink> "
         "volume=<initial volume, linear, 1.0 = full> "
         "performance_mode=<0 none, 1 low latency, 2 power saving> "
-        "adaptive=<let the relay grow its buffer after underruns: 0 or 1>");
+        "adaptive=<let the relay grow its buffer after underruns: 0 or 1> "
+        "buffer_ms=<device buffer the relay starts with, in ms; rounded up to whole bursts>");
 
 #define DEFAULT_SINK_NAME "DirectAudio"
 #define RECONNECT_USEC (500 * PA_USEC_PER_MSEC)
@@ -67,9 +68,14 @@ PA_MODULE_USAGE(
  * a producer inside proot misses while the client is loading: two underruns in the first seconds
  * on the FIT, steady stutter on a slower phone. 40 ms of slack costs 40 ms of latency at most. */
 #define MIN_AHEAD_MS 40
+/* The device buffer asked of the relay. Its own default is 12 ms rounded up to whole bursts: three
+ * 4 ms bursts on a device that grants a fast stream, but ONE 20 ms burst where Android grants a
+ * legacy one (an AYN Thor, Android 13), and a single burst has nothing to cover a late callback.
+ * 24 ms is two bursts there, Android's recommended minimum; the relay still grows it on xruns. */
+#define DEFAULT_BUFFER_MS 24
 
 static const char* const valid_modargs[] = {
-    "socket", "sink_name", "sink_properties", "volume", "performance_mode", "adaptive", NULL
+    "socket", "sink_name", "sink_properties", "volume", "performance_mode", "adaptive", "buffer_ms", NULL
 };
 
 struct userdata {
@@ -84,6 +90,7 @@ struct userdata {
     char *socket_path;
     int perf;
     bool adaptive;
+    uint32_t buffer_ms;
     pa_sample_spec ss;
     size_t frame_size;
 
@@ -136,6 +143,7 @@ static int connect_relay(struct userdata *u) {
     hello.version = DA_RELAY_VERSION;
     hello.flags = u->adaptive ? DA_HELLO_ADAPTIVE : 0;
     hello.perf = u->perf;
+    hello.target_ms = (int32_t) u->buffer_ms;
     hello.pid = (int32_t) getpid();
     pa_snprintf(hello.name, sizeof(hello.name), "pulseaudio");
     if (pa_loop_write(u->fd, &hello, sizeof(hello), NULL) != (ssize_t) sizeof(hello))
@@ -339,7 +347,7 @@ int pa__init(pa_module *m) {
     pa_sink_new_data data;
     pa_channel_map map;
     pa_cvolume volume;
-    uint32_t perf = 1;
+    uint32_t perf = 1, buffer_ms = DEFAULT_BUFFER_MS;
     double linear_volume = 1.0;
     bool adaptive = true;
     const char *path;
@@ -358,6 +366,10 @@ int pa__init(pa_module *m) {
         pa_log("performance_mode must be 0, 1 or 2");
         goto fail;
     }
+    if (pa_modargs_get_value_u32(ma, "buffer_ms", &buffer_ms) < 0 || buffer_ms > 200) {
+        pa_log("buffer_ms must be between 0 and 200");
+        goto fail;
+    }
     if (pa_modargs_get_value_boolean(ma, "adaptive", &adaptive) < 0) {
         pa_log("adaptive must be 0 or 1");
         goto fail;
@@ -374,6 +386,7 @@ int pa__init(pa_module *m) {
     u->socket_path = pa_xstrdup(path);
     u->perf = (int) perf;
     u->adaptive = adaptive;
+    u->buffer_ms = buffer_ms;
     /* The ring's format, fixed by the relay: float stereo at 48 kHz. */
     u->ss.format = PA_SAMPLE_FLOAT32NE;
     u->ss.rate = DA_RING_RATE;
