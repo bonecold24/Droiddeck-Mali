@@ -24,6 +24,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.ComposeView
 import com.steamdeck.launcher.core.FileUtils
 import com.steamdeck.launcher.gpu.FrameGen
@@ -42,7 +43,6 @@ import com.steamdeck.launcher.session.LoadingState
 import com.steamdeck.launcher.session.PerfHints
 import com.steamdeck.launcher.session.PerfHud
 import com.steamdeck.launcher.session.PerfMode
-import com.steamdeck.launcher.session.ProtonExtras
 import com.steamdeck.launcher.session.SessionPrefs
 import com.steamdeck.launcher.session.SessionPaths
 import com.steamdeck.launcher.wayland.HdrSupport
@@ -52,8 +52,6 @@ import com.steamdeck.launcher.ui.CursorOverlay
 import com.steamdeck.launcher.ui.DrawerActions
 import com.steamdeck.launcher.ui.HudText
 import com.steamdeck.launcher.ui.LoadingOverlay
-import com.steamdeck.launcher.ui.ProtonDialog
-import com.steamdeck.launcher.ui.ProtonRow
 import com.steamdeck.launcher.ui.SessionDrawer
 import com.steamdeck.launcher.ui.SessionPausedOverlay
 import com.steamdeck.launcher.ui.SecondScreenPresentation
@@ -91,8 +89,6 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
 
     // Compose reads these; the activity writes them.
     private var drawerOpen by mutableStateOf(false)
-    private var showProtons by mutableStateOf(false)
-    private var protonRows by mutableStateOf<List<ProtonRow>>(emptyList())
     private var hudOn by mutableStateOf(true)
     private var frameGenLabel by mutableStateOf("Off")
     private var frameGenEngine by mutableStateOf(FrameGen.ENGINE_OFF)
@@ -214,7 +210,6 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
                             drawerOpen = false
                             padBridge?.triggerQam()
                         }) else null,
-                        onProtons = { refreshProtons(); showProtons = true },
                         onOsc = { v -> SessionPrefs.setOscMode(this@SessionActivity, v); readPrefs(); updateOnScreenControls() },
                         onTouch = { v -> SessionPrefs.setTouchMode(this@SessionActivity, v); readPrefs() },
                         onShape = { v -> SessionPrefs.setShapeMode(this@SessionActivity, v); readPrefs() },
@@ -234,13 +229,6 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
                         onStop = { drawerOpen = false; SessionService.stop(this@SessionActivity); finish() },
                         onClose = { drawerOpen = false },
                     ))
-                    if (showProtons) ProtonDialog(
-                        rows = protonRows,
-                        onInstall = { id -> ProtonExtras.tools.first { it.id == id }.let { ProtonExtras.queue(this@SessionActivity, it) }; refreshProtons() },
-                        onCancel = { id -> ProtonExtras.tools.first { it.id == id }.let { ProtonExtras.unqueue(this@SessionActivity, it) }; refreshProtons() },
-                        onRemove = { id -> ProtonExtras.tools.first { it.id == id }.let { ProtonExtras.remove(this@SessionActivity, it) }; refreshProtons() },
-                        onDismiss = { showProtons = false },
-                    )
                     if (SessionState.suspended) SessionPausedOverlay {
                         SessionService.resume(this@SessionActivity)
                     }
@@ -264,19 +252,10 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
         // from a button a game might also be reading.
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() {
-                when {
-                    showProtons -> showProtons = false
-                    else -> drawerOpen = !drawerOpen
-                }
+                drawerOpen = !drawerOpen
             }
         })
         watchSession()
-    }
-
-    private fun refreshProtons() {
-        protonRows = ProtonExtras.tools.map {
-            ProtonRow(it.id, it.name, ProtonExtras.installed(this, it), ProtonExtras.queued(this, it))
-        }
     }
 
     private fun refreshHomeApp() {

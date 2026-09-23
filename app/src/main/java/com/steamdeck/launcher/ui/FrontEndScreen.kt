@@ -135,6 +135,12 @@ class FrontEndState(
     val isHomeApp: Boolean = false,
     val defaultHomeLabel: String? = null,
     val androidApps: List<com.steamdeck.launcher.HomeApp.LaunchableApp> = emptyList(),
+    val packages: List<PackageRow>? = null,
+    val packageCatalogLoading: Boolean = false,
+    val packageBusyId: String? = null,
+    val packageStage: String? = null,
+    val packagePercent: Int = -1,
+    val sessionRunning: Boolean = false,
 )
 
 class FrontEndActions(
@@ -147,7 +153,8 @@ class FrontEndActions(
     val onResume: () -> Unit,
     val onSteamSettings: () -> Unit,
     val onDesktopSettings: () -> Unit,
-    val onApps: () -> Unit,
+    val onInstallPackage: (String) -> Unit,
+    val onRemovePackage: (String) -> Unit,
     val onRuntime: () -> Unit,
     val onFrameGenPick: (engine: String, multiplier: Int) -> Unit,
     val onProtons: () -> Unit,
@@ -157,7 +164,6 @@ class FrontEndActions(
     val onLogs: () -> Unit,
     val onShareLogs: () -> Unit = {},
     val onOffline: () -> Unit,
-    val onEmulatorHelp: () -> Unit,
     val onCredits: () -> Unit,
     val onPageBack: () -> Unit = {},
     val onTheme: (String) -> Unit = {},
@@ -224,10 +230,6 @@ private fun Modifier.shine(trigger: Boolean, strength: Float = 0.22f): Modifier 
 @Composable
 fun FrontEndScreen(s: FrontEndState, a: FrontEndActions, page: (@Composable () -> Unit)? = null) {
     var selected by rememberSaveable { mutableStateOf("steam") }
-    var openDesktop by rememberSaveable { mutableStateOf(false) }
-    var openSteam by rememberSaveable { mutableStateOf(false) }
-    var openEmu by rememberSaveable { mutableStateOf("") }
-    var openSetup by rememberSaveable { mutableStateOf(false) }
     val colors = MaterialTheme.colorScheme
     val ctx = LocalContext.current
     BackHandler(enabled = s.pageKey != null && page != null) { a.onPageBack() }
@@ -236,22 +238,26 @@ fun FrontEndScreen(s: FrontEndState, a: FrontEndActions, page: (@Composable () -
 
     BoxWithConstraints(modifier = Modifier.fillMaxSize().background(colors.background).systemBarsPadding()) {
         val wide = maxWidth >= 640.dp
+        val railSelection = when {
+            s.pageKey == "performance" || s.pageKey == "protons" -> "setup"
+            s.pageKey?.startsWith("settings:steam") == true -> "steam"
+            s.pageKey?.startsWith("settings:") == true -> "desktop"
+            selected.startsWith("app:") -> "steam"
+            selected.startsWith("emu:") || selected.startsWith("rom:") -> "desktop"
+            else -> s.pageKey ?: selected
+        }
         val rail: @Composable () -> Unit = {
             Rail(
-                s, s.pageKey ?: selected, openSteam, openDesktop, openEmu, openSetup,
-                onToggleSetup = { openSetup = !openSetup },
+                s, railSelection,
                 onSelect = { key ->
                     if (s.pageKey != null) a.onPageBack()
-                    if (key == "steam") openSteam = if (selected == "steam") !openSteam else true
-                    if (key == "desktop") openDesktop = if (selected == "desktop") !openDesktop else true
-                    if (key.startsWith("emu:")) openEmu = if (selected == key && openEmu == key) "" else key
                     selected = key
                 },
                 a,
                 modifier = if (wide) Modifier.width(236.dp).fillMaxHeight() else Modifier.fillMaxWidth().height(maxHeight * 0.42f),
             )
         }
-        val content: @Composable (Modifier) -> Unit = { m -> Pane(s, selected, a, page, m) }
+        val content: @Composable (Modifier) -> Unit = { m -> Pane(s, selected, a, page, m) { selected = it } }
         if (wide) Row(modifier = Modifier.fillMaxSize()) { rail(); content(Modifier.weight(1f).fillMaxHeight()) }
         else Column(modifier = Modifier.fillMaxSize()) { rail(); content(Modifier.weight(1f).fillMaxWidth()) }
     }
@@ -260,8 +266,8 @@ fun FrontEndScreen(s: FrontEndState, a: FrontEndActions, page: (@Composable () -
 
 @Composable
 private fun Rail(
-    s: FrontEndState, selected: String, openSteam: Boolean, openDesktop: Boolean, openEmu: String, openSetup: Boolean,
-    onToggleSetup: () -> Unit, onSelect: (String) -> Unit, a: FrontEndActions, modifier: Modifier,
+    s: FrontEndState, selected: String,
+    onSelect: (String) -> Unit, a: FrontEndActions, modifier: Modifier,
 ) {
     val colors = MaterialTheme.colorScheme
     Column(
@@ -324,84 +330,10 @@ private fun Rail(
                     NavItem("Android apps", "android-apps", selected == "android-apps", count = s.androidApps.size,
                         register = register, unregister = unregister) { onSelect("android-apps") }
                 }
-                NavItem("Steam", "steam", selected == "steam", caret = openSteam, count = s.steamGames.size, register = register, unregister = unregister) { onSelect("steam") }
-                Sub(openSteam) {
-                    for ((i, g) in s.steamGames.withIndex()) NavItem(g.name, "app:${g.appId}", selected == "app:${g.appId}", small = true, i = i, register = register, unregister = unregister) { onSelect("app:${g.appId}") }
-                    if (s.steamGames.isEmpty()) NavItem("No games", "x", false, small = true, muted = true, register = register, unregister = unregister) {}
-                    NavItem("Settings", "settings:steam", selected == "settings:steam", small = true, tiny = true, muted = true, i = s.steamGames.size, register = register, unregister = unregister) { a.onSteamSettings() }
-                }
-                NavItem("Desktop", "desktop", selected == "desktop", caret = openDesktop, count = s.emulators.count { it.installed }, register = register, unregister = unregister) { onSelect("desktop") }
-                Sub(openDesktop) {
-                    for ((i, e) in s.emulators.filter { it.installed }.withIndex()) {
-                        val key = "emu:${e.id}"
-                        NavItem(e.name, key, selected == key, small = true, caret = openEmu == key, count = e.games.size, i = i, register = register, unregister = unregister) { onSelect(key) }
-                        Sub(openEmu == key) {
-                            for ((j, g) in e.games.withIndex()) NavItem(g.name, "rom:${e.id}:$j", selected == "rom:${e.id}:$j", small = true, tiny = true, i = j, register = register, unregister = unregister) { onSelect("rom:${e.id}:$j") }
-                            if (e.games.isEmpty()) NavItem(
-                                if (e.id == "retroarch") "Browse games in RetroArch" else if (s.romsDir == null) "Choose ROMs folder" else "No ${e.system} games",
-                                "x", false, small = true, tiny = true, muted = true, register = register, unregister = unregister,
-                            ) { if (e.id != "retroarch") a.onRoms() }
-                        }
-                    }
-                    if (s.emulators.none { it.installed }) NavItem("Install emulators", "apps", selected == "apps", small = true, muted = true, register = register, unregister = unregister) { a.onApps() }
-                    NavItem("Settings", "settings:lxqt", selected == "settings:lxqt", small = true, tiny = true, muted = true, i = s.emulators.count { it.installed }, register = register, unregister = unregister) { a.onDesktopSettings() }
-                }
+                NavItem("Steam", "steam", selected == "steam", count = s.steamGames.size, register = register, unregister = unregister) { onSelect("steam") }
+                NavItem("Desktop", "desktop", selected == "desktop", count = s.emulators.count { it.installed }, register = register, unregister = unregister) { onSelect("desktop") }
+                NavItem("Setup", "setup", selected == "setup", register = register, unregister = unregister) { onSelect("setup") }
                 Spacer(Modifier.height(6.dp))
-            val menus = remember { MenuHost() }
-            val item: @Composable (String, String?, Int, String?, () -> Unit) -> Unit = { label, value, i, key, act ->
-                NavItem(label, key ?: "x", key != null && selected == key, small = true, tiny = true, muted = true, value = value, i = i, register = register, unregister = unregister) { act() }
-            }
-            NavItem("Setup", "x", false, caret = openSetup, count = 11, onClick = onToggleSetup)
-            Sub(openSetup) {
-                item("Files", null, 0, null, a.onFiles)
-                item("Desktop & apps", null, 1, "apps", a.onApps)
-                item("Compatibility tools", null, 2, null, a.onProtons)
-                Box {
-                    item("Frame generation", s.frameGenLabel, 3, null) { menus.open = "fg" }
-                    AnchoredMenu(
-                        menus.open == "fg", onDismiss = { if (menus.open == "fg") menus.open = null }, title = "Frame generation",
-                    ) {
-                        val need = if (s.lsfgReady) null else "install Lossless Scaling in Steam"
-                        MenuItem("Off", checked = s.frameGenEngine == FrameGen.ENGINE_OFF) { a.onFrameGenPick(FrameGen.ENGINE_OFF, 2); menus.open = null }
-                        for (m in 2..4) MenuItem("Win-FG ${m}×", checked = s.frameGenEngine == FrameGen.ENGINE_WINFG && s.frameGenMultiplier == m) { a.onFrameGenPick(FrameGen.ENGINE_WINFG, m); menus.open = null }
-                        for (m in 2..4) MenuItem("LSFG ${m}×", checked = s.frameGenEngine == FrameGen.ENGINE_LSFG && s.frameGenMultiplier == m, enabled = s.lsfgReady, detail = need) { a.onFrameGenPick(FrameGen.ENGINE_LSFG, m); menus.open = null }
-                    }
-                }
-                item("Performance", null, 4, "performance", a.onPerformance)
-                item("ROMs folder", s.romsDir?.substringAfterLast('/')?.ifEmpty { s.romsDir } ?: "choose", 5, null, a.onRoms)
-                Box {
-                    item("Session logs", if (s.logsEnabled) "on" else "off", 6, null) { menus.open = "logs" }
-                    AnchoredMenu(
-                        menus.open == "logs", onDismiss = { if (menus.open == "logs") menus.open = null }, title = "Session logs",
-                    ) {
-                        MenuItem("On", checked = s.logsEnabled) { if (!s.logsEnabled) a.onLogs(); menus.open = null }
-                        MenuItem("Off", checked = !s.logsEnabled) { if (s.logsEnabled) a.onLogs(); menus.open = null }
-                        MenuItem("Share latest logs", checked = false) { a.onShareLogs(); menus.open = null }
-                    }
-                }
-                Box {
-                    item("Offline", when { s.offlineAccount == null -> "sign in first"; s.offline -> "on"; else -> "off" }, 7, null) { if (s.offlineAccount != null) menus.open = "offline" }
-                    AnchoredMenu(
-                        menus.open == "offline", onDismiss = { if (menus.open == "offline") menus.open = null }, title = "Offline",
-                    ) {
-                        MenuItem("On", checked = s.offline) { if (!s.offline) a.onOffline(); menus.open = null }
-                        MenuItem("Off", checked = !s.offline) { if (s.offline) a.onOffline(); menus.open = null }
-                    }
-                }
-                item("Linux runtime", when {
-                    s.busy -> "working…"
-                    !s.ready -> "install"
-                    s.available != null && s.available != s.installed -> "update"
-                    else -> "remove"
-                }, 8, null, a.onRuntime)
-                Box {
-                    item("Theme", Themes.byId(s.theme).label, 9, null) { menus.open = "theme" }
-                    AnchoredMenu(menus.open == "theme", onDismiss = { if (menus.open == "theme") menus.open = null }, title = "Theme") {
-                        for (t in Themes.all) MenuItem(t.label, checked = s.theme == t.id) { a.onTheme(t.id); menus.open = null }
-                    }
-                }
-                item("Default Home app", s.defaultHomeLabel ?: "Choose a Home app", 10, null, a.onHomeApp)
-            }
             }
         }
 
@@ -440,23 +372,6 @@ private fun RunningTile(name: String, onResume: () -> Unit) {
             Text(name, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = colors.onBackground, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Text("Resume", fontSize = 11.sp, color = colors.onSurfaceVariant)
         }
-    }
-}
-
-@Composable
-private fun Sub(open: Boolean, content: @Composable () -> Unit) {
-    val line = LocalPalette.current.line
-    AnimatedVisibility(
-        open,
-        enter = expandVertically(Motion.tw(420)) + fadeIn(Motion.tw(300, 50)),
-        exit = shrinkVertically(Motion.tw(300)) + fadeOut(Motion.tw(200)),
-    ) {
-        Column(
-            modifier = Modifier.padding(start = 16.dp).fillMaxWidth()
-                .drawWithContent { drawContent(); drawRect(line, size = size.copy(width = 1.dp.toPx())) }
-                .padding(start = 8.dp),
-            verticalArrangement = Arrangement.spacedBy(1.dp),
-        ) { content() }
     }
 }
 
@@ -507,7 +422,7 @@ private fun NavItem(
 
 
 @Composable
-private fun Pane(s: FrontEndState, selected: String, a: FrontEndActions, page: (@Composable () -> Unit)?, modifier: Modifier) {
+private fun Pane(s: FrontEndState, selected: String, a: FrontEndActions, page: (@Composable () -> Unit)?, modifier: Modifier, onSelect: (String) -> Unit) {
     Box(modifier = modifier) {
         val wash: Pair<File?, Float> = when {
             s.pageKey != null && page != null -> null to 250f
@@ -528,7 +443,7 @@ private fun Pane(s: FrontEndState, selected: String, a: FrontEndActions, page: (
                     .apply { targetContentZIndex = 1f }
             },
             label = "pane",
-        ) { key -> if (page != null && key == s.pageKey) page() else Content(s, key, a, Modifier.fillMaxSize()) }
+        ) { key -> if (page != null && key == s.pageKey) page() else Content(s, key, a, Modifier.fillMaxSize(), onSelect) }
     }
 }
 
@@ -557,7 +472,7 @@ private fun romFor(s: FrontEndState, selected: String): Pair<Library.Emulator, L
 }
 
 @Composable
-private fun Content(s: FrontEndState, selected: String, a: FrontEndActions, modifier: Modifier) {
+private fun Content(s: FrontEndState, selected: String, a: FrontEndActions, modifier: Modifier, onSelect: (String) -> Unit) {
     val colors = MaterialTheme.colorScheme
     Column(modifier = modifier.padding(horizontal = 22.dp, vertical = 18.dp)) {
         when {
@@ -585,18 +500,26 @@ private fun Content(s: FrontEndState, selected: String, a: FrontEndActions, modi
                     Actions {
                         // Enabled without a runtime: the session's loading screen installs it first.
                         PrimaryButton("Play", enabled = !s.busy, onClick = a.onPlay)
-                        SecondaryButton("Desktop UI", enabled = !s.busy, onClick = a.onPlayDesktopUi)
+                        SecondaryButton("Steam Desktop UI", enabled = !s.busy, onClick = a.onPlayDesktopUi)
                         Cog(a.onSteamSettings)
                     }
                 }
                 Rise(4) { SectionTitle("Installed", "${s.steamGames.size} game${if (s.steamGames.size == 1) "" else "s"}") }
                 if (s.steamGames.isEmpty()) Rise(5) { Note("No games installed.") }
-                else Rise(5, Modifier.weight(1f).fillMaxWidth()) { ArtGrid(s.steamGames.map { g -> Tile(g.name, g.library, g.art, "steam:${g.appId}", null) { a.onSteamGame(g) } }) }
+                else Rise(5, Modifier.weight(1f).fillMaxWidth()) { ArtGrid(s.steamGames.map { g -> Tile(g.name, g.library, g.art, "steam:${g.appId}", null) { onSelect("app:${g.appId}") } }) }
             }
             selected.startsWith("app:") -> {
                 val g = s.steamGames.firstOrNull { "app:${it.appId}" == selected }
                 if (g == null) Note("That game is no longer installed.") else {
-                    Rise(0) { Eyebrow("Steam · ${g.library}") }
+                Rise(0) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Text(
+                            "‹ Steam", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = colors.onSurfaceVariant,
+                            modifier = Modifier.clip(RoundedCornerShape(8.dp)).clickable { onSelect("steam") }.padding(horizontal = 6.dp, vertical = 4.dp),
+                        )
+                        Eyebrow(g.library)
+                    }
+                }
                     Rise(1) { Title(g.name) }
                     Rise(2) {
                         Row {
@@ -613,7 +536,7 @@ private fun Content(s: FrontEndState, selected: String, a: FrontEndActions, modi
                     val others = s.steamGames.filter { it !== g }
                     if (others.isNotEmpty()) {
                         Rise(3) { SectionTitle("More from the library", null) }
-                        Rise(4, Modifier.weight(1f).fillMaxWidth()) { ArtGrid(others.map { x -> Tile(x.name, x.library, x.art, "steam:${x.appId}", null) { a.onSteamGame(x) } }) }
+                        Rise(4, Modifier.weight(1f).fillMaxWidth()) { ArtGrid(others.map { x -> Tile(x.name, x.library, x.art, "steam:${x.appId}", null) { onSelect("app:${x.appId}") } }) }
                     }
                 }
             }
@@ -622,41 +545,85 @@ private fun Content(s: FrontEndState, selected: String, a: FrontEndActions, modi
                 Rise(3) {
                     Actions {
                         // Enabled without a runtime or the desktop: the session's loading screen installs them first.
-                        PrimaryButton("Desktop", enabled = !s.busy, onClick = a.onDesktop)
-                        SecondaryButton("Desktop & apps", onClick = a.onApps)
+                        PrimaryButton(if (s.desktopInstalled) "Open desktop" else "Install & open desktop", enabled = !s.busy, onClick = a.onDesktop)
                         Cog(a.onDesktopSettings)
                     }
                 }
                 Rise(4) { SectionTitle("Emulators", "${s.emulators.count { it.installed }} installed · ${s.emulators.count { !it.installed }} available") }
-                Rise(5) {
-                    Text("Why?", fontSize = 12.sp, color = colors.onSurfaceVariant, modifier = Modifier.padding(bottom = 6.dp).clip(Shape10).clickable(onClick = a.onEmulatorHelp).padding(horizontal = 6.dp, vertical = 4.dp))
-                }
-                Rise(6, Modifier.weight(1f).fillMaxWidth()) {
-                    ArtGrid(s.emulators.map { e -> Tile(e.name, if (e.installed) (if (e.id == "retroarch") null else "${e.games.size} game${if (e.games.size == 1) "" else "s"}") else "Not installed", null, "emu:${e.id}", e.iconRes, dim = !e.installed) { if (e.installed) a.onEmulator(e) else a.onApps() } })
+                Rise(5, Modifier.weight(1f).fillMaxWidth()) {
+                    ArtGrid(s.emulators.map { e -> Tile(e.name, if (e.installed) (if (e.id == "retroarch") null else "${e.games.size} game${if (e.games.size == 1) "" else "s"}") else "Select to install", null, "emu:${e.id}", e.iconRes, dim = !e.installed) { onSelect("emu:${e.id}") } })
                 }
             }
+            selected == "setup" -> SetupPanel(s, a)
             selected.startsWith("emu:") -> {
                 val e = s.emulators.firstOrNull { "emu:${it.id}" == selected }
                 if (e == null) Note("Not installed.") else {
-                    Rise(0) { Eyebrow("Desktop · ${e.system}") }
-                    Rise(1) { Title(e.name) }
-                    Rise(3) {
-                        Actions {
-                            Image(painterResource(e.iconRes), null, modifier = Modifier.size(40.dp))
-                            PrimaryButton("Open ${e.name}", enabled = s.ready && !s.busy) { a.onEmulator(e) }
-                            SecondaryButton("ROMs folder", onClick = a.onRoms)
-                        }
-                    }
-                    Rise(4) { SectionTitle("Games", e.games.size.toString()) }
-                    if (e.games.isEmpty()) Rise(5) {
-                        Note(
-                            if (s.romsDir == null) "Choose a ROMs folder."
-                            else if (e.id == "retroarch") "Browse to /root/ROMs in RetroArch."
-                            else "Add ${e.system} games to ROMs/${e.system.substringBefore(' ')}.",
+                    val pkgId = Library.packageId(e.id)
+                    val pkg = pkgId?.let { id -> s.packages?.firstOrNull { it.id == id } }
+                    Rise(0) {
+                        Text(
+                            "‹ Desktop", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = colors.onSurfaceVariant,
+                            modifier = Modifier.clip(RoundedCornerShape(8.dp)).clickable { onSelect("desktop") }.padding(horizontal = 6.dp, vertical = 4.dp),
                         )
                     }
-                    else Rise(5, Modifier.weight(1f).fillMaxWidth()) {
-                        ArtGrid(e.games.map { g -> Tile(g.name, if (g.art != null) "installed" else g.hostPath.extension.uppercase().ifEmpty { "folder" }, g.art, "rom:${g.hostPath}", e.iconRes) { a.onRom(g) } }, wide = e.games.none { it.art != null })
+                    Rise(1) { Title(e.name) }
+                    if (e.installed) {
+                        Rise(3) {
+                            Actions {
+                                Image(painterResource(e.iconRes), null, modifier = Modifier.size(40.dp))
+                                PrimaryButton("Open ${e.name}", enabled = s.ready && !s.busy) { a.onEmulator(e) }
+                                SecondaryButton("ROMs folder", onClick = a.onRoms)
+                                if (pkg != null) SecondaryButton(
+                                    if (pkg.kind == "appimage") "Remove" else "Forget",
+                                    enabled = s.packageBusyId == null && !s.sessionRunning,
+                                ) { a.onRemovePackage(pkg.id) }
+                            }
+                        }
+                        Rise(4) { SectionTitle("Games", e.games.size.toString()) }
+                        if (e.games.isEmpty()) Rise(5) {
+                            Note(
+                                if (s.romsDir == null) "Choose a ROMs folder."
+                                else if (e.id == "retroarch") "Browse to /root/ROMs in RetroArch."
+                                else "Add ${e.system} games to ROMs/${e.system.substringBefore(' ')}.",
+                            )
+                        }
+                        else Rise(5, Modifier.weight(1f).fillMaxWidth()) {
+                            ArtGrid(e.games.mapIndexed { index, g -> Tile(g.name, if (g.art != null) "installed" else g.hostPath.extension.uppercase().ifEmpty { "folder" }, g.art, "rom:${e.id}:$index", e.iconRes) { onSelect("rom:${e.id}:$index") } }, wide = e.games.none { it.art != null })
+                        }
+                    } else {
+                        if (pkg != null) Rise(2) {
+                            Actions {
+                                Image(painterResource(e.iconRes), null, modifier = Modifier.size(40.dp))
+                                PrimaryButton(
+                                    if (s.packageBusyId == pkg.id) "Installing…" else "Install ${e.name}",
+                                    enabled = s.packageBusyId == null && s.ready && !s.packageCatalogLoading && !s.sessionRunning,
+                                ) { a.onInstallPackage(pkg.id) }
+                                if (s.sessionRunning) Chip("Stop session to install", ok = false)
+                                else if (!s.ready) Chip("Runtime required", ok = false)
+                            }
+                        }
+                        Rise(3) {
+                            Box(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 8.dp)) {
+                                Note(when {
+                                    s.packageCatalogLoading -> "Loading install details…"
+                                    pkg == null -> "Install details are unavailable right now. Try again when the package catalog is reachable."
+                                    !s.ready -> "Install the Linux runtime from Setup before installing desktop apps."
+                                    s.sessionRunning -> "Stop the active session before installing desktop apps."
+                                    pkg.notes.isNotBlank() -> pkg.notes
+                                    else -> "Install ${e.name} into the Linux desktop runtime."
+                                })
+                            }
+                        }
+                        if (s.packageBusyId == pkg?.id) Rise(4) {
+                            val stage = s.packageStage
+                            Text(
+                                if (stage != null && s.packagePercent >= 0) "$stage · ${s.packagePercent}%" else stage ?: "Starting…",
+                                fontSize = 12.sp, color = colors.onSurfaceVariant, modifier = Modifier.padding(bottom = 6.dp),
+                            )
+                            if (s.packagePercent >= 0) LinearProgressIndicator(progress = { s.packagePercent / 100f }, modifier = Modifier.fillMaxWidth().height(4.dp))
+                            else LinearProgressIndicator(modifier = Modifier.fillMaxWidth().height(4.dp))
+                        }
+                        if (pkg?.kind == "tar") Rise(5) { Note("Forgetting this package hides it from Desktop; its files remain in the Linux runtime.") }
                     }
                 }
             }
@@ -664,7 +631,15 @@ private fun Content(s: FrontEndState, selected: String, a: FrontEndActions, modi
                 val pair = romFor(s, selected)
                 if (pair == null) Note("That game is gone from the ROMs folder.") else {
                     val (e, g) = pair
-                    Rise(0) { Eyebrow("Desktop · ${e.name}") }
+                    Rise(0) {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                            Text(
+                                "‹ ${e.name}", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = colors.onSurfaceVariant,
+                                modifier = Modifier.clip(RoundedCornerShape(8.dp)).clickable { onSelect("emu:${e.id}") }.padding(horizontal = 6.dp, vertical = 4.dp),
+                            )
+                            Eyebrow("Desktop · ${e.system}")
+                        }
+                    }
                     Rise(1) { Title(g.name) }
                     Rise(2) {
                         Row {
@@ -684,12 +659,72 @@ private fun Content(s: FrontEndState, selected: String, a: FrontEndActions, modi
                     if (others.isNotEmpty()) {
                         Rise(3) { SectionTitle("Also in ${e.name}", null) }
                         Rise(4, Modifier.weight(1f).fillMaxWidth()) {
-                            ArtGrid(others.map { x -> Tile(x.name, if (x.art != null) "installed" else x.hostPath.extension.uppercase().ifEmpty { "folder" }, x.art, "rom:${x.hostPath}", e.iconRes) { a.onRom(x) } }, wide = others.none { it.art != null })
+                            ArtGrid(others.map { x ->
+                                val index = e.games.indexOf(x)
+                                Tile(x.name, if (x.art != null) "installed" else x.hostPath.extension.uppercase().ifEmpty { "folder" }, x.art, "rom:${e.id}:$index", e.iconRes) { onSelect("rom:${e.id}:$index") }
+                            }, wide = others.none { it.art != null })
                         }
                     }
                 }
             }
             else -> Note("Select an item.")
+        }
+    }
+}
+
+@Composable
+private fun SetupPanel(s: FrontEndState, a: FrontEndActions) {
+    val host = rememberMenuHost()
+    val runtime = when {
+        s.busy -> "Working…"
+        !s.ready -> "Install"
+        s.available != null && s.available != s.installed -> "Update"
+        else -> "Manage"
+    }
+    Rise(0, Modifier.fillMaxSize()) {
+        Column(modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(bottom = 24.dp)) {
+                Rise(0) { Eyebrow("Setup") }
+                Rise(1) { Title("Setup") }
+                SettingsGroup("Launcher tools") {
+                    ActionRow("Files", "Browse and manage files", "Open", a.onFiles)
+                    ActionRow("Compatibility tools", "Install ARM64 Proton builds", "Manage", a.onProtons)
+                    ActionRow("Performance", "CPU core assignment", "Configure", a.onPerformance)
+                    ActionRow("ROMs folder", s.romsDir ?: "Choose where emulator games are stored", "Choose", a.onRoms)
+                }
+                SettingsGroup("Session") {
+                    SettingsRow("Frame generation", "Select the frame generation mode") {
+                        Box {
+                            ValueChip(s.frameGenLabel, host.open == "fg") { host.open = if (host.open == "fg") null else "fg" }
+                            AnchoredMenu(host.open == "fg", onDismiss = { if (host.open == "fg") host.open = null }, title = "Frame generation") {
+                                val need = if (s.lsfgReady) null else "Install Lossless Scaling in Steam"
+                                MenuItem("Off", checked = s.frameGenEngine == FrameGen.ENGINE_OFF) { a.onFrameGenPick(FrameGen.ENGINE_OFF, 2); host.open = null }
+                                for (m in 2..4) MenuItem("Win-FG ${m}×", checked = s.frameGenEngine == FrameGen.ENGINE_WINFG && s.frameGenMultiplier == m) { a.onFrameGenPick(FrameGen.ENGINE_WINFG, m); host.open = null }
+                                for (m in 2..4) MenuItem("LSFG ${m}×", checked = s.frameGenEngine == FrameGen.ENGINE_LSFG && s.frameGenMultiplier == m, enabled = s.lsfgReady, detail = need) { a.onFrameGenPick(FrameGen.ENGINE_LSFG, m); host.open = null }
+                            }
+                        }
+                    }
+                    SettingsRow("Session logs", "${if (s.logsEnabled) "Enabled" else "Disabled"} · logs are saved after each session") {
+                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            SecondaryButton(if (s.logsEnabled) "Turn off" else "Turn on") { a.onLogs() }
+                            SecondaryButton("Share latest") { a.onShareLogs() }
+                        }
+                    }
+                    SettingsRow("Offline mode", s.offlineAccount?.let { if (s.offline) "Enabled for $it" else "Signed in as $it" } ?: "Sign in to Steam first") {
+                        SecondaryButton(if (s.offline) "Turn off" else "Turn on", enabled = s.offlineAccount != null) { a.onOffline() }
+                    }
+                }
+                SettingsGroup("Application") {
+                    ActionRow("Linux runtime", "${s.installed ?: "Not installed"}${if (s.available != null && s.available != s.installed) " · update available" else ""}", runtime, a.onRuntime)
+                    SettingsRow("Theme", "Choose the launcher appearance") {
+                        Box {
+                            ValueChip(Themes.byId(s.theme).label, host.open == "theme") { host.open = if (host.open == "theme") null else "theme" }
+                            AnchoredMenu(host.open == "theme", onDismiss = { if (host.open == "theme") host.open = null }, title = "Theme") {
+                                for (t in Themes.all) MenuItem(t.label, checked = s.theme == t.id) { a.onTheme(t.id); host.open = null }
+                            }
+                        }
+                    }
+                    ActionRow("Default Home app", s.defaultHomeLabel ?: "Choose a Home app", "Choose", a.onHomeApp)
+                }
         }
     }
 }

@@ -14,16 +14,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 
 @Composable
-fun EmulatorHelpDialog(onDismiss: () -> Unit) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Emulators") },
-        text = { Text("Put games in /root/ROMs. Install RPCS3 firmware from File > Install Firmware.") },
-        confirmButton = { TextButton(onClick = onDismiss) { Text("OK") } },
-    )
-}
-
-@Composable
 fun ConfirmDialog(title: String, text: String, confirm: String, onConfirm: () -> Unit, onDismiss: () -> Unit) {
     AlertDialog(
         onDismissRequest = onDismiss,

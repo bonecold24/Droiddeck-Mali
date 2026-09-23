@@ -159,7 +159,6 @@ class DrawerActions(
     val onKeyboard: () -> Unit,
     val onSteamMenu: (() -> Unit)?,
     val onQam: (() -> Unit)?,
-    val onProtons: () -> Unit,
     val onOsc: (String) -> Unit,
     val onTouch: (String) -> Unit,
     val onShape: (String) -> Unit,
@@ -331,7 +330,6 @@ fun SessionDrawer(open: Boolean, a: DrawerActions) {
                         host, "fex", "FEX preset", null,
                         FexPreset.all.map { it.id to it.label }, a.fexPreset, note = FexPreset.byId(a.fexPreset).detail, onPick = a.onFexPreset,
                     )
-                    if (a.steam) ActionRow("Compatibility tools", null, "Manage") { host.open = null; a.onProtons() }
                 }
 
                 Spacer(Modifier.height(18.dp))

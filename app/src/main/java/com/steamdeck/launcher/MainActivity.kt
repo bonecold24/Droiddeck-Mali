@@ -18,7 +18,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
-import com.steamdeck.launcher.core.FileUtils
 import com.steamdeck.launcher.gpu.FrameGen
 import com.steamdeck.launcher.gpu.LinuxVulkanDriver
 import com.steamdeck.launcher.gpu.LinuxVulkanDriverManager
@@ -28,13 +27,12 @@ import com.steamdeck.launcher.runtime.LinuxRuntime
 import com.steamdeck.launcher.runtime.DesktopCatalog
 import com.steamdeck.launcher.runtime.LinuxRuntimeInstaller
 import com.steamdeck.launcher.session.SessionService
-import com.steamdeck.launcher.ui.DesktopAppsPage
 import com.steamdeck.launcher.ui.PackageRow
 import com.steamdeck.launcher.session.OfflineMode
 import com.steamdeck.launcher.session.ProtonExtras
 import com.steamdeck.launcher.session.SessionLogShare
 import com.steamdeck.launcher.session.SessionPrefs
-import com.steamdeck.launcher.ui.ProtonDialog
+import com.steamdeck.launcher.ui.ProtonPage
 import com.steamdeck.launcher.ui.ProtonRow
 import com.steamdeck.launcher.core.CpuCores
 import com.steamdeck.launcher.ui.CoreRow
@@ -81,9 +79,9 @@ class MainActivity : ComponentActivity() {
     private var showFrameGen by mutableStateOf(false)
     private var showCredits by mutableStateOf(false)
     private var showProtons by mutableStateOf(false)
-    private var showApps by mutableStateOf(false)
-    private var catalog by mutableStateOf<List<DesktopCatalog.Entry>?>(emptyList())
-    private var packageRows by mutableStateOf<List<PackageRow>?>(emptyList())
+    private var catalog by mutableStateOf<List<DesktopCatalog.Entry>?>(null)
+    private var catalogLoading by mutableStateOf(false)
+    private var packageRows by mutableStateOf<List<PackageRow>?>(null)
     private var pkgId by mutableStateOf<String?>(null)
     private var pkgStage by mutableStateOf<String?>(null)
     private var pkgPercent by mutableIntStateOf(-1)
@@ -91,6 +89,9 @@ class MainActivity : ComponentActivity() {
     private var offlineAccount by mutableStateOf<String?>(null)
     private var offline by mutableStateOf(false)
     private var protonRows by mutableStateOf<List<ProtonRow>>(emptyList())
+    private var protonBusyId by mutableStateOf<String?>(null)
+    private var protonStage by mutableStateOf<String?>(null)
+    private var protonPercent by mutableIntStateOf(-1)
     private var showPerformance by mutableStateOf(false)
     private var clientOverride by mutableStateOf(false)
     private var clientCores by mutableStateOf<Set<Int>>(emptySet())
@@ -165,8 +166,6 @@ class MainActivity : ComponentActivity() {
     private val pickGameStorage = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { r ->
         if (r.resultCode == RESULT_OK) InAppFilePicker.pickedPath(r.data)?.let { path -> setGameStorage(path, GameStorage.labelFor(this, path)) }
     }
-    private var emulators by mutableStateOf<List<Pair<String, String>>>(emptyList())
-    private var showEmulatorHelp by mutableStateOf(false)
     private var romsDir by mutableStateOf<String?>(null)
     private var steamGames by mutableStateOf<List<Library.SteamGame>>(emptyList())
     private var emulatorList by mutableStateOf<List<Library.Emulator>>(emptyList())
@@ -183,6 +182,18 @@ class MainActivity : ComponentActivity() {
 
     /** The session surface rises over the front end instead of cutting to it. */
     override fun startActivity(intent: Intent?) {
+        if (intent?.component?.className == SessionActivity::class.java.name) {
+            when {
+                protonBusyId != null || ProtonExtras.installInProgress -> {
+                    android.widget.Toast.makeText(this, "Wait for the compatibility tool install to finish", android.widget.Toast.LENGTH_SHORT).show()
+                    return
+                }
+                pkgStage != null -> {
+                    android.widget.Toast.makeText(this, "Wait for the desktop app install to finish", android.widget.Toast.LENGTH_SHORT).show()
+                    return
+                }
+            }
+        }
         super.startActivity(intent)
         if (intent?.component?.className == SessionActivity::class.java.name) overridePendingTransition(R.anim.session_rise, R.anim.session_hold)
     }
@@ -196,7 +207,7 @@ class MainActivity : ComponentActivity() {
                 val page: (@Composable () -> Unit)? = when {
                     sm != null -> { { ModeSettingsHost(sm) } }
                     showPerformance -> { { PerformanceHost() } }
-                    showApps -> { { AppsHost() } }
+                    showProtons -> { { ProtonHost() } }
                     else -> null
                 }
                 FrontEndScreen(
@@ -209,11 +220,17 @@ class MainActivity : ComponentActivity() {
                         steamGames = steamGames, emulators = emulatorList, running = runningLabel,
                         frameGenEngine = FrameGen.engine(this), frameGenMultiplier = FrameGen.multiplier(this),
                         lsfgReady = LsfgNative.isInstalled(this),
-                        pageKey = sm?.let { "settings:$it" } ?: if (showPerformance) "performance" else if (showApps) "apps" else null,
+                        pageKey = sm?.let { "settings:$it" } ?: if (showPerformance) "performance" else if (showProtons) "protons" else null,
                         theme = theme,
                         isHomeApp = homeAppSelected,
                         defaultHomeLabel = defaultHomeLabel,
                         androidApps = androidApps,
+                        packages = packageRows,
+                        packageCatalogLoading = catalogLoading,
+                        packageBusyId = pkgId,
+                        packageStage = pkgStage,
+                        packagePercent = pkgPercent,
+                        sessionRunning = SessionState.running,
                     ),
                     FrontEndActions(
                         onPlay = { startSession(Intent(this, SessionActivity::class.java)) },
@@ -241,14 +258,15 @@ class MainActivity : ComponentActivity() {
                         onResume = { startActivity(Intent(this, SessionActivity::class.java)) },
                         onSteamSettings = { openModeSettings(SessionService.MODE_STEAM) },
                         onDesktopSettings = { openModeSettings(SessionService.MODE_DESKTOP) },
-                        onApps = { openApps() },
+                        onInstallPackage = { id -> installPackage(id) },
+                        onRemovePackage = { id -> removePackage(id) },
                         onRuntime = { onRuntimeButton() },
                         onFrameGenPick = { engine, multiplier ->
                             FrameGen.set(this, engine, multiplier)
                             frameGenLabel = FrameGen.label(this)
                         },
-                        onProtons = { refreshProtons(); showProtons = true },
-                        onPerformance = { refreshCores(); showApps = false; showPerformance = true },
+                        onProtons = { openProtons() },
+                        onPerformance = { refreshCores(); showProtons = false; showPerformance = true },
                         onRoms = { showRoms = true },
                         onFiles = { startActivity(Intent(this, com.steamdeck.launcher.files.FileManagerActivity::class.java)) },
                         onLogs = {
@@ -268,9 +286,8 @@ class MainActivity : ComponentActivity() {
                             OfflineMode.setEnabled(this, !OfflineMode.enabled(this))
                             offline = OfflineMode.enabled(this)
                         },
-                        onEmulatorHelp = { showEmulatorHelp = true },
                         onCredits = { showCredits = true },
-                        onPageBack = { settingsMode = null; showPerformance = false; showApps = false },
+                        onPageBack = { settingsMode = null; showPerformance = false; showProtons = false },
                         onTheme = { id -> SessionPrefs.setTheme(this, id); theme = id },
                         onHomeApp = { manageHomeApp() },
                         onAndroidApp = { app -> launchAndroidApp(app) },
@@ -285,13 +302,6 @@ class MainActivity : ComponentActivity() {
                     },
                     onClear = { SessionPrefs.setRomsDir(this, ""); romsDir = null; showRoms = false },
                     onDismiss = { showRoms = false },
-                )
-                if (showProtons) ProtonDialog(
-                    rows = protonRows,
-                    onInstall = { id -> ProtonExtras.tools.first { it.id == id }.let { ProtonExtras.queue(this, it) }; refreshProtons() },
-                    onCancel = { id -> ProtonExtras.tools.first { it.id == id }.let { ProtonExtras.unqueue(this, it) }; refreshProtons() },
-                    onRemove = { id -> ProtonExtras.tools.first { it.id == id }.let { ProtonExtras.remove(this, it) }; refreshProtons() },
-                    onDismiss = { showProtons = false },
                 )
                 showNonAdreno?.let { release ->
                     ConfirmDialog(
@@ -310,7 +320,6 @@ class MainActivity : ComponentActivity() {
                     onDismiss = { showRemove = false },
                 )
                 if (showCredits) CreditsDialog { showCredits = false }
-                if (showEmulatorHelp) com.steamdeck.launcher.ui.EmulatorHelpDialog { showEmulatorHelp = false }
             }
         }
 
@@ -340,6 +349,7 @@ class MainActivity : ComponentActivity() {
         // Added games' art (a store lookup for what the folders lack) starts here, not only when
         // the cog opens.
         refreshAddedGames()
+        if (catalog == null) loadDesktopCatalog()
         if (!busy) Thread({ checkCatalog() }, "catalog").start()
     }
 
@@ -366,61 +376,83 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    /** Desktop & apps, in the front end's pane. */
+    private fun loadDesktopCatalog() {
+        if (catalogLoading || catalog != null) return
+        catalogLoading = true
+        Thread({
+            val fetched = DesktopCatalog.fetch()
+            ui.post {
+                catalog = fetched
+                catalogLoading = false
+                refreshPackages()
+            }
+        }, "catalog-desktop").start()
+    }
+
+    private fun openProtons() {
+        settingsMode = null
+        showPerformance = false
+        showProtons = true
+        refreshProtons()
+    }
+
     @Composable
-    private fun AppsHost() {
-        DesktopAppsPage(
-            rows = packageRows, busyId = pkgId, busyStage = pkgStage, busyPercent = pkgPercent,
-            onInstall = { id -> installPackage(id) },
-            onRemove = { id -> catalog?.firstOrNull { it.id == id }?.let { DesktopCatalog.remove(this, it) }; refreshPackages() },
-            onLaunch = { path -> showApps = false; launchProgram(path) },
-            onBack = { showApps = false },
+    private fun ProtonHost() {
+        ProtonPage(
+            rows = protonRows,
+            busyId = protonBusyId,
+            stage = protonStage,
+            percent = protonPercent,
+            runtimeReady = ready,
+            sessionRunning = SessionState.running,
+            onInstall = { id -> installProton(id) },
+            onCancel = { id -> ProtonExtras.tools.firstOrNull { it.id == id }?.let { ProtonExtras.unqueue(this, it) }; refreshProtons() },
+            onRemove = { id -> removeProton(id) },
+            onBack = { showProtons = false },
         )
     }
 
-    private fun openApps() {
-        settingsMode = null
-        showPerformance = false
-        showApps = true
-        if (catalog.isNullOrEmpty()) Thread({
-            val fetched = DesktopCatalog.fetch()
-            ui.post { catalog = fetched; refreshPackages() }
-        }, "catalog-desktop").start()
-        else refreshPackages()
+    private fun installProton(id: String) {
+        val tool = ProtonExtras.tools.firstOrNull { it.id == id } ?: return
+        if (protonBusyId != null || SessionState.running) return
+        ProtonExtras.unqueue(this, tool)
+        protonBusyId = id
+        protonStage = "Starting…"
+        protonPercent = -1
+        Thread({
+            val problem = ProtonExtras.install(this, tool) { label, value ->
+                ui.post { protonStage = label; protonPercent = value }
+            }
+            ui.post {
+                protonBusyId = null
+                protonStage = null
+                protonPercent = -1
+                refreshProtons()
+                if (problem != null) android.widget.Toast.makeText(this, problem, android.widget.Toast.LENGTH_LONG).show()
+            }
+        }, "install-proton-$id").start()
+    }
+
+    private fun removeProton(id: String) {
+        val tool = ProtonExtras.tools.firstOrNull { it.id == id } ?: return
+        if (protonBusyId != null || SessionState.running) return
+        protonBusyId = id
+        protonStage = "Removing ${tool.name}…"
+        protonPercent = -1
+        Thread({
+            ProtonExtras.remove(this, tool)
+            ui.post {
+                protonBusyId = null
+                protonStage = null
+                refreshProtons()
+            }
+        }, "remove-proton-$id").start()
     }
 
     private fun refreshPackages() {
-        packageRows = catalog?.sortedBy { it.tier }?.map {
-            PackageRow(it.id, it.name, it.tier, it.version, FileUtils.sizeToString(it.size), it.notes,
-                DesktopCatalog.installed(this, it.id), launchersOf(it))
-        }
+        packageRows = catalog?.map { PackageRow(it.id, it.kind, it.notes) }
         desktopInstalled = DesktopCatalog.desktopInstalled(this)
-        emulators = installedEmulators()
     }
-
-    /** What a package can start on its own under gamescope; paths inside the runtime. */
-    private fun launchersOf(entry: DesktopCatalog.Entry): List<Pair<String, String>> = launchersOf(entry.id)
-
-    /**
-     * The same, by package id alone, so the main screen's row is known from the install markers
-     * before (or without) the catalog. The AppImage packages launch as /opt/appimages/<id>.AppImage.
-     */
-    private fun launchersOf(id: String): List<Pair<String, String>> = when (id) {
-        "emulators" -> listOf("PPSSPP" to "/usr/bin/PPSSPPSDL", "RetroArch" to "/usr/bin/retroarch")
-        "rpcs3" -> listOf("RPCS3" to "/opt/appimages/rpcs3.AppImage")
-        "pcsx2" -> listOf("PCSX2" to "/opt/appimages/pcsx2.AppImage")
-        "dolphin" -> listOf("Dolphin" to "/opt/appimages/dolphin.AppImage")
-        "duckstation" -> listOf("DuckStation" to "/opt/appimages/duckstation.AppImage")
-        "melonds" -> listOf("melonDS" to "/opt/appimages/melonds.AppImage")
-        "cemu" -> listOf("Cemu" to "/opt/appimages/cemu.AppImage")
-        else -> emptyList()
-    }
-
-    /** Every installed emulator's launcher, for the main screen. */
-    private fun installedEmulators(): List<Pair<String, String>> =
-        listOf("rpcs3", "pcsx2", "dolphin", "duckstation", "melonds", "cemu", "emulators")
-            .filter { DesktopCatalog.installed(this, it) != null }
-            .flatMap { launchersOf(it) }
 
     private fun launchProgram(path: String) {
         startActivity(Intent(this, SessionActivity::class.java)
@@ -430,7 +462,7 @@ class MainActivity : ComponentActivity() {
 
     private fun installPackage(id: String) {
         val entry = catalog?.firstOrNull { it.id == id } ?: return
-        if (pkgStage != null) return
+        if (pkgStage != null || SessionState.running) return
         pkgId = id; pkgStage = "Starting…"; pkgPercent = -1
         Thread({
             val problem = DesktopCatalog.install(this, entry) { stage, percent ->
@@ -440,8 +472,23 @@ class MainActivity : ComponentActivity() {
                 pkgStage = null; pkgId = null
                 if (problem != null) android.widget.Toast.makeText(this, "${entry.name}: $problem", android.widget.Toast.LENGTH_LONG).show()
                 refreshPackages()
+                refresh()
             }
         }, "install-pkg").start()
+    }
+
+    private fun removePackage(id: String) {
+        val entry = catalog?.firstOrNull { it.id == id } ?: return
+        if (pkgStage != null || SessionState.running) return
+        pkgId = id; pkgStage = if (entry.kind == "appimage") "Removing ${entry.name}…" else "Forgetting ${entry.name}…"; pkgPercent = -1
+        Thread({
+            DesktopCatalog.remove(this, entry)
+            ui.post {
+                pkgStage = null; pkgId = null
+                refreshPackages()
+                refresh()
+            }
+        }, "remove-pkg").start()
     }
 
     /** Both driver lists as the dialog shows them, re-read from disk so an import or removal shows at once. */
@@ -565,7 +612,8 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun openModeSettings(mode: String) {
-        showApps = false
+        showPerformance = false
+        showProtons = false
         refreshDrivers()
         resolutionCap = SessionPrefs.resolutionCap(this, mode)
         customResolution = SessionPrefs.customResolution(this, mode)
@@ -702,7 +750,6 @@ class MainActivity : ComponentActivity() {
         frameGenLabel = FrameGen.label(this)
         romsDir = SessionPrefs.romsDir(this).takeIf { it.isNotEmpty() }
         logsEnabled = SessionPrefs.logsEnabled(this)
-        emulators = if (ready) installedEmulators() else emptyList()
         runningLabel = if (SessionState.running) when (SessionState.mode) {
             SessionService.MODE_DESKTOP -> "Desktop"
             SessionService.MODE_RUN -> SessionState.program?.substringAfterLast('/')?.substringBefore('.') ?: "Program"
