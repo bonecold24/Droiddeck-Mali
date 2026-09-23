@@ -263,8 +263,10 @@ fun SessionDrawer(open: Boolean, a: DrawerActions) {
                     }
                 }
 
-                SettingsGroup("Home screen") {
-                    ActionRow("Default Home app", a.defaultHomeLabel?.let { "Currently using $it" }, if (a.isHomeApp) "Change" else "Set") { a.onHomeApp() }
+                if (a.isHomeApp) {
+                    SettingsGroup("Home screen") {
+                        ActionRow("Default Home app", a.defaultHomeLabel?.let { "Currently using $it" }, "Change") { a.onHomeApp() }
+                    }
                 }
 
                 SettingsGroup("Now") {
