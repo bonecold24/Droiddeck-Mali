@@ -4,7 +4,28 @@ Audited 2026-09-23 against Winlator upstream (brunodev85's commits in the Banner
 a text-similarity measure, not by trusting the comments. Everything below is verifiable with
 `git grep -i winlator` (54 lines in 26 files) and a `difflib` ratio against Bruno's originals.
 
-## 1. Code that is measurably Winlator's
+## 0. The right cut: inherited from Winlator, or written fresh inside its forks
+
+WinNative and Bannerlator are Winlator forks, so "from Bannerlator" does not by itself mean
+"Winlator's". What matters is whether a piece came down from Bruno's tree or was written new in
+the forks. Measured against Bruno's originals:
+
+**Inherited from Winlator (through the forks):**
+- the five small app files in §1 (228 lines);
+- the **PulseAudio AAudio sink** in the runtime's audio bundle: Bannerlator's adaptive
+  `module-aaudio-sink` is a fork of Bruno's and Tom Yan's (brunodev85/pulseaudio-android,
+  LGPL-2.1) with adaptive buffer sizing added. It lives in `pulseaudio.tzst` and the `libpulse*`
+  prebuilts, not in app code. This is the one inherited piece that does real work.
+
+**Written fresh in the forks, not Winlator's:**
+- the Wayland compositor and its Vulkan present path (Bannerlator);
+- DirectAudio, both the Wine driver and the relay (Bannerlator);
+- Win-FG (Bannerlator, FSR3-derived) and LSFG Native (WinNative's port of lsfg-vk);
+- the gamescope runtime, the session shim and the fake-evdev layer (WinNative); the proot launch
+  here measures 1.5 % against Winlator's launcher — proot is the shared idea, none of the code is;
+- the file manager, the front end, the settings, the session service (Bannerlator / this app).
+
+## 1. App code that is measurably Winlator's
 
 | File | Bruno's original | Shared text | Lines | What it is |
 |---|---|---|---|---|
@@ -58,7 +79,11 @@ Five files, 228 lines, none above 55 %. Everything else with a Winlator name on 
 
 **To stop using Winlator code at all** — rewrite the five files in §1 (228 lines, an afternoon):
 a callback interface, a start/stop base class, a pad state holder, an env list, a process spawner.
-None of them does anything Winlator-specific; they are the shapes any such app has.
+None of them does anything Winlator-specific; they are the shapes any such app has. Then the one
+real piece: a **new AAudio sink module** for PulseAudio in place of the forked one — a few hundred
+lines of C against the PulseAudio 13 module API (a sink that pulls from PA's render loop into an
+AAudio stream, with the adaptive buffer logic Bannerlator added kept), rebuilt into the audio
+bundle by the existing build-pulseaudio workflow. A day or two, and the part most worth testing.
 
 **To stop being named after it** — rename `cpp/winlator/` (to `framegen/`), fix the two CMake
 files, the log tags, the abstract-socket name (and remove the dead rumble client while at it), and
