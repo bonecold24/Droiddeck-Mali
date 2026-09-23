@@ -243,12 +243,13 @@ private fun Modifier.shine(trigger: Boolean, strength: Float = 0.22f): Modifier 
 @Composable
 fun FrontEndScreen(s: FrontEndState, a: FrontEndActions, page: (@Composable () -> Unit)? = null) {
     var selected by rememberSaveable { mutableStateOf("steam") }
-    var openDesktop by rememberSaveable { mutableStateOf(true) }
-    var openSteam by rememberSaveable { mutableStateOf(true) }
+    // Every category starts folded when the app opens: three headers and their counts, and the
+    // rail unfolds only what the user reaches for. (rememberSaveable keeps a fold across a
+    // rotation, not across launches, which is the point.)
+    var openDesktop by rememberSaveable { mutableStateOf(false) }
+    var openSteam by rememberSaveable { mutableStateOf(false) }
     var openEmu by rememberSaveable { mutableStateOf("") }
-    // Setup starts open only while there is setting up to do (no runtime yet); otherwise it is
-    // folded so the rail is the library.
-    var openSetup by rememberSaveable { mutableStateOf(!s.ready) }
+    var openSetup by rememberSaveable { mutableStateOf(false) }
     val colors = MaterialTheme.colorScheme
     val ctx = LocalContext.current
     BackHandler(enabled = s.pageKey != null && page != null) { a.onPageBack() }
