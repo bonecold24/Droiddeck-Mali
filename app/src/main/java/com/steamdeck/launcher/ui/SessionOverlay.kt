@@ -54,6 +54,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import com.steamdeck.launcher.core.FexPreset
 import com.steamdeck.launcher.gpu.FrameGen
@@ -180,6 +182,27 @@ fun SessionDrawer(open: Boolean, a: DrawerActions) {
                         Text(if (a.steam) "Steam session" else "Desktop session", fontSize = 11.sp, color = colors.onSurfaceVariant)
                     }
                 }
+                if (a.onSteamMenu != null && a.onQam != null) {
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
+                    ) {
+                        OutlinedButton(
+                            onClick = { host.open = null; a.onSteamMenu.invoke() },
+                            modifier = Modifier.weight(1f).height(48.dp),
+                            shape = RoundedCornerShape(12.dp),
+                        ) {
+                            Text("STEAM", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 0.5.sp)
+                        }
+                        OutlinedButton(
+                            onClick = { host.open = null; a.onQam.invoke() },
+                            modifier = Modifier.weight(1f).height(48.dp).semantics { contentDescription = "Open Quick Access Menu" },
+                            shape = RoundedCornerShape(12.dp),
+                        ) {
+                            Text("…", fontSize = 22.sp, fontWeight = FontWeight.SemiBold)
+                        }
+                    }
+                }
 
                 SettingsGroup("Now") {
                     ToggleRow(host, "hud", "Performance HUD", "The frame counter in the corner.", a.hudOn, onChange = a.onHud)
@@ -211,8 +234,6 @@ fun SessionDrawer(open: Boolean, a: DrawerActions) {
                         note = "Auto shows the full pad when no controller is attached. Steam + QAM shows only those two buttons.", onPick = a.onOsc,
                     )
                     ActionRow("Keyboard", "The on-screen keyboard, for a field the client or a program is waiting on.", "Show") { host.open = null; a.onKeyboard() }
-                    if (a.onSteamMenu != null) ActionRow("Steam menu", "The Guide button: the client's own overlay, for a pad without one.", "Open  ◉") { host.open = null; a.onSteamMenu.invoke() }
-                    if (a.onQam != null) ActionRow("Quick Access Menu", "Guide + A opens Steam's Quick Access Menu.", "Open  ⋯") { host.open = null; a.onQam.invoke() }
                 }
 
                 SettingsGroup("Next session") {
