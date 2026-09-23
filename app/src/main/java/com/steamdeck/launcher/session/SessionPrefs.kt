@@ -21,6 +21,13 @@ object SessionPrefs {
         prefs(context).edit().putBoolean("hud", on).apply()
     }
 
+    /** When enabled, a single Back opens Steam QAM and a double Back opens the session menu. */
+    fun backActionsInverted(context: Context): Boolean = prefs(context).getBoolean("backActionsInverted", false)
+
+    fun setBackActionsInverted(context: Context, inverted: Boolean) {
+        prefs(context).edit().putBoolean("backActionsInverted", inverted).apply()
+    }
+
     const val TOUCH_AUTO = "auto"
     const val TOUCH_PAD = "touchpad"
     const val TOUCH_DIRECT = "direct"

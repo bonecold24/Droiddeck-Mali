@@ -146,6 +146,7 @@ class DrawerActions(
     val frameGenMultiplier: Int,
     val lsfgReady: Boolean,
     val oscMode: String,
+    val backActionsInverted: Boolean,
     val touchMode: String,
     val touchAuto: String,
     val shapeMode: String,
@@ -159,6 +160,7 @@ class DrawerActions(
     val onSteamMenu: (() -> Unit)?,
     val onQam: (() -> Unit)?,
     val onOsc: (String) -> Unit,
+    val onBackActionsInverted: (Boolean) -> Unit,
     val onTouch: (String) -> Unit,
     val onShape: (String) -> Unit,
     val onFexPreset: (String) -> Unit,
@@ -295,6 +297,12 @@ fun SessionDrawer(open: Boolean, a: DrawerActions) {
                         host, "osc", "On-screen controls", null,
                         listOf(SessionPrefs.OSC_AUTO to "Auto", SessionPrefs.OSC_ALWAYS to "Always", SessionPrefs.OSC_STEAM_QAM to "Steam + QAM", SessionPrefs.OSC_NEVER to "Never"), a.oscMode,
                         onPick = a.onOsc,
+                    )
+                    if (a.steam) ToggleRow(
+                        host, "back-actions", "Invert Back actions",
+                        if (a.backActionsInverted) "Back once opens Steam QAM; twice opens the session menu."
+                        else "Back once opens the session menu; twice opens Steam QAM.",
+                        a.backActionsInverted, onChange = a.onBackActionsInverted,
                     )
                     ActionRow("Keyboard", null, "Show") { host.open = null; a.onKeyboard() }
                 }

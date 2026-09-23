@@ -85,9 +85,11 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
     private var cursorVisible by mutableStateOf(false)
     private val cursorHide = Runnable { cursorVisible = false }
     private val uiHandler = Handler(Looper.getMainLooper())
+    private var pendingBackAction: Runnable? = null
 
     // Compose reads these; the activity writes them.
     private var drawerOpen by mutableStateOf(false)
+    private var backActionsInverted by mutableStateOf(false)
     private var hudOn by mutableStateOf(true)
     private var frameGenLabel by mutableStateOf("Off")
     private var frameGenEngine by mutableStateOf(FrameGen.ENGINE_OFF)
@@ -200,10 +202,12 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
                         },
                         onKeyboard = { drawerOpen = false; keyboard?.toggle() },
                         onSteamMenu = if (SessionState.mode == SessionService.MODE_STEAM) ({ sendSteamGuide() }) else null,
-                        onQam = if (SessionState.mode == SessionService.MODE_STEAM) ({
-                            drawerOpen = false
-                            padBridge?.triggerQam()
-                        }) else null,
+                        onQam = if (SessionState.mode == SessionService.MODE_STEAM) ({ triggerSteamQam() }) else null,
+                        backActionsInverted = backActionsInverted,
+                        onBackActionsInverted = { inverted ->
+                            SessionPrefs.setBackActionsInverted(this@SessionActivity, inverted)
+                            backActionsInverted = inverted
+                        },
                         onOsc = { v -> SessionPrefs.setOscMode(this@SessionActivity, v); readPrefs(); updateOnScreenControls() },
                         onTouch = { v -> SessionPrefs.setTouchMode(this@SessionActivity, v); readPrefs() },
                         onShape = { v -> SessionPrefs.setShapeMode(this@SessionActivity, v); readPrefs() },
@@ -240,12 +244,11 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
             }
         }
         SessionState.endListener = endListener
-        // Back opens the drawer (and closes it again). Leaving the session running in the
-        // background and ending it are both actions in there, so neither can happen by accident
-        // from a button a game might also be reading.
+        // A single Back opens the session menu; two quick presses/swipes send the Steam QAM chord.
+        // The single action waits out the double-press window so the two actions stay distinct.
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() {
-                drawerOpen = !drawerOpen
+                routeBackAction()
             }
         })
         watchSession()
@@ -264,6 +267,32 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
         }, 90)
     }
 
+    private fun triggerSteamQam() {
+        drawerOpen = false
+        padBridge?.triggerQam()
+    }
+
+    private fun routeBackAction() {
+        pendingBackAction?.let { pending ->
+            uiHandler.removeCallbacks(pending)
+            pendingBackAction = null
+            performBackAction(double = true)
+            return
+        }
+        val pending = Runnable {
+            pendingBackAction = null
+            performBackAction(double = false)
+        }
+        pendingBackAction = pending
+        uiHandler.postDelayed(pending, android.view.ViewConfiguration.getDoubleTapTimeout().toLong())
+    }
+
+    private fun performBackAction(double: Boolean) {
+        val isSteam = SessionState.mode == SessionService.MODE_STEAM
+        val opensQam = isSteam && (double xor backActionsInverted)
+        if (opensQam) triggerSteamQam() else drawerOpen = !drawerOpen
+    }
+
     private fun handleHomeGuideIntent(incoming: Intent?) {
         if (incoming?.action != SessionService.ACTION_HOME_GUIDE) return
         incoming.action = null
@@ -280,6 +309,7 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
         fexPreset = SessionPrefs.fexPreset(this)
         oscMode = SessionPrefs.oscMode(this)
         shapeMode = SessionPrefs.shapeMode(this)
+        backActionsInverted = SessionPrefs.backActionsInverted(this)
     }
 
     // ── Compositor ──────────────────────────────────────────────────────────────────────────
@@ -957,6 +987,8 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
         // Deliberately does NOT end the session: this activity can be destroyed while the user is
         // in another app, and the whole point of the service is that Steam survives that.
         watching = false
+        pendingBackAction?.let(uiHandler::removeCallbacks)
+        pendingBackAction = null
         closeSecondScreen(reset = true)
         if (::hud.isInitialized) hud.stop()
         padBridge?.stop()
