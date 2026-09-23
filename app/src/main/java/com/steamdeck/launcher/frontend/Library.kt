@@ -74,6 +74,9 @@ object Library {
         "melonds" to "melonds", "cemu" to "cemu", "ppsspp" to "emulators", "retroarch" to "emulators",
     )
 
+    /** Desktop catalog package that supplies this emulator. */
+    fun packageId(emulatorId: String): String? = installedIds[emulatorId]
+
     /** Every emulator the app knows, installed or not, with the games its system folder holds. */
     fun emulators(context: Context, installedPackage: (String) -> Boolean): List<Emulator> {
         val romsRoot = SessionPrefs.romsDir(context).takeIf { it.isNotEmpty() }?.let(::File)?.takeIf { it.isDirectory }
