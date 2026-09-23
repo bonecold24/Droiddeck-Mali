@@ -203,14 +203,9 @@ class MainActivity : ComponentActivity() {
                         theme = theme,
                     ),
                     FrontEndActions(
-                        onPlay = {
-                            // No runtime and not an Adreno: the same warning Setup gives, before any download.
-                            val warn = installed == null && !com.steamdeck.launcher.core.DeviceSupport.adreno()
-                            if (warn && available != null) showNonAdreno = available
-                            else startActivity(Intent(this, SessionActivity::class.java))
-                        },
+                        onPlay = { startSession(Intent(this, SessionActivity::class.java)) },
                         onPlayDesktopUi = {
-                            startActivity(Intent(this, SessionActivity::class.java)
+                            startSession(Intent(this, SessionActivity::class.java)
                                 .putExtra(SessionService.EXTRA_STEAM_UI, "desktop"))
                         },
                         onSteamGame = { g ->
@@ -218,7 +213,7 @@ class MainActivity : ComponentActivity() {
                                 .putExtra(SessionService.EXTRA_STEAM_URL, "steam://rungameid/${g.gameId}"))
                         },
                         onDesktop = {
-                            startActivity(Intent(this, SessionActivity::class.java)
+                            startSession(Intent(this, SessionActivity::class.java)
                                 .putExtra(SessionService.EXTRA_MODE, SessionService.MODE_DESKTOP))
                         },
                         onEmulator = { e -> launchProgram(e.program) },
@@ -691,6 +686,13 @@ class MainActivity : ComponentActivity() {
         // Said before the download, not after it; the user may still go ahead.
         if (installed == null && !com.steamdeck.launcher.core.DeviceSupport.adreno()) { showNonAdreno = release; return }
         install(release)
+    }
+
+    /** Starts a session; with no runtime on a non-Adreno, the same warning Setup gives comes first, before any download. */
+    private fun startSession(intent: Intent) {
+        val warn = installed == null && !com.steamdeck.launcher.core.DeviceSupport.adreno()
+        if (warn && available != null) showNonAdreno = available
+        else startActivity(intent)
     }
 
     private fun install(release: LinuxRuntimeInstaller.Release) {

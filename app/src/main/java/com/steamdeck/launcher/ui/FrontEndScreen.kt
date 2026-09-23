@@ -589,7 +589,8 @@ private fun Content(s: FrontEndState, selected: String, a: FrontEndActions, modi
                 Rise(0) { Eyebrow("Desktop") }
                 Rise(3) {
                     Actions {
-                        PrimaryButton("Desktop", enabled = s.ready && !s.busy && s.desktopInstalled, onClick = a.onDesktop)
+                        // Enabled without a runtime or the desktop: the session's loading screen installs them first.
+                        PrimaryButton("Desktop", enabled = !s.busy, onClick = a.onDesktop)
                         SecondaryButton("Desktop & apps", onClick = a.onApps)
                         Cog(a.onDesktopSettings)
                     }
