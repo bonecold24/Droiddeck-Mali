@@ -140,7 +140,6 @@ fun SessionPausedOverlay(onResume: () -> Unit) {
 class DrawerActions(
     val steam: Boolean,
     val isHomeApp: Boolean,
-    val defaultHomeLabel: String?,
     val androidApps: List<HomeApp.LaunchableApp>,
     val hudOn: Boolean,
     val frameGenEngine: String,
@@ -165,7 +164,6 @@ class DrawerActions(
     val onFexPreset: (String) -> Unit,
     val onSecondScreenMode: (SecondScreenMode) -> Unit,
     val onSecondScreenDisplay: (Int) -> Unit,
-    val onHomeApp: () -> Unit,
     val onLaunchAndroidApp: (HomeApp.LaunchableApp) -> Unit,
     val onBackground: () -> Unit,
     val onStop: () -> Unit,
@@ -266,12 +264,6 @@ fun SessionDrawer(open: Boolean, a: DrawerActions) {
                                 ) { a.onLaunchAndroidApp(app) }
                             }
                         }
-                    }
-                }
-
-                if (a.isHomeApp) {
-                    SettingsGroup("Home screen") {
-                        ActionRow("Default Home app", a.defaultHomeLabel?.let { "Currently using $it" }, "Change") { a.onHomeApp() }
                     }
                 }
 

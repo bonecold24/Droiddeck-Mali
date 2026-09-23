@@ -20,7 +20,6 @@ import android.widget.FrameLayout
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.OnBackPressedCallback
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -107,11 +106,7 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
         override fun onDisplayChanged(displayId: Int) = refreshSecondScreenDisplays()
     }
     private var isHomeApp by mutableStateOf(false)
-    private var defaultHomeLabel by mutableStateOf<String?>(null)
     private var androidApps by mutableStateOf<List<HomeApp.LaunchableApp>>(emptyList())
-    private val homeRoleRequest = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) {
-        refreshHomeApp()
-    }
 
     /**
      * Shows the on-screen pad when nothing is plugged in and takes it away the moment something
@@ -187,7 +182,6 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
                     SessionDrawer(drawerOpen, DrawerActions(
                         steam = SessionState.mode == SessionService.MODE_STEAM,
                         isHomeApp = isHomeApp,
-                        defaultHomeLabel = defaultHomeLabel,
                         androidApps = androidApps,
                         hudOn = hudOn,
                         frameGenEngine = frameGenEngine, frameGenMultiplier = frameGenMultiplier,
@@ -216,7 +210,6 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
                         onFexPreset = { v -> SessionPrefs.setFexPreset(this@SessionActivity, v); readPrefs() },
                         onSecondScreenMode = ::selectSecondScreenMode,
                         onSecondScreenDisplay = ::selectSecondScreenDisplay,
-                        onHomeApp = ::manageHomeApp,
                         onLaunchAndroidApp = { app ->
                             drawerOpen = false
                             try {
@@ -260,14 +253,7 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
 
     private fun refreshHomeApp() {
         isHomeApp = HomeApp.isDefault(this)
-        defaultHomeLabel = HomeApp.defaultLabel(this)
         androidApps = if (isHomeApp) HomeApp.launchableApps(this) else emptyList()
-    }
-
-    private fun manageHomeApp() {
-        val request = HomeApp.roleRequestIntent(this)
-        if (request != null) homeRoleRequest.launch(request)
-        else HomeApp.openSystemHomeSettings(this)
     }
 
     private fun sendSteamGuide() {
