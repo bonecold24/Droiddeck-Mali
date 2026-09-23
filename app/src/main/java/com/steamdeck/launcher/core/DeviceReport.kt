@@ -147,6 +147,7 @@ object DeviceReport {
         k("Skip xalia", SessionPrefs.noXalia(context))
         k("proot without seccomp", SessionPrefs.prootNoSeccomp(context))
         k("DirectAudio for games", SessionPrefs.directAudio(context))
+        k("Client audio", if (SessionPrefs.clientDirectAudio(context)) "DirectAudio" else "classic")
         k("Microphone", SessionPrefs.micEnabled(context))
         k("On-screen controls", SessionPrefs.oscMode(context))
         k("Touch mode", SessionPrefs.touchMode(context))

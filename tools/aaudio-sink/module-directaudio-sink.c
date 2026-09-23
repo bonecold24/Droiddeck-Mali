@@ -55,7 +55,8 @@ PA_MODULE_USAGE(
         "sink_properties=<properties for the sink> "
         "volume=<initial volume, linear, 1.0 = full> "
         "performance_mode=<0 none, 1 low latency, 2 power saving> "
-        "adaptive=<let the relay grow its buffer after underruns: 0 or 1>");
+        "adaptive=<let the relay grow its buffer after underruns: 0 or 1> "
+        "buffer_ms=<device buffer the relay starts with, in ms; rounded up to whole bursts>");
 
 #define DEFAULT_SINK_NAME "DirectAudio"
 #define RECONNECT_USEC (500 * PA_USEC_PER_MSEC)
@@ -63,9 +64,18 @@ PA_MODULE_USAGE(
 #define STATS_EVERY_USEC (30 * PA_USEC_PER_SEC)
 /* Never queue more than this ahead of the relay's target, whatever it asks for. */
 #define MAX_AHEAD_MS 250
+/* Always keep at least this much queued. The relay starts its target at two bursts (8 ms), which
+ * a producer inside proot misses while the client is loading: two underruns in the first seconds
+ * on the FIT, steady stutter on a slower phone. 40 ms of slack costs 40 ms of latency at most. */
+#define MIN_AHEAD_MS 40
+/* The device buffer asked of the relay. Its own default is 12 ms rounded up to whole bursts: three
+ * 4 ms bursts on a device that grants a fast stream, but ONE 20 ms burst where Android grants a
+ * legacy one (an AYN Thor, Android 13), and a single burst has nothing to cover a late callback.
+ * 24 ms is two bursts there, Android's recommended minimum; the relay still grows it on xruns. */
+#define DEFAULT_BUFFER_MS 24
 
 static const char* const valid_modargs[] = {
-    "socket", "sink_name", "sink_properties", "volume", "performance_mode", "adaptive", NULL
+    "socket", "sink_name", "sink_properties", "volume", "performance_mode", "adaptive", "buffer_ms", NULL
 };
 
 struct userdata {
@@ -80,6 +90,7 @@ struct userdata {
     char *socket_path;
     int perf;
     bool adaptive;
+    uint32_t buffer_ms;
     pa_sample_spec ss;
     size_t frame_size;
 
@@ -91,6 +102,7 @@ struct userdata {
     pa_usec_t offline_at;
     pa_usec_t stats_at;
     uint32_t underruns_reported;
+    pa_usec_t settled_at;
 };
 
 static void disconnect_relay(struct userdata *u) {
@@ -132,6 +144,7 @@ static int connect_relay(struct userdata *u) {
     hello.version = DA_RELAY_VERSION;
     hello.flags = u->adaptive ? DA_HELLO_ADAPTIVE : 0;
     hello.perf = u->perf;
+    hello.target_ms = (int32_t) u->buffer_ms;
     hello.pid = (int32_t) getpid();
     pa_snprintf(hello.name, sizeof(hello.name), "pulseaudio");
     if (pa_loop_write(u->fd, &hello, sizeof(hello), NULL) != (ssize_t) sizeof(hello))
@@ -177,9 +190,10 @@ static int connect_relay(struct userdata *u) {
     if (u->ring->rate != u->ss.rate)
         pa_log("directaudio-sink: the relay's ring runs at %u Hz, the sink at %u; expect resampling artefacts", u->ring->rate, u->ss.rate);
     u->stats_at = pa_rtclock_now();
+    u->settled_at = u->stats_at + 10 * PA_USEC_PER_SEC;
     u->underruns_reported = u->ring->underruns;
-    pa_log("directaudio-sink: connected to the relay: %d Hz, burst %d, device buffer %d frames, ring %d frames, target %d",
-           ack.rate, ack.burst, ack.buf_frames, ack.out_cap_frames, (int) u->ring->target_frames);
+    pa_log("directaudio-sink: connected to the relay: %d Hz, burst %d, device buffer %d frames (asked %u ms), ring %d frames, target %d",
+           ack.rate, ack.burst, ack.buf_frames, u->buffer_ms, ack.out_cap_frames, (int) u->ring->target_frames);
     return 0;
 
 fail:
@@ -239,6 +253,8 @@ static int service_ring(struct userdata *u) {
         return -1;
     }
     target = (uint32_t) (r->target_frames > 0 ? r->target_frames : 2 * u->burst);
+    if (target < u->ss.rate / 1000 * MIN_AHEAD_MS)
+        target = u->ss.rate / 1000 * MIN_AHEAD_MS;
     if (target > (uint32_t) (u->ss.rate / 1000 * MAX_AHEAD_MS))
         target = (uint32_t) (u->ss.rate / 1000 * MAX_AHEAD_MS);
     avail = da_ring_avail(r);
@@ -247,6 +263,12 @@ static int service_ring(struct userdata *u) {
         uint32_t want = PA_MIN(target - avail, space);
         if (want > 0)
             produce(u, want);
+    }
+    /* Once, ten seconds in: what the relay's buffer has settled at, so a session log shows it. */
+    if (u->settled_at && pa_rtclock_now() >= u->settled_at) {
+        pa_log("directaudio-sink: after 10 s: device buffer %d frames, ring target %d, relay underruns %u",
+               (int) r->hw_buf_frames, (int) r->target_frames, r->underruns);
+        u->settled_at = 0;
     }
     if (r->underruns != u->underruns_reported && pa_rtclock_now() - u->stats_at >= STATS_EVERY_USEC) {
         pa_log("directaudio-sink: relay reports %u underrun(s), target %d frames, device buffer %d", r->underruns, (int) r->target_frames, (int) r->hw_buf_frames);
@@ -333,7 +355,7 @@ int pa__init(pa_module *m) {
     pa_sink_new_data data;
     pa_channel_map map;
     pa_cvolume volume;
-    uint32_t perf = 1;
+    uint32_t perf = 1, buffer_ms = DEFAULT_BUFFER_MS;
     double linear_volume = 1.0;
     bool adaptive = true;
     const char *path;
@@ -352,6 +374,10 @@ int pa__init(pa_module *m) {
         pa_log("performance_mode must be 0, 1 or 2");
         goto fail;
     }
+    if (pa_modargs_get_value_u32(ma, "buffer_ms", &buffer_ms) < 0 || buffer_ms > 200) {
+        pa_log("buffer_ms must be between 0 and 200");
+        goto fail;
+    }
     if (pa_modargs_get_value_boolean(ma, "adaptive", &adaptive) < 0) {
         pa_log("adaptive must be 0 or 1");
         goto fail;
@@ -368,6 +394,7 @@ int pa__init(pa_module *m) {
     u->socket_path = pa_xstrdup(path);
     u->perf = (int) perf;
     u->adaptive = adaptive;
+    u->buffer_ms = buffer_ms;
     /* The ring's format, fixed by the relay: float stereo at 48 kHz. */
     u->ss.format = PA_SAMPLE_FLOAT32NE;
     u->ss.rate = DA_RING_RATE;

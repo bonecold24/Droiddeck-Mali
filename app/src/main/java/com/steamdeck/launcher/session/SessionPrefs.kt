@@ -69,17 +69,35 @@ object SessionPrefs {
     }
 
     /**
-     * DirectAudio for the games the client launches: Wine's audio driver inside them replaced by
-     * ours, which talks to a helper on this side. The client itself keeps PulseAudio either way.
+     * The Steam client's own sound through the DirectAudio relay instead of the classic AAudio
+     * sink. Off by default: on an AYN Thor (Android 13, 20 ms bursts) the relay path stayed choppy
+     * where the classic sink - the one 0.1.5 shipped - was fine.
      */
-    fun directAudio(context: Context): Boolean = prefs(context).getBoolean("directAudio", false)
+    fun clientDirectAudio(context: Context): Boolean = prefs(context).getBoolean("clientDirectAudio", false)
+
+    fun setClientDirectAudio(context: Context, on: Boolean) {
+        prefs(context).edit().putBoolean("clientDirectAudio", on).apply()
+    }
+
+    /**
+     * DirectAudio for games: their Wine audio driver talks to the relay helper on this side. On
+     * unless the user turned it off.
+     */
+    fun directAudio(context: Context): Boolean = prefs(context).getBoolean("directAudio", true)
 
     fun setDirectAudio(context: Context, on: Boolean) {
         prefs(context).edit().putBoolean("directAudio", on).apply()
     }
 
-    /** The microphone, its own opt-in: the helper opens an input stream only when asked. */
-    fun micEnabled(context: Context): Boolean = prefs(context).getBoolean("mic", false)
+    /** The microphone for voice chat, on unless turned off; used only once RECORD_AUDIO is granted. */
+    fun micEnabled(context: Context): Boolean = prefs(context).getBoolean("mic", true)
+
+    /** Whether the app has already asked for the microphone once at start-up. */
+    fun micAsked(context: Context): Boolean = prefs(context).getBoolean("micAsked", false)
+
+    fun setMicAsked(context: Context) {
+        prefs(context).edit().putBoolean("micAsked", true).apply()
+    }
 
     fun setMicEnabled(context: Context, on: Boolean) {
         prefs(context).edit().putBoolean("mic", on).apply()

@@ -32,6 +32,7 @@ import com.steamdeck.launcher.ui.DesktopAppsDialog
 import com.steamdeck.launcher.ui.PackageRow
 import com.steamdeck.launcher.session.OfflineMode
 import com.steamdeck.launcher.session.ProtonExtras
+import com.steamdeck.launcher.session.SessionLogShare
 import com.steamdeck.launcher.session.SessionPrefs
 import com.steamdeck.launcher.ui.ProtonDialog
 import com.steamdeck.launcher.ui.ProtonRow
@@ -99,6 +100,7 @@ class MainActivity : ComponentActivity() {
     private var prootNoSeccomp by mutableStateOf(false)
     private var phantomWarning by mutableStateOf<String?>(null)
     private var directAudio by mutableStateOf(false)
+    private var clientDirectAudio by mutableStateOf(false)
     private var mic by mutableStateOf(false)
     private var linuxRows by mutableStateOf<List<DriverRow>>(emptyList())
     private var linuxSteam by mutableStateOf("")
@@ -240,6 +242,15 @@ class MainActivity : ComponentActivity() {
                             SessionPrefs.setLogsEnabled(this, !SessionPrefs.logsEnabled(this))
                             logsEnabled = SessionPrefs.logsEnabled(this)
                         },
+                        onShareLogs = {
+                            Thread({
+                                val zip = runCatching { SessionLogShare.zipLatest(this) }.getOrNull()
+                                ui.post {
+                                    if (zip == null) android.widget.Toast.makeText(this, "No session logs yet: run a session first.", android.widget.Toast.LENGTH_LONG).show()
+                                    else startActivity(SessionLogShare.shareIntent(this, zip))
+                                }
+                            }, "share-logs").start()
+                        },
                         onOffline = {
                             OfflineMode.setEnabled(this, !OfflineMode.enabled(this))
                             offline = OfflineMode.enabled(this)
@@ -298,9 +309,18 @@ class MainActivity : ComponentActivity() {
         // The session's logs land in Downloads so a failed run can be handed over as a folder
         // rather than dug out of app-private storage. targetSdk 28 means the old permission still
         // grants exactly that.
+        val wanted = ArrayList<String>()
         if (checkSelfPermission(Manifest.permission.WRITE_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED) {
-            requestPermissions(arrayOf(Manifest.permission.WRITE_EXTERNAL_STORAGE), 1)
+            wanted.add(Manifest.permission.WRITE_EXTERNAL_STORAGE)
         }
+        // The microphone is on by default; ask once, with the storage prompt, so voice chat works
+        // without a trip to the settings. A refusal is not asked again - the toggle asks when used.
+        if (SessionPrefs.micEnabled(this) && !SessionPrefs.micAsked(this)
+            && checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+            wanted.add(Manifest.permission.RECORD_AUDIO)
+            SessionPrefs.setMicAsked(this)
+        }
+        if (wanted.isNotEmpty()) requestPermissions(wanted.toTypedArray(), 1)
         // A session folder left without its ending - the process was killed - gets it now.
         if (!SessionState.running) Thread({ SessionArtifacts.finishAbandoned(this) }, "finish-abandoned").start()
     }
@@ -394,6 +414,7 @@ class MainActivity : ComponentActivity() {
                 suspendPolicy = suspendPolicy,
                 oscMode = if (mode == SessionService.MODE_STEAM) oscMode else null,
                 directAudio = if (mode == SessionService.MODE_STEAM) directAudio else null,
+                clientDirectAudio = clientDirectAudio,
                 mic = if (mode == SessionService.MODE_STEAM) mic else null,
                 renderer = if (mode == SessionService.MODE_DESKTOP) renderer else null,
                 gameStorage = if (mode == SessionService.MODE_STEAM) gameStorage else null,
@@ -418,6 +439,7 @@ class MainActivity : ComponentActivity() {
                 onSuspendPolicy = { policy -> SessionPrefs.setSuspendPolicy(this, mode, policy); suspendPolicy = policy },
                 onOsc = { o -> SessionPrefs.setOscMode(this, o); oscMode = o },
                 onDirectAudio = { on -> SessionPrefs.setDirectAudio(this, on); directAudio = on },
+                onClientDirectAudio = { on -> SessionPrefs.setClientDirectAudio(this, on); clientDirectAudio = on },
                 onMic = { on ->
                     SessionPrefs.setMicEnabled(this, on)
                     mic = on
@@ -509,6 +531,7 @@ class MainActivity : ComponentActivity() {
         suspendPolicy = SessionPrefs.suspendPolicy(this, mode)
         oscMode = SessionPrefs.oscMode(this)
         directAudio = SessionPrefs.directAudio(this)
+        clientDirectAudio = SessionPrefs.clientDirectAudio(this)
         mic = SessionPrefs.micEnabled(this)
         renderer = SessionPrefs.desktopRenderer(this)
         gameStorage = SessionPrefs.gameStorage(this)

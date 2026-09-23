@@ -30,6 +30,7 @@ class ModeSettings(
     /** Steam only. */
     val oscMode: String?,
     val directAudio: Boolean?,
+    val clientDirectAudio: Boolean = false,
     val mic: Boolean?,
     val renderer: String?,
     val gameStorage: String? = null,
@@ -61,6 +62,7 @@ class ModeSettingsActions(
     val onSuspendPolicy: (String) -> Unit,
     val onOsc: (String) -> Unit,
     val onDirectAudio: (Boolean) -> Unit,
+    val onClientDirectAudio: (Boolean) -> Unit = {},
     val onMic: (Boolean) -> Unit,
     val onRenderer: (String) -> Unit,
     val onGameStorage: (path: String, label: String) -> Unit = { _, _ -> },
@@ -193,7 +195,12 @@ fun ModeSettingsPage(s: ModeSettings, a: ModeSettingsActions) {
             )
         }
         if (steam && s.directAudio != null && s.mic != null) SettingsGroup("Audio") {
-            ToggleRow(host, "da", "DirectAudio", "Bypasses PulseAudio for lower latency, for games and the Steam client.", s.directAudio, onChange = a.onDirectAudio)
+            ToggleRow(host, "da", "DirectAudio for games", "Bypasses PulseAudio for lower latency in games.", s.directAudio, onChange = a.onDirectAudio)
+            ChoiceRow(
+                host, "clientAudio", "Steam client audio", "Classic is the AAudio sink from 0.1.5. DirectAudio goes through the relay. Applies next session.",
+                listOf("classic" to "Classic", "directaudio" to "DirectAudio"), if (s.clientDirectAudio) "directaudio" else "classic",
+                onPick = { id -> a.onClientDirectAudio(id == "directaudio") },
+            )
             ToggleRow(host, "mic", "Microphone", "Uses the device microphone for voice chat.", s.mic, onChange = a.onMic)
         }
         if (steam && s.gameStorage != null) SettingsGroup("Game storage") {
