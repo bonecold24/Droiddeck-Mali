@@ -901,6 +901,7 @@ class SessionService : Service() {
         private const val NOTIFICATION_ID = 1001
         const val ACTION_STOP = "com.steamdeck.launcher.STOP_SESSION"
         const val ACTION_RESUME = "com.steamdeck.launcher.RESUME_SESSION"
+        const val ACTION_HOME_GUIDE = "com.steamdeck.launcher.HOME_GUIDE"
         private const val ACTION_ACTIVITY_VISIBLE = "com.steamdeck.launcher.ACTIVITY_VISIBLE"
         private const val ACTION_ACTIVITY_HIDDEN = "com.steamdeck.launcher.ACTIVITY_HIDDEN"
         /** Command lines that can only belong to a session of ours. */
