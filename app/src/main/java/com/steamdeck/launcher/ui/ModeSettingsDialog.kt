@@ -11,13 +11,24 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.steamdeck.launcher.core.FexPreset
 import com.steamdeck.launcher.session.SessionPrefs
 import com.steamdeck.launcher.session.SessionService
 
-class DriverRow(val id: String, val name: String, val detail: String, val removable: Boolean)
+/** [tag] is shown beside the name: [BUNDLED], [DOWNLOADED], [IMPORTED], or "" for Auto / Runtime default. */
+class DriverRow(val id: String, val name: String, val detail: String, val removable: Boolean, val tag: String = "") {
+    companion object {
+        const val BUNDLED = "BUNDLED"
+        const val DOWNLOADED = "DOWNLOADED"
+        const val IMPORTED = "IMPORTED"
+    }
+}
+
+/** A release driver (Banners-Turnip, WinNative) that is not installed yet; [key] is its asset name. */
+class DownloadRow(val key: String, val label: String, val detail: String, val progress: Int? = null)
 
 class ModeSettings(
     val mode: String,
@@ -49,6 +60,13 @@ class ModeSettings(
     val addedGamesDirs: List<String>? = null,
     val addedGames: List<AddedGameRow> = emptyList(),
     val addedGamesArt: Boolean = true,
+    /** Latest Banners-Turnip release: what each driver menu offers to download, and the refresh line. */
+    val linuxDownloads: List<DownloadRow> = emptyList(),
+    val androidDownloads: List<DownloadRow> = emptyList(),
+    val releaseStatus: String = "Not checked yet - tap refresh to look for new drivers",
+    val releaseChecking: Boolean = false,
+    /** A bundled display driver was deleted: the page offers to restore it. */
+    val canRestoreBundled: Boolean = false,
 )
 
 /** One added game as the settings page shows it: its folder, the chosen .exe, the other .exe files it could be. */
@@ -63,6 +81,10 @@ class ModeSettingsActions(
     val onSelectLinux: (String) -> Unit,
     val onImportLinux: () -> Unit,
     val onRemoveLinux: (String) -> Unit,
+    val onRefreshReleases: () -> Unit = {},
+    /** Asset name of the release driver to download. */
+    val onDownloadDriver: (String) -> Unit = {},
+    val onRestoreBundled: () -> Unit = {},
     val onSelectAndroid: (String) -> Unit,
     val onImportAndroid: () -> Unit,
     val onRemoveAndroid: (String) -> Unit,
@@ -89,10 +111,57 @@ class ModeSettingsActions(
 fun ModeSettingsPage(s: ModeSettings, a: ModeSettingsActions) {
     val steam = s.mode == SessionService.MODE_STEAM
     val host = rememberMenuHost()
+    // The two driver lists open as full pages over this one ("rt" = runtime, "panel" = display).
+    // Coming back restores this page as it was left: the same scroll position, and controller focus
+    // on the driver box that opened the page.
+    var driverPage by remember { mutableStateOf<String?>(null) }
+    var returnTo by remember { mutableStateOf<String?>(null) }
+    val pageScroll = androidx.compose.foundation.rememberScrollState()
+    val runtimeChip = remember { androidx.compose.ui.focus.FocusRequester() }
+    val displayChip = remember { androidx.compose.ui.focus.FocusRequester() }
+    val firstChip = remember { androidx.compose.ui.focus.FocusRequester() }
+    fun openDriverPage(key: String) { returnTo = key; driverPage = key }
+    androidx.compose.runtime.LaunchedEffect(driverPage) {
+        if (driverPage == null) {
+            // One frame first: the box has to be laid out before it can take focus. Opened from the
+            // cog, focus starts on the first control (Resolution) so the d-pad works at once; back
+            // from a driver page, it returns to the driver box that opened it.
+            androidx.compose.runtime.withFrameNanos { }
+            val target = when (returnTo) { "rt" -> runtimeChip; "panel" -> displayChip; else -> firstChip }
+            runCatching { target.requestFocus() }
+        }
+    }
+    when (driverPage) {
+        "rt" -> {
+            DriverPage(
+                title = "Runtime driver",
+                hint = (if (steam) "Used by Steam and games." else "Used by desktop apps.") + " Applies next session.",
+                rows = s.linuxRows, selected = s.linuxSelected, downloads = s.linuxDownloads,
+                status = s.releaseStatus, checking = s.releaseChecking, importLabel = "Import Turnip zip…", canRestore = false,
+                onSelect = a.onSelectLinux, onDelete = a.onRemoveLinux, onRefresh = a.onRefreshReleases,
+                onDownload = a.onDownloadDriver, onImport = a.onImportLinux, onRestore = {}, onBack = { driverPage = null },
+            )
+            return
+        }
+        "panel" -> {
+            DriverPage(
+                title = "Display driver",
+                hint = "Used by the compositor in both modes. Restart the app to apply.",
+                rows = s.androidRows, selected = s.androidSelected, downloads = s.androidDownloads,
+                status = s.releaseStatus, checking = s.releaseChecking, importLabel = "Import an AdrenoTools zip…",
+                canRestore = s.canRestoreBundled,
+                onSelect = a.onSelectAndroid, onDelete = a.onRemoveAndroid, onRefresh = a.onRefreshReleases,
+                onDownload = a.onDownloadDriver, onImport = a.onImportAndroid, onRestore = a.onRestoreBundled,
+                onBack = { driverPage = null },
+            )
+            return
+        }
+    }
     SettingsPage(
         host,
         title = if (steam) "Steam session" else "Desktop session",
         onBack = a.onDismiss,
+        scroll = pageScroll,
     ) {
         SettingsGroup("Display") {
             val default = SessionPrefs.defaultResolutionCap(s.mode)
@@ -104,6 +173,7 @@ fun ModeSettingsPage(s: ModeSettings, a: ModeSettingsActions) {
                     .map { (cap, label) -> cap to (if (cap == default) "$label - the default" else label) } +
                     (CUSTOM to (custom?.let { "Custom · ${it.first}×${it.second}" } ?: "Custom…")),
                 if (custom != null) CUSTOM else s.resolutionCap, note = "720p can improve menu responsiveness.",
+                chipModifier = androidx.compose.ui.Modifier.focusRequester(firstChip),
                 onPick = { v -> if (v == CUSTOM) editCustom = true else { a.onCustomResolution(null); a.onResolution(v) } },
             )
             ChoiceRow(
@@ -126,18 +196,18 @@ fun ModeSettingsPage(s: ModeSettings, a: ModeSettingsActions) {
             )
         }
         SettingsGroup("Drivers") {
-            DriverRowMenu(
-                host, "rt", "Runtime driver",
-                (if (steam) "Used by Steam and games." else "Used by desktop apps.") + " Applies next session.",
-                s.linuxRows, s.linuxSelected, importLabel = "Import Turnip zip…",
-                onSelect = a.onSelectLinux, onRemove = a.onRemoveLinux, onImport = a.onImportLinux,
-            )
-            DriverRowMenu(
-                host, "panel", "Display driver",
-                "Used by the compositor in both modes. Restart the app to apply.",
-                s.androidRows, s.androidSelected, importLabel = "Import an AdrenoTools zip…",
-                onSelect = a.onSelectAndroid, onRemove = a.onRemoveAndroid, onImport = a.onImportAndroid,
-            )
+            SettingsRow("Runtime driver", (if (steam) "Used by Steam and games." else "Used by desktop apps.") + " Applies next session.") {
+                ValueChip(
+                    s.linuxRows.firstOrNull { it.id == s.linuxSelected }?.name ?: "Runtime default", open = false,
+                    modifier = androidx.compose.ui.Modifier.focusRequester(runtimeChip),
+                ) { openDriverPage("rt") }
+            }
+            SettingsRow("Display driver", "Used by the compositor in both modes. Restart the app to apply.") {
+                ValueChip(
+                    s.androidRows.firstOrNull { it.id == s.androidSelected }?.name ?: "Auto - picked by GPU", open = false,
+                    modifier = androidx.compose.ui.Modifier.focusRequester(displayChip),
+                ) { openDriverPage("panel") }
+            }
         }
         SettingsGroup(if (steam) "Touch & controls" else "Touch") {
             ChoiceRow(
@@ -255,32 +325,6 @@ fun ModeSettingsPage(s: ModeSettings, a: ModeSettingsActions) {
                 listOf("pixman" to "pixman - software", "gles2" to "gles2", "vulkan" to "vulkan"), s.renderer,
                 note = "GLES2 and Vulkan require a DRM render node, unavailable on most devices.", onPick = a.onRenderer,
             )
-        }
-    }
-}
-
-@Composable
-private fun DriverRowMenu(
-    host: MenuHost, key: String, label: String, hint: String, rows: List<DriverRow>, selected: String, importLabel: String,
-    onSelect: (String) -> Unit, onRemove: (String) -> Unit, onImport: () -> Unit,
-) {
-    val open = host.open == key
-    val colors = MaterialTheme.colorScheme
-    SettingsRow(label, hint, highlighted = open) {
-        androidx.compose.foundation.layout.Box {
-            ValueChip(rows.firstOrNull { it.id == selected }?.name ?: rows.firstOrNull()?.name ?: "-", open) { host.open = if (open) null else key }
-            AnchoredMenu(open, onDismiss = { if (host.open == key) host.open = null }, title = label) {
-                for (row in rows) MenuItem(
-                    row.name, checked = row.id == selected, detail = row.detail.ifEmpty { null },
-                    trailing = if (row.removable) ({
-                        Text(
-                            "✕", fontSize = 12.sp, color = colors.onSurfaceVariant,
-                            modifier = Modifier.size(24.dp).padding(4.dp).clickable { onRemove(row.id); host.open = null },
-                        )
-                    }) else null,
-                ) { onSelect(row.id); host.open = null }
-                MenuItem(importLabel, checked = false) { host.open = null; onImport() }
-            }
         }
     }
 }

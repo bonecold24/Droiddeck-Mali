@@ -29,6 +29,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
@@ -102,9 +103,13 @@ fun AnchoredMenu(open: Boolean, onDismiss: () -> Unit, title: String? = null, no
             exit = fadeOut(Motion.tw(140)) + scaleOut(Motion.tw(140), targetScale = 0.96f, transformOrigin = TransformOrigin(1f, 0f)),
             label = "menu",
         ) {
+            // A long list (a driver menu with its downloads) must not run off the screen: the menu is
+            // capped at most of the window's height and its entries scroll under the fixed title.
+            val maxHeight = (androidx.compose.ui.platform.LocalConfiguration.current.screenHeightDp * 0.86f).dp
             Column(
                 modifier = Modifier
                     .widthIn(min = 220.dp, max = 340.dp)
+                    .heightIn(max = maxHeight)
                     .shadow(24.dp, RowShape, ambientColor = Color.Black, spotColor = Color.Black)
                     .clip(RowShape)
                     .background(pal.surfaceVariant.copy(alpha = 0.95f))
@@ -115,7 +120,7 @@ fun AnchoredMenu(open: Boolean, onDismiss: () -> Unit, title: String? = null, no
                     title.uppercase(), fontSize = 10.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 2.sp, color = colors.onSurfaceVariant,
                     modifier = Modifier.padding(start = 10.dp, top = 6.dp, bottom = 6.dp),
                 )
-                content()
+                Column(Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState())) { content() }
                 if (note != null) {
                     Spacer(Modifier.height(4.dp))
                     Box(Modifier.fillMaxWidth().height(1.dp).background(pal.line))
@@ -160,7 +165,7 @@ fun MenuItem(
 }
 
 @Composable
-fun ValueChip(text: String, open: Boolean, enabled: Boolean = true, onClick: () -> Unit) {
+fun ValueChip(text: String, open: Boolean, enabled: Boolean = true, modifier: Modifier = Modifier, onClick: () -> Unit) {
     val colors = MaterialTheme.colorScheme
     val src = remember { MutableInteractionSource() }
     val hot = src.collectIsFocusedAsState().value || src.collectIsHoveredAsState().value
@@ -169,7 +174,7 @@ fun ValueChip(text: String, open: Boolean, enabled: Boolean = true, onClick: () 
     val rot by animateFloatAsState(if (open) 180f else 0f, Motion.sp(0.6f), label = "chipCaret")
     Row(
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween,
-        modifier = Modifier
+        modifier = modifier
             .widthIn(min = 150.dp)
             .clip(RoundedCornerShape(10.dp))
             .background(colors.surfaceVariant)
@@ -221,12 +226,14 @@ fun SettingsRow(label: String, hint: String?, highlighted: Boolean = false, cont
 fun <T> ChoiceRow(
     host: MenuHost, key: String, label: String, hint: String?,
     options: List<Pair<T, String>>, selected: T, enabled: Boolean = true, note: String? = null,
+    /** For the box itself - a page's FocusRequester for its first control. */
+    chipModifier: Modifier = Modifier,
     onPick: (T) -> Unit,
 ) {
     val open = host.open == key
     SettingsRow(label, hint, highlighted = open) {
         Box {
-            ValueChip(options.firstOrNull { it.first == selected }?.second ?: "-", open, enabled) { host.open = if (open) null else key }
+            ValueChip(options.firstOrNull { it.first == selected }?.second ?: "-", open, enabled, modifier = chipModifier) { host.open = if (open) null else key }
             AnchoredMenu(open, onDismiss = { if (host.open == key) host.open = null }, title = label, note = note) {
                 for ((value, text) in options) MenuItem(text, checked = value == selected) { onPick(value); host.open = null }
             }
@@ -275,16 +282,28 @@ fun SettingsPage(
     onBack: () -> Unit,
     eyebrow: String? = null,
     lede: String? = null,
+    /** A small control at the right of the title (the driver pages' refresh button). */
+    action: (@Composable () -> Unit)? = null,
+    /** Pass one held above the page to keep its scroll position across a page opened over it. */
+    scroll: androidx.compose.foundation.ScrollState? = null,
     content: @Composable ColumnScope.() -> Unit,
 ) {
+    val scrollState = scroll ?: rememberScrollState()
     val colors = MaterialTheme.colorScheme
     val dim by animateFloatAsState(if (host.open != null) 0.6f else 1f, Motion.tw(220), label = "pageDim")
     Column(modifier = Modifier.fillMaxSize().padding(horizontal = 22.dp, vertical = 18.dp)) {
         Rise(0) {
             Row(verticalAlignment = Alignment.CenterVertically) {
+                // Outlined when a controller's focus is on it, like every other control here.
+                val backSrc = remember { MutableInteractionSource() }
+                val backHot = backSrc.collectIsFocusedAsState().value || backSrc.collectIsHoveredAsState().value
                 Text(
-                    "‹  Back", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = colors.onSurfaceVariant,
-                    modifier = Modifier.clip(RoundedCornerShape(8.dp)).clickable(onClick = onBack).padding(horizontal = 6.dp, vertical = 4.dp),
+                    "‹  Back", fontSize = 12.sp, fontWeight = FontWeight.SemiBold,
+                    color = if (backHot) LocalPalette.current.signal else colors.onSurfaceVariant,
+                    modifier = Modifier.clip(RoundedCornerShape(8.dp))
+                        .border(2.dp, if (backHot) LocalPalette.current.signal else Color.Transparent, RoundedCornerShape(8.dp))
+                        .hoverable(backSrc).clickable(interactionSource = backSrc, indication = null, onClick = onBack)
+                        .padding(horizontal = 6.dp, vertical = 4.dp),
                 )
                 if (eyebrow != null) {
                     Spacer(Modifier.width(10.dp))
@@ -292,10 +311,15 @@ fun SettingsPage(
                 }
             }
         }
-        Rise(1) { Title(title) }
+        Rise(1) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(Modifier.weight(1f)) { Title(title) }
+                if (action != null) action()
+            }
+        }
         if (lede != null) Rise(2) { Lede(lede) }
         Rise(3, Modifier.weight(1f).fillMaxWidth()) {
-            Column(modifier = Modifier.fillMaxSize().graphicsLayer { alpha = dim }.verticalScroll(rememberScrollState()).padding(bottom = 24.dp)) { content() }
+            Column(modifier = Modifier.fillMaxSize().graphicsLayer { alpha = dim }.verticalScroll(scrollState).padding(bottom = 24.dp)) { content() }
         }
     }
 }
