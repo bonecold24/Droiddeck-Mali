@@ -147,6 +147,7 @@ class DrawerActions(
 @Composable
 fun SessionDrawer(open: Boolean, a: DrawerActions) {
     val colors = MaterialTheme.colorScheme
+    val pal = LocalPalette.current
     val host = rememberMenuHost()
     val veil by animateFloatAsState(if (open) 1f else 0f, Motion.tw(260), label = "veil")
     if (open || veil > 0.01f) Box(
@@ -163,14 +164,14 @@ fun SessionDrawer(open: Boolean, a: DrawerActions) {
                 modifier = Modifier
                     .fillMaxHeight()
                     .width(340.dp)
-                    .background(Color(0xF7101418))
+                    .background(pal.background.copy(alpha = 0.97f))
                     // The panel swallows its own touches so they do not close it.
                     .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) {}
                     .verticalScroll(rememberScrollState())
                     .padding(horizontal = 14.dp, vertical = 16.dp),
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(start = 4.dp, bottom = 6.dp)) {
-                    Box(modifier = Modifier.size(10.dp).clip(CircleShape).background(Brush.linearGradient(listOf(colors.primary, Color(0xFF7B4DFF)))))
+                    Box(modifier = Modifier.size(10.dp).clip(CircleShape).background(Brush.linearGradient(listOf(colors.primary, pal.primary2))))
                     Spacer(Modifier.width(10.dp))
                     Column {
                         Text("SteamDeck", fontSize = 17.sp, fontWeight = FontWeight.Bold, color = colors.onBackground)

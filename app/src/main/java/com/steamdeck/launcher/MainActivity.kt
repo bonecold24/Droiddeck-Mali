@@ -123,6 +123,7 @@ class MainActivity : ComponentActivity() {
     private var settingsMode by mutableStateOf<String?>(null)
     private var resolutionCap by mutableStateOf(1080)
     private var fexPreset by mutableStateOf("")
+    private var theme by mutableStateOf("paper")
     private var shapeMode by mutableStateOf(SessionPrefs.SHAPE_AUTO)
     private var hdrOn by mutableStateOf(false)
     private var hdrReason by mutableStateOf<String?>(null)
@@ -151,8 +152,9 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        theme = SessionPrefs.theme(this)
         setContent {
-            SteamDeckTheme {
+            SteamDeckTheme(theme) {
                 val sm = settingsMode
                 val page: (@Composable () -> Unit)? = when {
                     sm != null -> { { ModeSettingsHost(sm) } }
@@ -170,6 +172,7 @@ class MainActivity : ComponentActivity() {
                         frameGenEngine = FrameGen.engine(this), frameGenMultiplier = FrameGen.multiplier(this),
                         lsfgReady = LsfgNative.isInstalled(this),
                         pageKey = sm?.let { "settings:$it" } ?: if (showPerformance) "performance" else null,
+                        theme = theme,
                     ),
                     FrontEndActions(
                         onPlay = { startActivity(Intent(this, SessionActivity::class.java)) },
@@ -218,6 +221,7 @@ class MainActivity : ComponentActivity() {
                         onEmulatorHelp = { showEmulatorHelp = true },
                         onCredits = { showCredits = true },
                         onPageBack = { settingsMode = null; showPerformance = false },
+                        onTheme = { id -> SessionPrefs.setTheme(this, id); theme = id },
                     ),
                     page = page,
                 )

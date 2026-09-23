@@ -134,6 +134,8 @@ class FrontEndState(
     val lsfgReady: Boolean = false,
     /** A page shown in the pane instead of the selection ("settings:steam", "settings:lxqt", "performance"), or null. */
     val pageKey: String? = null,
+    /** The colour theme in use (ui/Themes ids). */
+    val theme: String = Themes.PAPER,
 )
 
 class FrontEndActions(
@@ -159,6 +161,7 @@ class FrontEndActions(
     val onCredits: () -> Unit,
     /** Leaves the page in the pane (back key, the rail, or the page's own Back). */
     val onPageBack: () -> Unit = {},
+    val onTheme: (String) -> Unit = {},
 )
 
 // ───────────────────────────── Motion ─────────────────────────────
@@ -177,8 +180,6 @@ internal object Motion {
         if (scale == 0f) snap() else spring(damping, stiffness)
 }
 
-private val Accent2 = Color(0xFF7B4DFF)
-private val Good = Color(0xFF7FD8A0)
 private val Shape10 = RoundedCornerShape(10.dp)
 private val Shape12 = RoundedCornerShape(12.dp)
 
@@ -319,6 +320,7 @@ private fun Rail(
         ) { RunningTile(lastRunning, a.onResume) }
 
         // The rail's selection is one pill that glides between rows; the rows only recolour.
+        val pal = LocalPalette.current
         var navOrigin by remember { mutableStateOf(Offset.Zero) }
         val positions = remember { mutableStateMapOf<String, Rect>() }
         Box(modifier = Modifier.fillMaxWidth().onGloballyPositioned { val o = it.positionInRoot(); if (o != navOrigin) navOrigin = o }) {
@@ -334,9 +336,9 @@ private fun Rail(
                     .offset { IntOffset(x.roundToInt(), y.roundToInt()) }
                     .width(with(density) { w.toDp() }).height(with(density) { h.toDp() })
                     .alpha(alpha)
-                    .graphicsLayer { shadowElevation = 6.dp.toPx(); shape = Shape10; clip = false; ambientShadowColor = colors.primary; spotShadowColor = colors.primary }
+                    .graphicsLayer { shadowElevation = 6.dp.toPx(); shape = Shape10; clip = false; ambientShadowColor = pal.signal; spotShadowColor = pal.signal }
                     .clip(Shape10)
-                    .background(Brush.linearGradient(listOf(colors.primary, Accent2))),
+                    .background(Brush.linearGradient(listOf(colors.primary, pal.primary2))),
             )
             val register: (String, LayoutCoordinates) -> Unit = { key, c ->
                 val o = c.positionInRoot(); val r = Rect(o.x, o.y, o.x + c.size.width, o.y + c.size.height)
@@ -373,7 +375,7 @@ private fun Rail(
             val item: @Composable (String, String?, Int, String?, () -> Unit) -> Unit = { label, value, i, key, act ->
                 NavItem(label, key ?: "x", key != null && selected == key, small = true, tiny = true, muted = true, value = value, i = i, register = register, unregister = unregister) { act() }
             }
-            NavItem("Setup", "x", false, caret = openSetup, count = 9, onClick = onToggleSetup)
+            NavItem("Setup", "x", false, caret = openSetup, count = 10, onClick = onToggleSetup)
             Sub(openSetup) {
                 item("Files", null, 0, null, a.onFiles)
                 item("Desktop & apps", null, 1, null, a.onApps)
@@ -418,6 +420,12 @@ private fun Rail(
                     s.available != null && s.available != s.installed -> "update"
                     else -> "remove"
                 }, 8, null, a.onRuntime)
+                Box {
+                    item("Theme", Themes.byId(s.theme).label, 9, null) { menus.open = "theme" }
+                    AnchoredMenu(menus.open == "theme", onDismiss = { if (menus.open == "theme") menus.open = null }, title = "Theme", note = "The icon's three colours, dealt out three ways. Applies at once.") {
+                        for (t in Themes.all) MenuItem(t.label, checked = s.theme == t.id, detail = t.detail) { a.onTheme(t.id); menus.open = null }
+                    }
+                }
             }
             }
         }
@@ -432,6 +440,7 @@ private fun Rail(
 @Composable
 private fun RunningTile(name: String, onResume: () -> Unit) {
     val colors = MaterialTheme.colorScheme
+    val pal = LocalPalette.current
     val src = remember { MutableInteractionSource() }
     val hot = src.collectIsFocusedAsState().value || src.collectIsHoveredAsState().value
     val shift by animateFloatAsState(if (hot) 3f else 0f, Motion.sp(0.6f), label = "runShift")
@@ -442,14 +451,14 @@ private fun RunningTile(name: String, onResume: () -> Unit) {
         modifier = Modifier.fillMaxWidth().padding(bottom = 6.dp)
             .graphicsLayer { translationX = shift.dp.toPx() }
             .clip(Shape12)
-            .background(Brush.linearGradient(listOf(colors.primary.copy(alpha = 0.22f), Accent2.copy(alpha = 0.10f))))
-            .border(1.dp, colors.primary.copy(alpha = if (hot) 0.8f else 0.35f), Shape12)
+            .background(Brush.linearGradient(listOf(pal.signal.copy(alpha = 0.22f), pal.signal.copy(alpha = 0.06f))))
+            .border(1.dp, pal.signal.copy(alpha = if (hot) 0.8f else 0.35f), Shape12)
             .hoverable(src).clickable(interactionSource = src, indication = LocalIndication.current, onClick = onResume)
             .padding(horizontal = 10.dp, vertical = 9.dp),
     ) {
         Box(modifier = Modifier.size(14.dp), contentAlignment = Alignment.Center) {
-            Box(modifier = Modifier.size(14.dp).graphicsLayer { scaleX = ring; scaleY = ring; alpha = (1.6f - ring) / 1.2f }.border(1.5.dp, Good, CircleShape))
-            Box(modifier = Modifier.size(7.dp).clip(CircleShape).background(Good))
+            Box(modifier = Modifier.size(14.dp).graphicsLayer { scaleX = ring; scaleY = ring; alpha = (1.6f - ring) / 1.2f }.border(1.5.dp, pal.good, CircleShape))
+            Box(modifier = Modifier.size(7.dp).clip(CircleShape).background(pal.good))
         }
         Spacer(Modifier.width(8.dp))
         Column(modifier = Modifier.weight(1f)) {
@@ -462,6 +471,7 @@ private fun RunningTile(name: String, onResume: () -> Unit) {
 /** A sub-list that unfolds; its children stagger in through [NavItem]'s index. */
 @Composable
 private fun Sub(open: Boolean, content: @Composable () -> Unit) {
+    val line = LocalPalette.current.line
     AnimatedVisibility(
         open,
         enter = expandVertically(Motion.tw(420)) + fadeIn(Motion.tw(300, 50)),
@@ -469,7 +479,7 @@ private fun Sub(open: Boolean, content: @Composable () -> Unit) {
     ) {
         Column(
             modifier = Modifier.padding(start = 16.dp).fillMaxWidth()
-                .drawWithContent { drawContent(); drawRect(Color(0xFF26303C), size = size.copy(width = 1.dp.toPx())) }
+                .drawWithContent { drawContent(); drawRect(line, size = size.copy(width = 1.dp.toPx())) }
                 .padding(start = 8.dp),
             verticalArrangement = Arrangement.spacedBy(1.dp),
         ) { content() }
@@ -489,7 +499,7 @@ private fun NavItem(
     val pressed by src.collectIsPressedAsState()
     val fg by animateColorAsState(if (current) colors.onPrimary else if (muted) colors.onSurfaceVariant else colors.onBackground, Motion.tw(280), label = "navFg")
     val sub by animateColorAsState(if (current) colors.onPrimary else colors.onSurfaceVariant, Motion.tw(280), label = "navSub")
-    val ring by animateColorAsState(if (focused) colors.primary else Color.Transparent, Motion.tw(180), label = "navRing")
+    val ring by animateColorAsState(if (focused) LocalPalette.current.signal else Color.Transparent, Motion.tw(180), label = "navRing")
     val scale by animateFloatAsState(if (pressed) 0.98f else 1f, Motion.sp(0.5f, Spring.StiffnessMedium), label = "navScale")
     val rot by animateFloatAsState(if (caret == true) 90f else 0f, Motion.sp(0.6f), label = "caret")
     if (key != "x") DisposableEffect(key) { onDispose { unregister?.invoke(key) } }
@@ -516,7 +526,7 @@ private fun NavItem(
         if (value != null) Text(value, fontSize = 11.sp, color = colors.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
         if (count != null) Text(
             count.toString(), fontSize = 11.sp, color = sub,
-            modifier = Modifier.clip(RoundedCornerShape(99.dp)).background(if (current) Color.White.copy(alpha = 0.28f) else colors.background).padding(horizontal = 7.dp, vertical = 2.dp),
+            modifier = Modifier.clip(RoundedCornerShape(99.dp)).background(if (current) colors.onPrimary.copy(alpha = 0.16f) else colors.background).padding(horizontal = 7.dp, vertical = 2.dp),
         )
     }
 }
@@ -703,12 +713,12 @@ private class Tile(val title: String, val sub: String, val art: File?, val key: 
 
 @Composable
 internal fun Eyebrow(t: String) {
-    val colors = MaterialTheme.colorScheme
+    val pal = LocalPalette.current
     val rule = remember { Animatable(0f) }
     LaunchedEffect(Unit) { rule.animateTo(1f, Motion.tw(600, 120)) }
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        Box(modifier = Modifier.width(18.dp).height(1.5.dp).graphicsLayer { scaleX = rule.value; transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0f, 0.5f) }.background(colors.primary))
-        Text(t.uppercase(), fontSize = 11.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 2.sp, color = colors.primary)
+        Box(modifier = Modifier.width(18.dp).height(1.5.dp).graphicsLayer { scaleX = rule.value; transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0f, 0.5f) }.background(pal.signal))
+        Text(t.uppercase(), fontSize = 11.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 2.sp, color = pal.signal)
     }
 }
 @Composable internal fun Title(t: String) = Text(t, fontSize = 26.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onBackground, modifier = Modifier.padding(top = 4.dp, bottom = 4.dp))
@@ -719,18 +729,19 @@ private fun SectionTitle(t: String, detail: String?) {
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth().padding(top = 16.dp, bottom = 8.dp)) {
         Text(t.uppercase(), fontSize = 11.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 2.sp, color = colors.onSurfaceVariant)
         if (detail != null) Text(detail, fontSize = 11.sp, color = colors.onBackground)
-        Box(modifier = Modifier.weight(1f).height(1.dp).background(Color(0xFF26303C)))
+        Box(modifier = Modifier.weight(1f).height(1.dp).background(LocalPalette.current.line))
     }
 }
-@Composable private fun Note(t: String) = Text(t, fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.fillMaxWidth().clip(Shape12).background(MaterialTheme.colorScheme.surface).border(1.dp, Color(0xFF33404F), Shape12).padding(12.dp))
+@Composable private fun Note(t: String) = Text(t, fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.fillMaxWidth().clip(Shape12).background(MaterialTheme.colorScheme.surface).border(1.dp, LocalPalette.current.line2, Shape12).padding(12.dp))
 @Composable private fun Actions(content: @Composable () -> Unit) = Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) { content() }
 
 @Composable
 private fun Chip(t: String, ok: Boolean) {
     val colors = MaterialTheme.colorScheme
+    val pal = LocalPalette.current
     Text(
-        t, fontSize = 11.sp, color = if (ok) Good else colors.onSurfaceVariant,
-        modifier = Modifier.clip(RoundedCornerShape(99.dp)).background(colors.surfaceVariant).border(1.dp, if (ok) Good.copy(alpha = 0.3f) else Color(0xFF26303C), RoundedCornerShape(99.dp)).padding(horizontal = 9.dp, vertical = 4.dp),
+        t, fontSize = 11.sp, color = if (ok) pal.good else colors.onSurfaceVariant,
+        modifier = Modifier.clip(RoundedCornerShape(99.dp)).background(colors.surfaceVariant).border(1.dp, if (ok) pal.good.copy(alpha = 0.3f) else pal.line, RoundedCornerShape(99.dp)).padding(horizontal = 9.dp, vertical = 4.dp),
     )
 }
 
@@ -742,6 +753,7 @@ private fun rememberHot(src: MutableInteractionSource): Boolean = src.collectIsF
 @Composable
 private fun PrimaryButton(text: String, enabled: Boolean = true, onClick: () -> Unit) {
     val colors = MaterialTheme.colorScheme
+    val pal = LocalPalette.current
     val src = remember { MutableInteractionSource() }
     val hot = rememberHot(src) && enabled
     val pressed by src.collectIsPressedAsState()
@@ -751,9 +763,9 @@ private fun PrimaryButton(text: String, enabled: Boolean = true, onClick: () -> 
     Row(
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp),
         modifier = Modifier
-            .graphicsLayer { scaleX = scale; scaleY = scale; shadowElevation = if (enabled) lift.dp.toPx() else 0f; shape = Shape12; clip = false; ambientShadowColor = colors.primary; spotShadowColor = colors.primary }
+            .graphicsLayer { scaleX = scale; scaleY = scale; shadowElevation = if (enabled) lift.dp.toPx() else 0f; shape = Shape12; clip = false; ambientShadowColor = pal.signal; spotShadowColor = pal.signal }
             .clip(Shape12)
-            .background(if (enabled) Brush.linearGradient(listOf(colors.primary, Accent2)) else Brush.linearGradient(listOf(colors.surfaceVariant, colors.surfaceVariant)))
+            .background(if (enabled) Brush.linearGradient(listOf(colors.primary, pal.primary2)) else Brush.linearGradient(listOf(colors.surfaceVariant, colors.surfaceVariant)))
             .shine(hot, 0.45f)
             .hoverable(src).clickable(interactionSource = src, indication = LocalIndication.current, enabled = enabled, onClick = onClick)
             .padding(horizontal = 18.dp, vertical = 11.dp),
@@ -770,8 +782,9 @@ internal fun SecondaryButton(text: String, enabled: Boolean = true, onClick: () 
     val hot = rememberHot(src) && enabled
     val pressed by src.collectIsPressedAsState()
     val scale by animateFloatAsState(if (pressed) 0.955f else if (hot) 1.02f else 1f, Motion.sp(0.5f, Spring.StiffnessMedium), label = "secScale")
-    val edge by animateColorAsState(if (hot) colors.primary else Color(0xFF33404F), Motion.tw(250), label = "secEdge")
-    val fill by animateColorAsState(if (hot) colors.primary.copy(alpha = 0.14f) else Color.White.copy(alpha = 0.03f), Motion.tw(250), label = "secFill")
+    val pal = LocalPalette.current
+    val edge by animateColorAsState(if (hot) pal.signal else pal.line2, Motion.tw(250), label = "secEdge")
+    val fill by animateColorAsState(if (hot) pal.signal.copy(alpha = 0.14f) else Color.White.copy(alpha = 0.03f), Motion.tw(250), label = "secFill")
     Box(
         modifier = Modifier.graphicsLayer { scaleX = scale; scaleY = scale }.clip(Shape12).background(fill).border(1.dp, edge, Shape12)
             .alpha(if (enabled) 1f else 0.5f)
@@ -786,12 +799,13 @@ private fun Cog(onClick: () -> Unit) {
     val src = remember { MutableInteractionSource() }
     val hot = rememberHot(src)
     val rot by animateFloatAsState(if (hot) 90f else 0f, Motion.sp(0.55f), label = "cog")
-    val edge by animateColorAsState(if (hot) colors.primary else Color(0xFF33404F), Motion.tw(250), label = "cogEdge")
+    val pal = LocalPalette.current
+    val edge by animateColorAsState(if (hot) pal.signal else pal.line2, Motion.tw(250), label = "cogEdge")
     Box(
         contentAlignment = Alignment.Center,
         modifier = Modifier.size(42.dp).clip(Shape12).background(Color.White.copy(alpha = 0.03f)).border(1.dp, edge, Shape12)
             .hoverable(src).clickable(interactionSource = src, indication = LocalIndication.current, onClick = onClick),
-    ) { Icon(Icons.Filled.Settings, "Settings", tint = if (hot) colors.primary else colors.onBackground, modifier = Modifier.size(18.dp).rotate(rot)) }
+    ) { Icon(Icons.Filled.Settings, "Settings", tint = if (hot) pal.signal else colors.onBackground, modifier = Modifier.size(18.dp).rotate(rot)) }
 }
 
 @Composable
@@ -838,10 +852,11 @@ private fun GameTile(t: Tile, wide: Boolean, square: Boolean, src: MutableIntera
     val scale by animateFloatAsState(if (pressed) 0.97f else if (hot) 1.04f else 1f, Motion.sp(0.55f, Spring.StiffnessMedium), label = "tileScale")
     val lift by animateFloatAsState(if (hot) -5f else 0f, Motion.sp(0.6f), label = "tileLift")
     val elev by animateFloatAsState(if (hot) 18f else 2f, Motion.tw(300), label = "tileElev")
-    val ring by animateColorAsState(if (hot) colors.primary else Color.Transparent, Motion.tw(220), label = "tileRing")
+    val pal = LocalPalette.current
+    val ring by animateColorAsState(if (hot) pal.signal else Color.Transparent, Motion.tw(220), label = "tileRing")
     Column(
         modifier = Modifier
-            .graphicsLayer { scaleX = scale; scaleY = scale; translationY = lift.dp.toPx(); shadowElevation = elev.dp.toPx(); shape = Shape12; clip = false; ambientShadowColor = if (hot) colors.primary else Color.Black; spotShadowColor = if (hot) colors.primary else Color.Black; transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0.5f, 0.9f) }
+            .graphicsLayer { scaleX = scale; scaleY = scale; translationY = lift.dp.toPx(); shadowElevation = elev.dp.toPx(); shape = Shape12; clip = false; ambientShadowColor = if (hot) pal.signal else Color.Black; spotShadowColor = if (hot) pal.signal else Color.Black; transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0.5f, 0.9f) }
             .clip(Shape12)
             .background(colors.surface)
             .border(1.5.dp, ring, Shape12)
@@ -858,8 +873,8 @@ private fun GameTile(t: Tile, wide: Boolean, square: Boolean, src: MutableIntera
             ) {
                 Box(
                     contentAlignment = Alignment.Center,
-                    modifier = Modifier.size(if (square) 26.dp else 32.dp).graphicsLayer { shadowElevation = 10.dp.toPx(); shape = CircleShape; clip = false; spotShadowColor = colors.primary }.clip(CircleShape).background(colors.primary),
-                ) { Text("▶", fontSize = if (square) 9.sp else 11.sp, color = colors.onPrimary, modifier = Modifier.padding(start = 2.dp)) }
+                    modifier = Modifier.size(if (square) 26.dp else 32.dp).graphicsLayer { shadowElevation = 10.dp.toPx(); shape = CircleShape; clip = false; spotShadowColor = pal.signal }.clip(CircleShape).background(pal.signal),
+                ) { Text("▶", fontSize = if (square) 9.sp else 11.sp, color = Color.White, modifier = Modifier.padding(start = 2.dp)) }
             }
         }
         Column(modifier = Modifier.padding(horizontal = 6.dp, vertical = 5.dp)) {

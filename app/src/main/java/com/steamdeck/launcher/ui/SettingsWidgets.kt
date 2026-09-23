@@ -72,8 +72,6 @@ import androidx.compose.ui.window.PopupProperties
 
 private val RowShape = RoundedCornerShape(12.dp)
 private val GroupShape = RoundedCornerShape(14.dp)
-private val Line = Color(0xFF26303C)
-private val Line2 = Color(0xFF33404F)
 
 /** Which row's menu is open on a page, so the page can dim and only one menu shows. */
 class MenuHost {
@@ -108,6 +106,7 @@ fun AnchoredMenu(open: Boolean, onDismiss: () -> Unit, title: String? = null, no
     val gap = with(LocalDensity.current) { 6.dp.roundToPx() }
     val provider = remember(gap) { BelowEndProvider(gap) }
     val colors = MaterialTheme.colorScheme
+    val pal = LocalPalette.current
     Popup(popupPositionProvider = provider, onDismissRequest = onDismiss, properties = PopupProperties(focusable = true)) {
         AnimatedVisibility(
             visibleState = state,
@@ -120,8 +119,8 @@ fun AnchoredMenu(open: Boolean, onDismiss: () -> Unit, title: String? = null, no
                     .widthIn(min = 220.dp, max = 340.dp)
                     .shadow(24.dp, RowShape, ambientColor = Color.Black, spotColor = Color.Black)
                     .clip(RowShape)
-                    .background(Color(0xF21E2530))
-                    .border(1.dp, colors.primary.copy(alpha = 0.22f), RowShape)
+                    .background(pal.surfaceVariant.copy(alpha = 0.95f))
+                    .border(1.dp, pal.signal.copy(alpha = 0.22f), RowShape)
                     .padding(6.dp),
             ) {
                 if (title != null) Text(
@@ -131,7 +130,7 @@ fun AnchoredMenu(open: Boolean, onDismiss: () -> Unit, title: String? = null, no
                 content()
                 if (note != null) {
                     Spacer(Modifier.height(4.dp))
-                    Box(Modifier.fillMaxWidth().height(1.dp).background(Line))
+                    Box(Modifier.fillMaxWidth().height(1.dp).background(pal.line))
                     Text(note, fontSize = 11.sp, color = colors.onSurfaceVariant, modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp))
                 }
             }
@@ -146,6 +145,7 @@ fun MenuItem(
     trailing: (@Composable () -> Unit)? = null, onClick: () -> Unit,
 ) {
     val colors = MaterialTheme.colorScheme
+    val pal = LocalPalette.current
     val src = remember { MutableInteractionSource() }
     val hot = src.collectIsFocusedAsState().value || src.collectIsHoveredAsState().value
     val shift by animateFloatAsState(if (hot) 2f else 0f, Motion.sp(0.5f), label = "miShift")
@@ -159,9 +159,9 @@ fun MenuItem(
             .hoverable(src).clickable(interactionSource = src, indication = LocalIndication.current, enabled = enabled, onClick = onClick)
             .padding(horizontal = 10.dp, vertical = 9.dp),
     ) {
-        Text("✓", fontSize = 12.sp, color = colors.primary, modifier = Modifier.width(18.dp).alpha(if (checked) 1f else 0f))
+        Text("✓", fontSize = 12.sp, color = pal.signal, modifier = Modifier.width(18.dp).alpha(if (checked) 1f else 0f))
         Column(modifier = Modifier.weight(1f)) {
-            Text(label, fontSize = 13.5.sp, color = if (checked) colors.primary else colors.onBackground, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            Text(label, fontSize = 13.5.sp, color = if (checked) pal.signal else colors.onBackground, maxLines = 2, overflow = TextOverflow.Ellipsis)
             if (detail != null) Text(detail, fontSize = 11.sp, color = colors.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis)
         }
         if (trailing != null) { Spacer(Modifier.width(8.dp)); trailing() }
@@ -174,7 +174,8 @@ fun ValueChip(text: String, open: Boolean, enabled: Boolean = true, onClick: () 
     val colors = MaterialTheme.colorScheme
     val src = remember { MutableInteractionSource() }
     val hot = src.collectIsFocusedAsState().value || src.collectIsHoveredAsState().value
-    val edge by animateColorAsState(if (open || hot) colors.primary else Line2, Motion.tw(200), label = "chipEdge")
+    val pal = LocalPalette.current
+    val edge by animateColorAsState(if (open || hot) pal.signal else pal.line2, Motion.tw(200), label = "chipEdge")
     val rot by animateFloatAsState(if (open) 180f else 0f, Motion.sp(0.6f), label = "chipCaret")
     Row(
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween,
@@ -201,18 +202,20 @@ fun ValueChip(text: String, open: Boolean, enabled: Boolean = true, onClick: () 
 @Composable
 fun SettingsGroup(title: String, content: @Composable ColumnScope.() -> Unit) {
     val colors = MaterialTheme.colorScheme
+    val pal = LocalPalette.current
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth().padding(top = 16.dp, bottom = 6.dp)) {
         Text(title.uppercase(), fontSize = 11.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 2.sp, color = colors.onSurfaceVariant)
-        Box(modifier = Modifier.weight(1f).height(1.dp).background(Line))
+        Box(modifier = Modifier.weight(1f).height(1.dp).background(pal.line))
     }
-    Column(modifier = Modifier.fillMaxWidth().clip(GroupShape).background(colors.surface).border(1.dp, Line, GroupShape)) { content() }
+    Column(modifier = Modifier.fillMaxWidth().clip(GroupShape).background(colors.surface).border(1.dp, pal.line, GroupShape)) { content() }
 }
 
 /** A row: label and hint on the left, whatever control on the right. */
 @Composable
 fun SettingsRow(label: String, hint: String?, highlighted: Boolean = false, control: @Composable () -> Unit) {
     val colors = MaterialTheme.colorScheme
-    val bg by animateColorAsState(if (highlighted) colors.primary.copy(alpha = 0.10f) else Color.Transparent, Motion.tw(200), label = "rowBg")
+    val pal = LocalPalette.current
+    val bg by animateColorAsState(if (highlighted) pal.signal.copy(alpha = 0.10f) else Color.Transparent, Motion.tw(200), label = "rowBg")
     Row(
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier.fillMaxWidth().background(bg).padding(horizontal = 14.dp, vertical = 11.dp),
@@ -223,7 +226,7 @@ fun SettingsRow(label: String, hint: String?, highlighted: Boolean = false, cont
         }
         control()
     }
-    Box(Modifier.fillMaxWidth().height(1.dp).background(Line))
+    Box(Modifier.fillMaxWidth().height(1.dp).background(pal.line))
 }
 
 /** A row whose value is one of a list: the chip opens the menu, a pick closes it. */
