@@ -127,6 +127,8 @@ class DrawerActions(
     val onKeyboard: () -> Unit,
     /** Sends the Guide button (the client's menu); null on the desktop, where there is none. */
     val onSteamMenu: (() -> Unit)?,
+    /** Sends Guide + A to open Steam's Quick Access Menu; null on the desktop. */
+    val onQam: (() -> Unit)?,
     val onProtons: () -> Unit,
     val onOsc: (String) -> Unit,
     val onTouch: (String) -> Unit,
@@ -210,6 +212,7 @@ fun SessionDrawer(open: Boolean, a: DrawerActions) {
                     )
                     ActionRow("Keyboard", "The on-screen keyboard, for a field the client or a program is waiting on.", "Show") { host.open = null; a.onKeyboard() }
                     if (a.onSteamMenu != null) ActionRow("Steam menu", "The Guide button: the client's own overlay, for a pad without one.", "Open  ◉") { host.open = null; a.onSteamMenu.invoke() }
+                    if (a.onQam != null) ActionRow("Quick Access Menu", "Guide + A opens Steam's Quick Access Menu.", "Open  ⋯") { host.open = null; a.onQam.invoke() }
                 }
 
                 SettingsGroup("Next session") {

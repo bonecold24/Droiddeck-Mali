@@ -162,14 +162,21 @@ public final class PadBridge {
         boolean qamStarted = qamPressed && !systemQamPressed;
         systemGuidePressed = guidePressed;
         systemQamPressed = qamPressed;
-        if (qamStarted && !qamChordActive) {
-            qamChordActive = true;
-            int generation = ++qamChordGeneration;
-            publish();
-            mainHandler.postDelayed(() -> pressQamA(generation), QAM_GUIDE_LEAD_MS);
-        } else {
-            publish();
-        }
+        if (qamStarted) startQamChord();
+        else publish();
+    }
+
+    /** Starts the same Guide-then-A sequence used by the touch QAM button. */
+    public synchronized void triggerQam() {
+        startQamChord();
+    }
+
+    private void startQamChord() {
+        if (qamChordActive) return;
+        qamChordActive = true;
+        int generation = ++qamChordGeneration;
+        publish();
+        mainHandler.postDelayed(() -> pressQamA(generation), QAM_GUIDE_LEAD_MS);
     }
 
     private synchronized void pressQamA(int generation) {

@@ -183,6 +183,10 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
                                 padBridge?.applyTouch { st -> st.setPressed(com.steamdeck.launcher.input.GamepadState.IDX_BUTTON_MODE.toInt(), false) }
                             }, 90)
                         }) else null,
+                        onQam = if (SessionState.mode == SessionService.MODE_STEAM) ({
+                            drawerOpen = false
+                            padBridge?.triggerQam()
+                        }) else null,
                         onProtons = { refreshProtons(); showProtons = true },
                         onOsc = { v -> SessionPrefs.setOscMode(this@SessionActivity, v); readPrefs(); updateOnScreenControls() },
                         onTouch = { v -> SessionPrefs.setTouchMode(this@SessionActivity, v); readPrefs() },
