@@ -219,6 +219,13 @@ object SessionPrefs {
         prefs(context).edit().putString("fexPreset", id).apply()
     }
 
+    /** The app's colour theme (ui/Themes ids); Paper on black unless chosen otherwise. */
+    fun theme(context: Context): String = prefs(context).getString("theme", "paper") ?: "paper"
+
+    fun setTheme(context: Context, id: String) {
+        prefs(context).edit().putString("theme", id).apply()
+    }
+
     /** What a mode gets when nothing was chosen. */
     @Suppress("UNUSED_PARAMETER")
     fun defaultResolutionCap(mode: String): Int = 720
