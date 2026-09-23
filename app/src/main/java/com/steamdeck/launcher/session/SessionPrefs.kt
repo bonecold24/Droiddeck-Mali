@@ -309,6 +309,27 @@ object SessionPrefs {
     }
 
     /**
+     * A fixed size for the session's display, per mode, or null. When set it replaces both the
+     * cap and the shape: the compositor fits it to the panel with bars where the shapes differ.
+     */
+    fun customResolution(context: Context, mode: String): Pair<Int, Int>? =
+        parseResolution(prefs(context).getString("customRes.$mode", null))
+
+    fun setCustomResolution(context: Context, mode: String, size: Pair<Int, Int>?) {
+        prefs(context).edit().putString("customRes.$mode", size?.let { "${it.first}x${it.second}" }).apply()
+    }
+
+    /** "1024x768" (or ×, or *) to an even size inside 320x240..3840x2160; anything else is null. */
+    fun parseResolution(text: String?): Pair<Int, Int>? {
+        val parts = text?.trim()?.split('x', 'X', '×', '*')?.map { it.trim() } ?: return null
+        if (parts.size != 2) return null
+        val w = parts[0].toIntOrNull() ?: return null
+        val h = parts[1].toIntOrNull() ?: return null
+        if (w !in 320..3840 || h !in 240..2160) return null
+        return Pair(w and 1.inv(), h and 1.inv())
+    }
+
+    /**
      * What the desktop shell composites with: pixman (software, the default - the Adreno stand-in
      * is not a DRM render node, so labwc's gbm allocator cannot use it), or gles2 / vulkan for a
      * device that has a real node. `Download/steamdeck-wlr-renderer` still overrides it.

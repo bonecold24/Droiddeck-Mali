@@ -456,6 +456,8 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
         // handheld panel. The mode's settings (the cog beside Play / Desktop) can change
         // the cap or lift it to the panel.
         val mode = SessionPrefs.prefMode(intent.getStringExtra(SessionService.EXTRA_MODE) ?: SessionService.MODE_STEAM)
+        // A custom resolution is taken as given; the compositor fits it to the panel.
+        SessionPrefs.customResolution(this, mode)?.let { return it }
         val cap = SessionPrefs.resolutionCap(this, mode)
         val height = (if (cap <= 0) panelH else minOf(panelH, cap.toFloat())).toInt()
         val width = (height * aspect).toInt()
