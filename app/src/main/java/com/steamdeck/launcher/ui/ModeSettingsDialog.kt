@@ -6,6 +6,10 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -18,6 +22,8 @@ class DriverRow(val id: String, val name: String, val detail: String, val remova
 class ModeSettings(
     val mode: String,
     val resolutionCap: Int,
+    /** A fixed session size, or null for the cap and shape. */
+    val customResolution: Pair<Int, Int>? = null,
     val shapeMode: String,
     val hdr: Boolean,
     val hdrReason: String?,
@@ -50,6 +56,8 @@ class AddedGameRow(val folderPath: String, val folderName: String, val exePath: 
 
 class ModeSettingsActions(
     val onResolution: (Int) -> Unit,
+    /** Null clears it. */
+    val onCustomResolution: (Pair<Int, Int>?) -> Unit = {},
     val onShape: (String) -> Unit,
     val onHdr: (Boolean) -> Unit,
     val onSelectLinux: (String) -> Unit,
@@ -88,16 +96,25 @@ fun ModeSettingsPage(s: ModeSettings, a: ModeSettingsActions) {
     ) {
         SettingsGroup("Display") {
             val default = SessionPrefs.defaultResolutionCap(s.mode)
+            var editCustom by remember { mutableStateOf(false) }
+            val custom = s.customResolution
             ChoiceRow(
                 host, "res", "Resolution", "Applies next session.",
                 listOf(720 to "Up to 720p", 900 to "Up to 900p", 1080 to "Up to 1080p", 0 to "The panel's own")
-                    .map { (cap, label) -> cap to (if (cap == default) "$label - the default" else label) },
-                s.resolutionCap, note = "720p can improve menu responsiveness.",
-                onPick = a.onResolution,
+                    .map { (cap, label) -> cap to (if (cap == default) "$label - the default" else label) } +
+                    (CUSTOM to (custom?.let { "Custom · ${it.first}×${it.second}" } ?: "Custom…")),
+                if (custom != null) CUSTOM else s.resolutionCap, note = "720p can improve menu responsiveness.",
+                onPick = { v -> if (v == CUSTOM) editCustom = true else { a.onCustomResolution(null); a.onResolution(v) } },
             )
             ChoiceRow(
-                host, "shape", "Shape", "Adds bars to preserve 16:9.",
-                listOf("auto" to "The panel's shape", "16:9" to "16:9 with bars"), s.shapeMode, onPick = a.onShape,
+                host, "shape", "Shape",
+                if (custom != null) "Set by the custom resolution." else "The panel's shape stays at 16:9 or wider; pick Exactly this panel for a 4:3 or 3:2 screen.",
+                com.steamdeck.launcher.session.SessionPrefs.shapeChoices, s.shapeMode, enabled = custom == null, onPick = a.onShape,
+            )
+            if (editCustom) CustomResolutionDialog(
+                initial = custom,
+                onSave = { size -> editCustom = false; a.onCustomResolution(size) },
+                onDismiss = { editCustom = false },
             )
         }
         SettingsGroup("HDR") {
@@ -266,4 +283,60 @@ private fun DriverRowMenu(
             }
         }
     }
+}
+
+/** The Resolution menu's "Custom…" entry. */
+private const val CUSTOM = -1
+
+/** Width × height for the session, with the common handheld shapes one tap away. */
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+@Composable
+private fun CustomResolutionDialog(initial: Pair<Int, Int>?, onSave: (Pair<Int, Int>) -> Unit, onDismiss: () -> Unit) {
+    var w by remember { mutableStateOf(initial?.first?.toString() ?: "") }
+    var h by remember { mutableStateOf(initial?.second?.toString() ?: "") }
+    val parsed = SessionPrefs.parseResolution("${w}x$h")
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Custom resolution") },
+        text = {
+            androidx.compose.foundation.layout.Column {
+                Text(
+                    "The session's display size. It replaces the cap and the shape; a size that does not match the panel's shape gets bars.",
+                    fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                androidx.compose.foundation.layout.Row(
+                    verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+                    modifier = Modifier.padding(top = 12.dp),
+                ) {
+                    val numbers = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Number)
+                    androidx.compose.material3.OutlinedTextField(
+                        w, { v -> w = v.filter(Char::isDigit).take(4) }, label = { Text("Width") },
+                        singleLine = true, keyboardOptions = numbers, modifier = Modifier.weight(1f),
+                    )
+                    Text("×", fontSize = 18.sp, modifier = Modifier.padding(horizontal = 10.dp))
+                    androidx.compose.material3.OutlinedTextField(
+                        h, { v -> h = v.filter(Char::isDigit).take(4) }, label = { Text("Height") },
+                        singleLine = true, keyboardOptions = numbers, modifier = Modifier.weight(1f),
+                    )
+                }
+                androidx.compose.foundation.layout.FlowRow(
+                    horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(6.dp),
+                    modifier = Modifier.padding(top = 10.dp),
+                ) {
+                    for ((pw, ph, tag) in listOf(Triple(960, 720, "4:3"), Triple(1024, 768, "4:3"), Triple(1280, 960, "4:3"), Triple(1280, 800, "16:10"), Triple(1152, 648, "16:9"), Triple(1280, 720, "16:9"))) {
+                        androidx.compose.material3.AssistChip(
+                            onClick = { w = pw.toString(); h = ph.toString() },
+                            label = { Text("$pw×$ph · $tag", fontSize = 12.sp) },
+                        )
+                    }
+                }
+                if (parsed == null && (w.isNotEmpty() || h.isNotEmpty())) Text(
+                    "Between 320×240 and 3840×2160.", fontSize = 12.sp, color = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.padding(top = 6.dp),
+                )
+            }
+        },
+        confirmButton = { androidx.compose.material3.TextButton(enabled = parsed != null, onClick = { parsed?.let(onSave) }) { Text("Use") } },
+        dismissButton = { androidx.compose.material3.TextButton(onClick = onDismiss) { Text("Cancel") } },
+    )
 }

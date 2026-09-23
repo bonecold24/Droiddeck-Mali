@@ -149,6 +149,7 @@ class MainActivity : ComponentActivity() {
     // The mode whose settings dialog is open, with what it shows; refreshed by openModeSettings().
     private var settingsMode by mutableStateOf<String?>(null)
     private var resolutionCap by mutableStateOf(1080)
+    private var customResolution by mutableStateOf<Pair<Int, Int>?>(null)
     private var fexPreset by mutableStateOf("")
     private var steamChannel by mutableStateOf("publicbeta")
     private var theme by mutableStateOf("paper")
@@ -414,7 +415,7 @@ class MainActivity : ComponentActivity() {
     private fun ModeSettingsHost(mode: String) {
         ModeSettingsPage(
             ModeSettings(
-                mode = mode, resolutionCap = resolutionCap, shapeMode = shapeMode,
+                mode = mode, resolutionCap = resolutionCap, customResolution = customResolution, shapeMode = shapeMode,
                 hdr = hdrOn, hdrReason = hdrReason,
                 linuxRows = linuxRows,
                 linuxSelected = if (mode == SessionService.MODE_STEAM) linuxSteam else linuxDesktop,
@@ -436,6 +437,7 @@ class MainActivity : ComponentActivity() {
             ),
             ModeSettingsActions(
                 onResolution = { cap -> SessionPrefs.setResolutionCap(this, mode, cap); resolutionCap = cap },
+                onCustomResolution = { size -> SessionPrefs.setCustomResolution(this, mode, size); customResolution = size },
                 onShape = { shape -> SessionPrefs.setShapeMode(this, shape); shapeMode = shape },
                 onHdr = { on -> SessionPrefs.setHdr(this, mode, on); hdrOn = on },
                 onSelectLinux = { id -> SessionPrefs.setLinuxDriver(this, mode, id); refreshDrivers() },
@@ -530,6 +532,7 @@ class MainActivity : ComponentActivity() {
         showApps = false
         refreshDrivers()
         resolutionCap = SessionPrefs.resolutionCap(this, mode)
+        customResolution = SessionPrefs.customResolution(this, mode)
         fexPreset = SessionPrefs.fexPreset(this)
         steamChannel = SessionPrefs.steamChannel(this)
         addedGamesDirs = SessionPrefs.addedGamesDirs(this)

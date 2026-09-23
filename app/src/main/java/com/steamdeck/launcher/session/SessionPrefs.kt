@@ -35,10 +35,18 @@ object SessionPrefs {
 
     const val SHAPE_AUTO = "auto"
     const val SHAPE_WIDE = "16:9"
+    const val SHAPE_EXACT = "exact"
+
+    /** The choices the settings offer, in order. */
+    val shapeChoices = listOf(
+        SHAPE_AUTO to "The panel's shape (16:9 or wider)",
+        SHAPE_EXACT to "Exactly this panel (4:3, 3:2…)",
+        SHAPE_WIDE to "16:9 with bars",
+    )
 
     /**
-     * The shape of the display the session presents: the panel's own (never narrower than 16:9)
-     * or a fixed 16:9. A foldable defaults to 16:9, which sits with modest bars on either of its
+     * The shape of the display the session presents: the panel's own (never narrower than 16:9),
+     * exactly the panel's (a 4:3 or 3:2 handheld, drawn edge to edge), or a fixed 16:9. A foldable defaults to 16:9, which sits with modest bars on either of its
      * panels; the panel's own shape would fit one and leave a strip on the other, and gamescope's
      * display cannot change size once the session is up.
      */
@@ -298,6 +306,27 @@ object SessionPrefs {
 
     fun setResolutionCap(context: Context, mode: String, cap: Int) {
         prefs(context).edit().putInt("resolutionCap.$mode", cap).apply()
+    }
+
+    /**
+     * A fixed size for the session's display, per mode, or null. When set it replaces both the
+     * cap and the shape: the compositor fits it to the panel with bars where the shapes differ.
+     */
+    fun customResolution(context: Context, mode: String): Pair<Int, Int>? =
+        parseResolution(prefs(context).getString("customRes.$mode", null))
+
+    fun setCustomResolution(context: Context, mode: String, size: Pair<Int, Int>?) {
+        prefs(context).edit().putString("customRes.$mode", size?.let { "${it.first}x${it.second}" }).apply()
+    }
+
+    /** "1024x768" (or ×, or *) to an even size inside 320x240..3840x2160; anything else is null. */
+    fun parseResolution(text: String?): Pair<Int, Int>? {
+        val parts = text?.trim()?.split('x', 'X', '×', '*')?.map { it.trim() } ?: return null
+        if (parts.size != 2) return null
+        val w = parts[0].toIntOrNull() ?: return null
+        val h = parts[1].toIntOrNull() ?: return null
+        if (w !in 320..3840 || h !in 240..2160) return null
+        return Pair(w and 1.inv(), h and 1.inv())
     }
 
     /**
