@@ -7,7 +7,7 @@ library as non-Steam shortcuts, each mapped to the ARM64 Proton, before the clie
 The JSON is a list the app writes each session: {"name", "exe", "dir", "appid"} with guest paths.
 The client keeps non-Steam games in userdata/<account>/config/shortcuts.vdf, a binary VDF it
 reads at start-up and rewrites at exit, so this runs while it is down. Entries the app wrote
-carry the tag "steamdeck-app" and are replaced wholesale; anything the user added inside the
+carry the tag "droiddeck-app" and are replaced wholesale; anything the user added inside the
 client is kept as it is. The appid is the one the client itself derives (crc32 of exe+name with
 the top bit set), so the launch URL the app uses matches what the client shows.
 """
@@ -20,7 +20,7 @@ import shutil
 import struct
 import sys
 
-TAG = "steamdeck-app"
+TAG = "droiddeck-app"
 
 
 def account_dir(steam_root):
@@ -128,7 +128,7 @@ def shortcut(game):
     }
 
 
-ART_MANIFEST = ".steamdeck-art.json"
+ART_MANIFEST = ".droiddeck-art.json"
 # listing key -> the client's grid file suffix: <appid>p = portrait capsule, <appid> = header,
 # <appid>_hero, <appid>_logo.
 ART_SLOTS = (("p", "p"), ("header", ""), ("hero", "_hero"), ("logo", "_logo"))

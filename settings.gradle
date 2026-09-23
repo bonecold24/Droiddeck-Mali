@@ -14,5 +14,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "SteamDeck"
+rootProject.name = "DroidDeck"
 include ':app'

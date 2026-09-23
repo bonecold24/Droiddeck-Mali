@@ -1,0 +1,96 @@
+#!/bin/bash
+# The desktop session: labwc nested as a client of the app's compositor, with LXQt's panel and
+# file manager started from its autostart, and Xwayland for the X11 programs (the Steam client,
+# most emulators). Run by bannerlator-session in place of gamescope for mode "lxqt".
+# Staged by the app over the desktop package's copy on every launch, so a fix here reaches an
+# installed desktop without re-downloading the package.
+set -u
+export XDG_SESSION_TYPE=wayland XDG_CURRENT_DESKTOP=LXQt XDG_SESSION_DESKTOP=lxqt
+export QT_QPA_PLATFORM=wayland GDK_BACKEND=wayland,x11 SDL_VIDEODRIVER=wayland,x11
+export QT_QPA_PLATFORMTHEME=lxqt
+# Firefox's child processes sandbox themselves with seccomp and namespaces, neither of which
+# behaves under proot: the content process ends up unable to read the font files its parent can,
+# reports "no fonts" and dies - the tab crash, with the chrome around it still drawing text.
+# The prefs for this are only advisory and a profile can override them; the environment is not.
+export MOZ_DISABLE_CONTENT_SANDBOX=1 MOZ_DISABLE_GMP_SANDBOX=1 MOZ_DISABLE_RDD_SANDBOX=1
+export MOZ_DISABLE_SOCKET_PROCESS_SANDBOX=1 MOZ_DISABLE_UTILITY_SANDBOX=1
+# wlroots allocates through gbm on a real DRM node, which the KGSL stand-in is not: pixman
+# (software, shm) is what boots here. BL_WLR_RENDERER=vulkan/gles2 tries acceleration.
+export WLR_RENDERER=${BL_WLR_RENDERER:-pixman}
+# The desktop's own log, beside the session's, so labwc and the programs on it can be read apart
+# from the session that started them. The session log keeps the milestones either way.
+if [ -n "${BL_DEBUG_DIR:-}" ]; then
+  mkdir -p "$BL_DEBUG_DIR" 2>/dev/null || true
+  exec >>"$BL_DEBUG_DIR/desktop.log" 2>&1
+  echo "== droiddeck-desktop $(date -u '+%Y-%m-%d %H:%M:%S UTC') renderer=$WLR_RENDERER"
+fi
+export WLR_BACKENDS=wayland
+mkdir -p "$HOME/.config/labwc" "$HOME/.config/lxqt"
+# Our defaults for labwc and the panel, refreshed every session. What a user changes in the
+# panel's own settings lands in panel.conf and is kept; only rc.xml and autostart are ours.
+# The nested output takes the app's surface size; left alone, wlroots' Wayland backend opens
+# a 1280x720 window and the whole desktop is upscaled from that.
+sed "s/@MODE@/${BL_WIDTH:-1280}x${BL_HEIGHT:-720}/" /etc/xdg/labwc/rc.xml > "$HOME/.config/labwc/rc.xml"
+cp -f /etc/xdg/labwc/autostart "$HOME/.config/labwc/autostart"
+# panel.conf is the user's once the panel has written it, except the one our first package
+# shipped: it never named its panel ([General] panels=), so lxqt-panel built an empty default
+# one. That file is replaced; one that names its panels is kept.
+if ! grep -q '^panels=' "$HOME/.config/lxqt/panel.conf" 2>/dev/null; then
+  cp -f /etc/xdg/lxqt/panel.conf "$HOME/.config/lxqt/panel.conf"
+fi
+[ -f "$HOME/.config/lxqt/lxqt.conf" ] || cp /etc/xdg/lxqt/lxqt.conf "$HOME/.config/lxqt/lxqt.conf"
+# pcmanfm-qt paints the desktop; left unconfigured it paints it black, over swaybg's wallpaper.
+if [ ! -f "$HOME/.config/pcmanfm-qt/lxqt/settings.conf" ]; then
+  mkdir -p "$HOME/.config/pcmanfm-qt/lxqt"
+  printf '[Desktop]\nWallpaper=/usr/share/backgrounds/steamdeck.png\nWallpaperMode=zoom\nBgColor=#1b1030\nShowHidden=false\n' \
+    > "$HOME/.config/pcmanfm-qt/lxqt/settings.conf"
+fi
+# The runtime directory outlives a session. lxqt-panel and pcmanfm-qt are single-instance
+# programs that leave a lock and a socket there; finding last session's, they decide they are
+# already running and exit without a word - a desktop with a wallpaper and nothing on it.
+# Only the app's own compositor socket (wayland-0) is kept.
+find "$XDG_RUNTIME_DIR" -mindepth 1 -maxdepth 1 ! -name 'wayland-0*' ! -name 'keymap.xkb' -exec rm -rf {} + 2>/dev/null
+# fontconfig's rules (sans-serif -> DejaVu Sans and the rest) live as links in /etc/fonts/conf.d,
+# and the rootfs has none: applications then find fonts but no default font. Firefox logs
+# "no fonts" and draws pages without text.
+if [ -d /usr/share/fontconfig/conf.default ] && ! ls /etc/fonts/conf.d/*.conf >/dev/null 2>&1; then
+  for f in /usr/share/fontconfig/conf.default/*.conf; do ln -sf "$f" /etc/fonts/conf.d/; done
+  echo "== fontconfig: linked $(ls /etc/fonts/conf.d/*.conf | wc -l) default rules"
+fi
+# Those rules map sans-serif and friends onto whatever a full distribution installs, and this
+# rootfs has one family. Naming it outright is what gives every toolkit a default font: without
+# one Gecko reports "no fonts" with families found, and draws pages with no text at all.
+if [ ! -f /etc/fonts/local.conf ]; then
+  { echo '<?xml version="1.0"?><!DOCTYPE fontconfig SYSTEM "urn:fontconfig:fonts.dtd"><fontconfig>'
+    for generic in sans-serif sans serif monospace mono cursive fantasy system-ui ui-sans-serif; do
+      case $generic in
+        serif) face="DejaVu Serif" ;;
+        mono*|ui-mono) face="DejaVu Sans Mono" ;;
+        *) face="DejaVu Sans" ;;
+      esac
+      printf '<alias binding="weak"><family>%s</family><prefer><family>%s</family></prefer></alias>\n' "$generic" "$face"
+    done
+    echo '</fontconfig>'
+  } > /etc/fonts/local.conf
+  echo "== fontconfig: wrote local.conf (DejaVu as the default family)"
+fi
+# The cache in the image was built before those rules existed; rebuild it once, and only once.
+if [ ! -f /var/cache/fontconfig/.droiddeck-built ] && command -v fc-cache >/dev/null 2>&1; then
+  fc-cache -f >/dev/null 2>&1 && touch /var/cache/fontconfig/.droiddeck-built
+  echo "== fontconfig: cache rebuilt, default sans is $(fc-match sans-serif 2>/dev/null)"
+fi
+# The menu's "Steam" / "Steam Big Picture" entries and one entry per installed game: all of them
+# hand off to the app (bannerlator-steam-launch), since the client cannot draw on this desktop.
+export BL_DESKTOP=1
+ln -sf /usr/local/bin/bannerlator-steam-launch /usr/local/bin/steamdeck-steam 2>/dev/null
+ln -sf /usr/local/bin/bannerlator-steam-shim /usr/local/bin/steam 2>/dev/null
+python3 /usr/local/bin/bannerlator-desktop-games 2>&1 | sed 's/^/[games] /'
+
+echo "== droiddeck-desktop: labwc ($WLR_RENDERER) on $WAYLAND_DISPLAY"
+# ~/.droiddeck-desktop-debug: labwc's own debug log (views and layer surfaces mapping) too.
+DEBUG=; [ -f "$HOME/.droiddeck-desktop-debug" ] && DEBUG=-d
+# A session bus: the panel's menus, the file manager and the portal all expect one.
+if command -v dbus-run-session >/dev/null 2>&1; then
+  exec dbus-run-session -- labwc $DEBUG -C "$HOME/.config/labwc"
+fi
+exec labwc $DEBUG -C "$HOME/.config/labwc"

@@ -304,7 +304,7 @@ send_vibration(int strong, int weak, uint16_t duration_ms, uint16_t slot) {
 
   struct sockaddr_un addr = {};
   addr.sun_family = AF_UNIX;
-  const char *name = "steamdeck-rumble";
+  const char *name = "droiddeck-rumble";
   memcpy(addr.sun_path + 1, name, strlen(name));
   socklen_t addrlen = offsetof(struct sockaddr_un, sun_path) + 1 + strlen(name);
 

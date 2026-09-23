@@ -53,7 +53,7 @@ JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM *vm, void *reserved) {
     g_jvm = vm;
     JNIEnv *env;
     if ((*vm)->GetEnv(vm, (void **)&env, JNI_VERSION_1_6) == JNI_OK) {
-        jclass c = (*env)->FindClass(env, "com/steamdeck/launcher/wayland/WaylandCompositor");
+        jclass c = (*env)->FindClass(env, "com/droiddeck/launcher/wayland/WaylandCompositor");
         if (c) {
             g_compositor_cls = (*env)->NewGlobalRef(env, c);
             g_on_first_frame = (*env)->GetStaticMethodID(env, g_compositor_cls,
@@ -222,14 +222,14 @@ static void start_thread(void) {
 /* The compositor thread's tid, or 0 before it starts. The app opens a PerformanceHintManager session
  * on it and reports each presented frame's interval, so the governor sees a frame that ran long. */
 JNIEXPORT jint JNICALL
-Java_com_steamdeck_launcher_wayland_WaylandCompositor_nativeCompositorTid(JNIEnv *env, jclass clazz) {
+Java_com_droiddeck_launcher_wayland_WaylandCompositor_nativeCompositorTid(JNIEnv *env, jclass clazz) {
     (void)env; (void)clazz;
     return (jint)g_comp_tid;
 }
 
 /* Headless start (no output window) - used for bring-up tests. */
 JNIEXPORT void JNICALL
-Java_com_steamdeck_launcher_wayland_WaylandCompositor_nativeStart(JNIEnv *env, jclass clazz,
+Java_com_droiddeck_launcher_wayland_WaylandCompositor_nativeStart(JNIEnv *env, jclass clazz,
                                                              jstring xdgRuntimeDir) {
     set_runtime_dir(env, xdgRuntimeDir);
     start_thread();
@@ -246,7 +246,7 @@ static char *dup_jstr(JNIEnv *env, jstring s) {
 /* Start with a real output Surface + the container's Turnip driver (adrenotools).
  * Frames committed by clients are composited to this Surface via Turnip. */
 JNIEXPORT void JNICALL
-Java_com_steamdeck_launcher_wayland_WaylandCompositor_nativeStartWithSurface(
+Java_com_droiddeck_launcher_wayland_WaylandCompositor_nativeStartWithSurface(
         JNIEnv *env, jclass clazz, jobject surface, jstring xdgRuntimeDir,
         jstring driverPath, jstring libraryName, jstring nativeLibDir) {
     set_runtime_dir(env, xdgRuntimeDir);
@@ -266,34 +266,34 @@ Java_com_steamdeck_launcher_wayland_WaylandCompositor_nativeStartWithSurface(
 /* Inject a pointer event from the Android SurfaceView touch listener (UI thread).
  * action: 0=down 1=move 2=up; x/y in output space (0..1919, 0..1079). */
 JNIEXPORT void JNICALL
-Java_com_steamdeck_launcher_wayland_WaylandCompositor_nativeSendPointer(
+Java_com_droiddeck_launcher_wayland_WaylandCompositor_nativeSendPointer(
         JNIEnv *env, jclass clazz, jint action, jint x, jint y) {
     banner_wayland_send_pointer(action, x, y);
 }
 
 /* Inject a key event. evdev = Linux input keycode (KEY_A=30…); state 1=down 0=up. */
 JNIEXPORT void JNICALL
-Java_com_steamdeck_launcher_wayland_WaylandCompositor_nativeSendKey(
+Java_com_droiddeck_launcher_wayland_WaylandCompositor_nativeSendKey(
         JNIEnv *env, jclass clazz, jint evdev, jint state) {
     banner_wayland_send_key(evdev, state);
 }
 
 /* App X-server input in scene (virtual desktop) coordinates; see banner_wayland_send_scene_input. */
 JNIEXPORT void JNICALL
-Java_com_steamdeck_launcher_wayland_WaylandCompositor_nativeSendSceneInput(
+Java_com_droiddeck_launcher_wayland_WaylandCompositor_nativeSendSceneInput(
         JNIEnv *env, jclass clazz, jint type, jint a, jint b) {
     banner_wayland_send_scene_input(type, a, b);
 }
 
 /* One screen refresh (Choreographer frame callback, UI thread): the compositor draws once. */
 JNIEXPORT void JNICALL
-Java_com_steamdeck_launcher_wayland_WaylandCompositor_nativeVsync(JNIEnv *env, jclass clazz, jlong frameTimeNanos) {
+Java_com_droiddeck_launcher_wayland_WaylandCompositor_nativeVsync(JNIEnv *env, jclass clazz, jlong frameTimeNanos) {
     banner_wayland_vsync((int64_t)frameTimeNanos);
 }
 
 /* Shortcut launches: don't draw explorer's windows (desktop, taskbar), like X11's unviewable classes. */
 JNIEXPORT void JNICALL
-Java_com_steamdeck_launcher_wayland_WaylandCompositor_nativeSetHideShell(JNIEnv *env, jclass clazz, jboolean hide) {
+Java_com_droiddeck_launcher_wayland_WaylandCompositor_nativeSetHideShell(JNIEnv *env, jclass clazz, jboolean hide) {
     g_hide_shell = hide ? 1 : 0;
 }
 
@@ -302,7 +302,7 @@ Java_com_steamdeck_launcher_wayland_WaylandCompositor_nativeSetHideShell(JNIEnv 
  * thread, any time: before the compositor starts it is the launch default; afterwards the compositor
  * thread flips the state, tells the bound games to rebuild their swapchains for it and redraws. */
 JNIEXPORT void JNICALL
-Java_com_steamdeck_launcher_wayland_WaylandCompositor_nativeSetZeroCopy(JNIEnv *env, jclass clazz, jboolean on) {
+Java_com_droiddeck_launcher_wayland_WaylandCompositor_nativeSetZeroCopy(JNIEnv *env, jclass clazz, jboolean on) {
     int live = banner_get_display() != NULL;
     if (!live) g_zero_copy = on ? 1 : 0; /* read by ahb_swapchain_init before the queue drains */
     banner_host_zero_copy(on ? 1 : 0, live);
@@ -312,13 +312,13 @@ Java_com_steamdeck_launcher_wayland_WaylandCompositor_nativeSetZeroCopy(JNIEnv *
 /* Milliseconds since the compositor last put a game frame on the layer without a copy; -1 = never
  * this session. The drawer's status line ("switching..." until the frames arrive / stop). */
 JNIEXPORT jint JNICALL
-Java_com_steamdeck_launcher_wayland_WaylandCompositor_nativeZeroCopyLastFrameAgeMs(JNIEnv *env, jclass clazz) {
+Java_com_droiddeck_launcher_wayland_WaylandCompositor_nativeZeroCopyLastFrameAgeMs(JNIEnv *env, jclass clazz) {
     return (jint)ahb_swapchain_last_frame_age_ms();
 }
 
 /* Zero-copy frames in the last completed 10 s stats window (on_stats_timer), for the drawer's live line. */
 JNIEXPORT jint JNICALL
-Java_com_steamdeck_launcher_wayland_WaylandCompositor_nativeZeroCopyFrames(JNIEnv *env, jclass clazz) {
+Java_com_droiddeck_launcher_wayland_WaylandCompositor_nativeZeroCopyFrames(JNIEnv *env, jclass clazz) {
     return (jint)g_zero_copy_last;
 }
 
@@ -326,7 +326,7 @@ Java_com_steamdeck_launcher_wayland_WaylandCompositor_nativeZeroCopyFrames(JNIEn
  * the renderer's driver imports it (default on; BANNER_WAYLAND_UBWC=0 = off). Set before the compositor
  * starts. */
 JNIEXPORT void JNICALL
-Java_com_steamdeck_launcher_wayland_WaylandCompositor_nativeSetUbwc(JNIEnv *env, jclass clazz, jboolean on) {
+Java_com_droiddeck_launcher_wayland_WaylandCompositor_nativeSetUbwc(JNIEnv *env, jclass clazz, jboolean on) {
     g_ubwc = on ? 1 : 0;
     __android_log_print(ANDROID_LOG_INFO, TAG, "compressed (UBWC) game buffers %s", on ? "on" : "off");
 }
@@ -334,7 +334,7 @@ Java_com_steamdeck_launcher_wayland_WaylandCompositor_nativeSetUbwc(JNIEnv *env,
 /* Debug: name no DRM device in the dma-buf feedback (BANNER_WAYLAND_NO_RENDER_NODE=1), the way a
  * phone that exposes no /dev/dri node to apps does. Set before the compositor starts. */
 JNIEXPORT void JNICALL
-Java_com_steamdeck_launcher_wayland_WaylandCompositor_nativeSetNoRenderNode(JNIEnv *env, jclass clazz, jboolean on) {
+Java_com_droiddeck_launcher_wayland_WaylandCompositor_nativeSetNoRenderNode(JNIEnv *env, jclass clazz, jboolean on) {
     g_no_render_node = on ? 1 : 0;
     if (on) __android_log_print(ANDROID_LOG_INFO, TAG, "debug: advertising no DRM device (main device 0:0)");
 }
@@ -344,27 +344,27 @@ Java_com_steamdeck_launcher_wayland_WaylandCompositor_nativeSetNoRenderNode(JNIE
  * without this SurfaceFlinger never sees the game's cadence. 0 = clear the vote. Any thread, any
  * time; the compositor applies it with its next layer transaction and logs the change. */
 JNIEXPORT void JNICALL
-Java_com_steamdeck_launcher_wayland_WaylandCompositor_nativeSetLayerFrameRate(JNIEnv *env, jclass clazz, jfloat hz) {
+Java_com_droiddeck_launcher_wayland_WaylandCompositor_nativeSetLayerFrameRate(JNIEnv *env, jclass clazz, jfloat hz) {
     (void)env; (void)clazz;
     sc_layer_set_frame_rate((float)hz);
 }
 
 /* The panel's refresh rate (Hz) for the advertised wl_output mode. Set before the compositor starts. */
 JNIEXPORT void JNICALL
-Java_com_steamdeck_launcher_wayland_WaylandCompositor_nativeSetOutputRefreshRate(JNIEnv *env, jclass clazz, jfloat hz) {
+Java_com_droiddeck_launcher_wayland_WaylandCompositor_nativeSetOutputRefreshRate(JNIEnv *env, jclass clazz, jfloat hz) {
     g_output_refresh_mhz = hz > 1.0f ? (int)(hz * 1000.0f + 0.5f) : 0;
 }
 
 /* The container's screen size for the advertised wl_output mode. Set before the compositor starts. */
 extern void vkp_reset_first_frame(void);
 JNIEXPORT void JNICALL
-Java_com_steamdeck_launcher_wayland_WaylandCompositor_nativeResetFirstFrame(JNIEnv *env, jclass clazz) {
+Java_com_droiddeck_launcher_wayland_WaylandCompositor_nativeResetFirstFrame(JNIEnv *env, jclass clazz) {
     (void)env; (void)clazz;
     vkp_reset_first_frame();
 }
 
 JNIEXPORT void JNICALL
-Java_com_steamdeck_launcher_wayland_WaylandCompositor_nativeSetOutputSize(JNIEnv *env, jclass clazz, jint w, jint h) {
+Java_com_droiddeck_launcher_wayland_WaylandCompositor_nativeSetOutputSize(JNIEnv *env, jclass clazz, jint w, jint h) {
     g_output_w = w > 0 ? w : 0;
     g_output_h = h > 0 ? h : 0;
 }
@@ -372,7 +372,7 @@ Java_com_steamdeck_launcher_wayland_WaylandCompositor_nativeSetOutputSize(JNIEnv
 /* Fullscreen mode + screen alignment (Container.FULLSCREEN_* / ALIGN_* values): how the scene is
  * fitted onto the output. Any thread, any time; the next frame uses it. */
 JNIEXPORT void JNICALL
-Java_com_steamdeck_launcher_wayland_WaylandCompositor_nativeSetScaleMode(JNIEnv *env, jclass clazz, jint mode, jint alignment) {
+Java_com_droiddeck_launcher_wayland_WaylandCompositor_nativeSetScaleMode(JNIEnv *env, jclass clazz, jint mode, jint alignment) {
     vk_present_set_scale_mode(mode, alignment);
     __android_log_print(ANDROID_LOG_INFO, TAG, "scale mode %d alignment %d", mode, alignment);
 }
@@ -383,38 +383,38 @@ Java_com_steamdeck_launcher_wayland_WaylandCompositor_nativeSetScaleMode(JNIEnv 
 
 /* Scaling mode: 0=None 1=Linear 2=Nearest 3=SGSR 4=FSR 5=FSR Fit 6=Sharpen 7=NIS 8=SGSR HQ. */
 JNIEXPORT void JNICALL
-Java_com_steamdeck_launcher_wayland_WaylandCompositor_nativeSetUpscaler(JNIEnv *env, jclass clazz, jint mode) {
+Java_com_droiddeck_launcher_wayland_WaylandCompositor_nativeSetUpscaler(JNIEnv *env, jclass clazz, jint mode) {
     vkp_effects_set_scaling(mode);
 }
 
 /* The upscaler's sharpness slider 0..100 (RCAS lobe / SGSR edge / NIS sharpness). */
 JNIEXPORT void JNICALL
-Java_com_steamdeck_launcher_wayland_WaylandCompositor_nativeSetUpscaleSharpness(JNIEnv *env, jclass clazz, jint sharpness) {
+Java_com_droiddeck_launcher_wayland_WaylandCompositor_nativeSetUpscaleSharpness(JNIEnv *env, jclass clazz, jint sharpness) {
     vkp_effects_set_upscale_sharpness(sharpness);
 }
 
 /* AMD CAS sharpen toggle + level 0..100 (0 = pass off). */
 JNIEXPORT void JNICALL
-Java_com_steamdeck_launcher_wayland_WaylandCompositor_nativeSetCas(JNIEnv *env, jclass clazz, jboolean enabled, jint sharpness) {
+Java_com_droiddeck_launcher_wayland_WaylandCompositor_nativeSetCas(JNIEnv *env, jclass clazz, jboolean enabled, jint sharpness) {
     vkp_effects_set_cas(enabled ? 1 : 0, sharpness);
 }
 
 /* Fake-HDR toggle. */
 JNIEXPORT void JNICALL
-Java_com_steamdeck_launcher_wayland_WaylandCompositor_nativeSetHdr(JNIEnv *env, jclass clazz, jboolean enabled) {
+Java_com_droiddeck_launcher_wayland_WaylandCompositor_nativeSetHdr(JNIEnv *env, jclass clazz, jboolean enabled) {
     vkp_effects_set_hdr(enabled ? 1 : 0);
 }
 
 /* Terminal debanding toggle + strength 0..200 (100 = 1 LSB). */
 JNIEXPORT void JNICALL
-Java_com_steamdeck_launcher_wayland_WaylandCompositor_nativeSetDeband(JNIEnv *env, jclass clazz, jboolean enabled, jint strength) {
+Java_com_droiddeck_launcher_wayland_WaylandCompositor_nativeSetDeband(JNIEnv *env, jclass clazz, jboolean enabled, jint strength) {
     vkp_effects_set_deband(enabled ? 1 : 0, strength);
 }
 
 /* Colour grade (slider units: brightness/contrast -100..100, gamma 0.5..3, saturation 0..200 %) and the
  * FXAA / Toon / CRT / NTSC toggles - VulkanRenderer.setScreenEffects. */
 JNIEXPORT void JNICALL
-Java_com_steamdeck_launcher_wayland_WaylandCompositor_nativeSetScreenEffects(JNIEnv *env, jclass clazz, jfloat brightness,
+Java_com_droiddeck_launcher_wayland_WaylandCompositor_nativeSetScreenEffects(JNIEnv *env, jclass clazz, jfloat brightness,
         jfloat contrast, jfloat gamma, jfloat saturation, jboolean fxaa, jboolean toon, jboolean crt, jboolean ntsc) {
     vkp_effects_set_screen(brightness, contrast, gamma, saturation, fxaa ? 1 : 0, toon ? 1 : 0, crt ? 1 : 0, ntsc ? 1 : 0);
 }
@@ -423,7 +423,7 @@ Java_com_steamdeck_launcher_wayland_WaylandCompositor_nativeSetScreenEffects(JNI
  * framework (the panel's HDR capability) rather than in the compositor. banner_log() mirrors to
  * logcat and appends to the session file when one is open, so this is safe at any point. */
 JNIEXPORT void JNICALL
-Java_com_steamdeck_launcher_wayland_WaylandCompositor_nativeLogDisplay(JNIEnv *env, jclass clazz, jstring message) {
+Java_com_droiddeck_launcher_wayland_WaylandCompositor_nativeLogDisplay(JNIEnv *env, jclass clazz, jstring message) {
     char *s = dup_jstr(env, message);
     if (s) banner_log("display", "%s", s);
     free(s);
@@ -432,7 +432,7 @@ Java_com_steamdeck_launcher_wayland_WaylandCompositor_nativeLogDisplay(JNIEnv *e
 /* The same under the "perf" area: facts the app knows about the session's performance setup (the CPU
  * cores the game is pinned to, say). Same safety as nativeLogDisplay. */
 JNIEXPORT void JNICALL
-Java_com_steamdeck_launcher_wayland_WaylandCompositor_nativeLogPerf(JNIEnv *env, jclass clazz, jstring message) {
+Java_com_droiddeck_launcher_wayland_WaylandCompositor_nativeLogPerf(JNIEnv *env, jclass clazz, jstring message) {
     char *s = dup_jstr(env, message);
     if (s) banner_log("perf", "%s", s);
     free(s);
@@ -442,7 +442,7 @@ Java_com_steamdeck_launcher_wayland_WaylandCompositor_nativeLogPerf(JNIEnv *env,
 
 /* The opt-in: mode 0 off, 1 BANNER_WAYLAND_HDR=1, 2 =force (testing). Before the compositor starts. */
 JNIEXPORT void JNICALL
-Java_com_steamdeck_launcher_wayland_WaylandCompositor_nativeSetHdrRequest(JNIEnv *env, jclass clazz, jint mode,
+Java_com_droiddeck_launcher_wayland_WaylandCompositor_nativeSetHdrRequest(JNIEnv *env, jclass clazz, jint mode,
         jstring source, jboolean dxvkHdr, jboolean zeroCopyForced) {
     char *s = dup_jstr(env, source);
     banner_color_set_request((int)mode, s, dxvkHdr ? 1 : 0, zeroCopyForced ? 1 : 0);
@@ -451,7 +451,7 @@ Java_com_steamdeck_launcher_wayland_WaylandCompositor_nativeSetHdrRequest(JNIEnv
 
 /* The game's display as android.view.Display reports it (before the start; again on every change). */
 JNIEXPORT void JNICALL
-Java_com_steamdeck_launcher_wayland_WaylandCompositor_nativeSetHdrDisplay(JNIEnv *env, jclass clazz, jint id, jstring name,
+Java_com_droiddeck_launcher_wayland_WaylandCompositor_nativeSetHdrDisplay(JNIEnv *env, jclass clazz, jint id, jstring name,
         jstring formats, jboolean hdr10, jfloat maxLum, jfloat maxAvg, jfloat minLum, jboolean ratioAvailable,
         jfloat ratio, jint api) {
     char *n = dup_jstr(env, name), *f = dup_jstr(env, formats);
@@ -462,38 +462,38 @@ Java_com_steamdeck_launcher_wayland_WaylandCompositor_nativeSetHdrDisplay(JNIEnv
 
 /* One Display.getHdrSdrRatio() reading (listener = from the display's ratio listener). Any thread. */
 JNIEXPORT void JNICALL
-Java_com_steamdeck_launcher_wayland_WaylandCompositor_nativeHdrSdrRatioSample(JNIEnv *env, jclass clazz, jfloat ratio,
+Java_com_droiddeck_launcher_wayland_WaylandCompositor_nativeHdrSdrRatioSample(JNIEnv *env, jclass clazz, jfloat ratio,
         jboolean listener) {
     banner_color_ratio_sample((float)ratio, listener ? 1 : 0);
 }
 
 /* ms since an HDR frame last reached a display layer, -1 = never this session. Any thread. */
 JNIEXPORT jint JNICALL
-Java_com_steamdeck_launcher_wayland_WaylandCompositor_nativeHdrLastFrameAgeMs(JNIEnv *env, jclass clazz) {
+Java_com_droiddeck_launcher_wayland_WaylandCompositor_nativeHdrLastFrameAgeMs(JNIEnv *env, jclass clazz) {
     return (jint)banner_color_last_frame_age_ms();
 }
 
 /* -1 = not decided yet, 0 = closed, 1 = open. Any thread. */
 JNIEXPORT jint JNICALL
-Java_com_steamdeck_launcher_wayland_WaylandCompositor_nativeHdrGateState(JNIEnv *env, jclass clazz) {
+Java_com_droiddeck_launcher_wayland_WaylandCompositor_nativeHdrGateState(JNIEnv *env, jclass clazz) {
     return (jint)banner_color_gate_state();
 }
 
 /* The session is ending: the "HDR on screen: ..." summary line. Any thread, once. */
 JNIEXPORT void JNICALL
-Java_com_steamdeck_launcher_wayland_WaylandCompositor_nativeHdrSessionEnd(JNIEnv *env, jclass clazz) {
+Java_com_droiddeck_launcher_wayland_WaylandCompositor_nativeHdrSessionEnd(JNIEnv *env, jclass clazz) {
     banner_color_session_end();
 }
 
 /* HDR frames really on screen right now (the HUD badge). Any thread. */
 JNIEXPORT jboolean JNICALL
-Java_com_steamdeck_launcher_wayland_WaylandCompositor_nativeHdrOnScreen(JNIEnv *env, jclass clazz) {
+Java_com_droiddeck_launcher_wayland_WaylandCompositor_nativeHdrOnScreen(JNIEnv *env, jclass clazz) {
     return banner_color_hdr_on_screen() ? JNI_TRUE : JNI_FALSE;
 }
 
 /* One "color" line in the session log from Java. */
 JNIEXPORT void JNICALL
-Java_com_steamdeck_launcher_wayland_WaylandCompositor_nativeLogColor(JNIEnv *env, jclass clazz, jstring message) {
+Java_com_droiddeck_launcher_wayland_WaylandCompositor_nativeLogColor(JNIEnv *env, jclass clazz, jstring message) {
     char *s = dup_jstr(env, message);
     if (s) banner_log("color", "%s", s);
     free(s);
@@ -502,7 +502,7 @@ Java_com_steamdeck_launcher_wayland_WaylandCompositor_nativeLogColor(JNIEnv *env
 /* One line in the session log under an area Java names ("gpu", "nvapi"): launch facts the app decides.
  * The area is the log's 9-character column; an empty one reads "app". */
 JNIEXPORT void JNICALL
-Java_com_steamdeck_launcher_wayland_WaylandCompositor_nativeLog(JNIEnv *env, jclass clazz, jstring area, jstring message) {
+Java_com_droiddeck_launcher_wayland_WaylandCompositor_nativeLog(JNIEnv *env, jclass clazz, jstring area, jstring message) {
     char *a = dup_jstr(env, area), *s = dup_jstr(env, message);
     if (s) banner_log(a && a[0] ? a : "app", "%s", s);
     free(a);
@@ -511,26 +511,26 @@ Java_com_steamdeck_launcher_wayland_WaylandCompositor_nativeLog(JNIEnv *env, jcl
 
 /* SDR content's level inside an HDR picture, in nits (default 203). */
 JNIEXPORT void JNICALL
-Java_com_steamdeck_launcher_wayland_WaylandCompositor_nativeSetHdrSdrWhite(JNIEnv *env, jclass clazz, jfloat nits) {
+Java_com_droiddeck_launcher_wayland_WaylandCompositor_nativeSetHdrSdrWhite(JNIEnv *env, jclass clazz, jfloat nits) {
     banner_color_set_sdr_white((float)nits);
 }
 
 /* The drawer's live HDR output switch: on = HDR frames as HDR, off = the same frames tone-mapped to SDR.
  * Applied on the compositor thread (logged there, with a redraw). */
 JNIEXPORT void JNICALL
-Java_com_steamdeck_launcher_wayland_WaylandCompositor_nativeSetHdrOutput(JNIEnv *env, jclass clazz, jboolean on) {
+Java_com_droiddeck_launcher_wayland_WaylandCompositor_nativeSetHdrOutput(JNIEnv *env, jclass clazz, jboolean on) {
     if (banner_get_display()) banner_host_hdr_output(on ? 1 : 0);
     else banner_color_set_output(on ? 1 : 0); /* no compositor thread yet: nothing is drawing either */
 }
 
 JNIEXPORT jboolean JNICALL
-Java_com_steamdeck_launcher_wayland_WaylandCompositor_nativeHdrOutput(JNIEnv *env, jclass clazz) {
+Java_com_droiddeck_launcher_wayland_WaylandCompositor_nativeHdrOutput(JNIEnv *env, jclass clazz) {
     return banner_color_output() ? JNI_TRUE : JNI_FALSE;
 }
 
 /* Device evidence for the HDR lines: thermal status + headroom, brightness + mode. */
 JNIEXPORT void JNICALL
-Java_com_steamdeck_launcher_wayland_WaylandCompositor_nativeHdrEnvSample(JNIEnv *env, jclass clazz, jint thermal,
+Java_com_droiddeck_launcher_wayland_WaylandCompositor_nativeHdrEnvSample(JNIEnv *env, jclass clazz, jint thermal,
                                                                    jfloat headroom, jint brightness, jint mode) {
     banner_color_env_sample((int)thermal, (float)headroom != (float)headroom ? -1.0f : (float)headroom,
                             (int)brightness, (int)mode);
@@ -538,18 +538,18 @@ Java_com_steamdeck_launcher_wayland_WaylandCompositor_nativeHdrEnvSample(JNIEnv 
 
 /* Display.getHighestHdrSdrRatio() (Android 16+), <= 0 = not reported. */
 JNIEXPORT void JNICALL
-Java_com_steamdeck_launcher_wayland_WaylandCompositor_nativeSetHdrHighestRatio(JNIEnv *env, jclass clazz, jfloat ratio) {
+Java_com_droiddeck_launcher_wayland_WaylandCompositor_nativeSetHdrHighestRatio(JNIEnv *env, jclass clazz, jfloat ratio) {
     banner_color_set_highest_ratio((float)ratio == (float)ratio ? (float)ratio : -1.0f);
 }
 
 /* The HDR headroom the screen surface should ask for (HDR10 swapchain frames in the last 1.5 s), 0 = none. */
 JNIEXPORT jfloat JNICALL
-Java_com_steamdeck_launcher_wayland_WaylandCompositor_nativeHdrScreenHeadroom(JNIEnv *env, jclass clazz) {
+Java_com_droiddeck_launcher_wayland_WaylandCompositor_nativeHdrScreenHeadroom(JNIEnv *env, jclass clazz) {
     return (jfloat)banner_color_screen_headroom(NULL, 0);
 }
 
 JNIEXPORT jstring JNICALL
-Java_com_steamdeck_launcher_wayland_WaylandCompositor_nativeHdrScreenHeadroomWhy(JNIEnv *env, jclass clazz) {
+Java_com_droiddeck_launcher_wayland_WaylandCompositor_nativeHdrScreenHeadroomWhy(JNIEnv *env, jclass clazz) {
     char why[200];
     banner_color_screen_headroom(why, sizeof(why));
     return (*env)->NewStringUTF(env, why);
@@ -557,25 +557,25 @@ Java_com_steamdeck_launcher_wayland_WaylandCompositor_nativeHdrScreenHeadroomWhy
 
 /* The app's screen-surface request, for the no-headroom lines: > 0 asked, 0 cleared, -1 not possible. */
 JNIEXPORT void JNICALL
-Java_com_steamdeck_launcher_wayland_WaylandCompositor_nativeHdrNoteHeadroomRequest(JNIEnv *env, jclass clazz, jfloat ratio) {
+Java_com_droiddeck_launcher_wayland_WaylandCompositor_nativeHdrNoteHeadroomRequest(JNIEnv *env, jclass clazz, jfloat ratio) {
     banner_color_note_headroom_request((float)ratio);
 }
 
 /* 0 none, 1 HDR frames on screen with headroom, 2 HDR frames on screen without headroom for 5 s+. */
 JNIEXPORT jint JNICALL
-Java_com_steamdeck_launcher_wayland_WaylandCompositor_nativeHdrState(JNIEnv *env, jclass clazz) {
+Java_com_droiddeck_launcher_wayland_WaylandCompositor_nativeHdrState(JNIEnv *env, jclass clazz) {
     return (jint)banner_color_hdr_state();
 }
 
 /* An HDR game's frames were shown tone-mapped to SDR in the last 1.5 s (the drawer's status line). */
 JNIEXPORT jboolean JNICALL
-Java_com_steamdeck_launcher_wayland_WaylandCompositor_nativeHdrToneMappedOnScreen(JNIEnv *env, jclass clazz) {
+Java_com_droiddeck_launcher_wayland_WaylandCompositor_nativeHdrToneMappedOnScreen(JNIEnv *env, jclass clazz) {
     return banner_color_tonemapped_on_screen() ? JNI_TRUE : JNI_FALSE;
 }
 
 /* The Look the controls currently match (null = Custom) - only named in the session log. */
 JNIEXPORT void JNICALL
-Java_com_steamdeck_launcher_wayland_WaylandCompositor_nativeSetLookName(JNIEnv *env, jclass clazz, jstring name) {
+Java_com_droiddeck_launcher_wayland_WaylandCompositor_nativeSetLookName(JNIEnv *env, jclass clazz, jstring name) {
     char *s = dup_jstr(env, name);
     vkp_effects_set_look(s);
     free(s);
@@ -583,14 +583,14 @@ Java_com_steamdeck_launcher_wayland_WaylandCompositor_nativeSetLookName(JNIEnv *
 
 /* The in-game FPS limiter: frames per second, 0 = unlimited. */
 JNIEXPORT void JNICALL
-Java_com_steamdeck_launcher_wayland_WaylandCompositor_nativeSetFpsLimit(JNIEnv *env, jclass clazz, jint fps) {
+Java_com_droiddeck_launcher_wayland_WaylandCompositor_nativeSetFpsLimit(JNIEnv *env, jclass clazz, jint fps) {
     g_fps_limit = fps > 0 ? fps : 0;
     __android_log_print(ANDROID_LOG_INFO, TAG, "fps limit %d", fps);
 }
 
 /* Swap/clear the output window (e.g. SurfaceView recreated/destroyed). */
 JNIEXPORT void JNICALL
-Java_com_steamdeck_launcher_wayland_WaylandCompositor_nativeSetSurface(
+Java_com_droiddeck_launcher_wayland_WaylandCompositor_nativeSetSurface(
         JNIEnv *env, jclass clazz, jobject surface) {
     if (surface) {
         vk_present_set_window(ANativeWindow_fromSurface(env, surface));
@@ -616,7 +616,7 @@ static char *dup_bytes(JNIEnv *env, jbyteArray arr, int *len) {
 
 /* Android's clipboard text becomes the guest's selection (empty/null = clear). */
 JNIEXPORT void JNICALL
-Java_com_steamdeck_launcher_wayland_WaylandCompositor_nativeSetClipboardText(JNIEnv *env, jclass clazz, jbyteArray utf8) {
+Java_com_droiddeck_launcher_wayland_WaylandCompositor_nativeSetClipboardText(JNIEnv *env, jclass clazz, jbyteArray utf8) {
     int len;
     char *buf = dup_bytes(env, utf8, &len);
     banner_host_clipboard_text(buf ? buf : "", len);
@@ -625,7 +625,7 @@ Java_com_steamdeck_launcher_wayland_WaylandCompositor_nativeSetClipboardText(JNI
 
 /* Soft-keyboard text committed to the program accepting text input. */
 JNIEXPORT void JNICALL
-Java_com_steamdeck_launcher_wayland_WaylandCompositor_nativeTextInputCommit(JNIEnv *env, jclass clazz, jbyteArray utf8) {
+Java_com_droiddeck_launcher_wayland_WaylandCompositor_nativeTextInputCommit(JNIEnv *env, jclass clazz, jbyteArray utf8) {
     int len;
     char *buf = dup_bytes(env, utf8, &len);
     if (buf && len) banner_host_text_commit(buf, len);
@@ -634,7 +634,7 @@ Java_com_steamdeck_launcher_wayland_WaylandCompositor_nativeTextInputCommit(JNIE
 
 /* Composing (pre-edit) text; cursorBegin/cursorEnd are character indexes into it, -1 = end. */
 JNIEXPORT void JNICALL
-Java_com_steamdeck_launcher_wayland_WaylandCompositor_nativeTextInputPreedit(JNIEnv *env, jclass clazz, jbyteArray utf8,
+Java_com_droiddeck_launcher_wayland_WaylandCompositor_nativeTextInputPreedit(JNIEnv *env, jclass clazz, jbyteArray utf8,
                                                                         jint cursorBegin, jint cursorEnd) {
     int len;
     char *buf = dup_bytes(env, utf8, &len);
@@ -644,6 +644,6 @@ Java_com_steamdeck_launcher_wayland_WaylandCompositor_nativeTextInputPreedit(JNI
 
 /* The IME deleted characters around the caret. */
 JNIEXPORT void JNICALL
-Java_com_steamdeck_launcher_wayland_WaylandCompositor_nativeTextInputDelete(JNIEnv *env, jclass clazz, jint before, jint after) {
+Java_com_droiddeck_launcher_wayland_WaylandCompositor_nativeTextInputDelete(JNIEnv *env, jclass clazz, jint before, jint after) {
     banner_host_text_delete(before, after);
 }
