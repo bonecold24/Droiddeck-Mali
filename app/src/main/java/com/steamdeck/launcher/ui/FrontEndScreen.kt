@@ -1,5 +1,6 @@
 package com.steamdeck.launcher.ui
 
+import android.graphics.Bitmap
 import android.os.Build
 import android.provider.Settings
 import androidx.activity.compose.BackHandler
@@ -88,6 +89,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.LayoutCoordinates
@@ -130,6 +132,9 @@ class FrontEndState(
     val lsfgReady: Boolean = false,
     val pageKey: String? = null,
     val theme: String = Themes.PAPER,
+    val isHomeApp: Boolean = false,
+    val defaultHomeLabel: String? = null,
+    val androidApps: List<com.steamdeck.launcher.HomeApp.LaunchableApp> = emptyList(),
 )
 
 class FrontEndActions(
@@ -156,6 +161,8 @@ class FrontEndActions(
     val onCredits: () -> Unit,
     val onPageBack: () -> Unit = {},
     val onTheme: (String) -> Unit = {},
+    val onHomeApp: () -> Unit = {},
+    val onAndroidApp: (com.steamdeck.launcher.HomeApp.LaunchableApp) -> Unit = {},
 )
 
 
@@ -224,6 +231,7 @@ fun FrontEndScreen(s: FrontEndState, a: FrontEndActions, page: (@Composable () -
     val colors = MaterialTheme.colorScheme
     val ctx = LocalContext.current
     BackHandler(enabled = s.pageKey != null && page != null) { a.onPageBack() }
+    LaunchedEffect(s.isHomeApp) { if (!s.isHomeApp && selected == "android-apps") selected = "steam" }
     remember { Motion.scale = Settings.Global.getFloat(ctx.contentResolver, Settings.Global.ANIMATOR_DURATION_SCALE, 1f); true }
 
     BoxWithConstraints(modifier = Modifier.fillMaxSize().background(colors.background).systemBarsPadding()) {
@@ -312,6 +320,10 @@ private fun Rail(
             }
             val unregister: (String) -> Unit = { positions.remove(it) }
             Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                if (s.isHomeApp) {
+                    NavItem("Android apps", "android-apps", selected == "android-apps", count = s.androidApps.size,
+                        register = register, unregister = unregister) { onSelect("android-apps") }
+                }
                 NavItem("Steam", "steam", selected == "steam", caret = openSteam, count = s.steamGames.size, register = register, unregister = unregister) { onSelect("steam") }
                 Sub(openSteam) {
                     for ((i, g) in s.steamGames.withIndex()) NavItem(g.name, "app:${g.appId}", selected == "app:${g.appId}", small = true, i = i, register = register, unregister = unregister) { onSelect("app:${g.appId}") }
@@ -334,12 +346,12 @@ private fun Rail(
                     if (s.emulators.none { it.installed }) NavItem("Install emulators", "apps", selected == "apps", small = true, muted = true, register = register, unregister = unregister) { a.onApps() }
                     NavItem("Settings", "settings:lxqt", selected == "settings:lxqt", small = true, tiny = true, muted = true, i = s.emulators.count { it.installed }, register = register, unregister = unregister) { a.onDesktopSettings() }
                 }
-            Spacer(Modifier.height(6.dp))
+                Spacer(Modifier.height(6.dp))
             val menus = remember { MenuHost() }
             val item: @Composable (String, String?, Int, String?, () -> Unit) -> Unit = { label, value, i, key, act ->
                 NavItem(label, key ?: "x", key != null && selected == key, small = true, tiny = true, muted = true, value = value, i = i, register = register, unregister = unregister) { act() }
             }
-            NavItem("Setup", "x", false, caret = openSetup, count = 10, onClick = onToggleSetup)
+            NavItem("Setup", "x", false, caret = openSetup, count = 11, onClick = onToggleSetup)
             Sub(openSetup) {
                 item("Files", null, 0, null, a.onFiles)
                 item("Desktop & apps", null, 1, "apps", a.onApps)
@@ -388,6 +400,7 @@ private fun Rail(
                         for (t in Themes.all) MenuItem(t.label, checked = s.theme == t.id) { a.onTheme(t.id); menus.open = null }
                     }
                 }
+                item("Default Home app", s.defaultHomeLabel ?: "Choose a Home app", 10, null, a.onHomeApp)
             }
             }
         }
@@ -503,6 +516,7 @@ private fun Pane(s: FrontEndState, selected: String, a: FrontEndActions, page: (
             selected.startsWith("app:") -> s.steamGames.firstOrNull { "app:${it.appId}" == selected }.let { it?.art to hueOf(it?.name ?: "") }
             selected.startsWith("emu:") -> null to hueOf(selected)
             selected.startsWith("rom:") -> romFor(s, selected).let { it?.second?.art to hueOf(it?.second?.name ?: "") }
+            selected == "android-apps" -> null to hueOf("android-apps")
             else -> null to 268f
         }
         Backdrop(wash)
@@ -547,6 +561,24 @@ private fun Content(s: FrontEndState, selected: String, a: FrontEndActions, modi
     val colors = MaterialTheme.colorScheme
     Column(modifier = modifier.padding(horizontal = 22.dp, vertical = 18.dp)) {
         when {
+            selected == "android-apps" && s.isHomeApp -> {
+                Rise(0) { Eyebrow("Android apps") }
+                Rise(1) { Title("Installed apps") }
+                Rise(2) { SectionTitle("Apps", s.androidApps.size.toString()) }
+                if (s.androidApps.isEmpty()) Rise(3) { Note("No launchable Android apps found.") }
+                else Rise(3, Modifier.weight(1f).fillMaxWidth()) {
+                    ArtGrid(s.androidApps.map { app ->
+                        Tile(
+                            app.label,
+                            null,
+                            null,
+                            "android:${app.packageName}",
+                            onClick = { a.onAndroidApp(app) },
+                            iconBitmap = app.icon,
+                        )
+                    })
+                }
+            }
             selected == "steam" -> {
                 Rise(0) { Eyebrow("Steam") }
                 Rise(3) {
@@ -662,7 +694,11 @@ private fun Content(s: FrontEndState, selected: String, a: FrontEndActions, modi
     }
 }
 
-private class Tile(val title: String, val sub: String?, val art: File?, val key: String, val iconRes: Int? = null, val dim: Boolean = false, val onClick: () -> Unit)
+private class Tile(
+    val title: String, val sub: String?, val art: File?, val key: String,
+    val iconRes: Int? = null, val dim: Boolean = false, val iconBitmap: Bitmap? = null,
+    val onClick: () -> Unit,
+)
 
 
 @Composable
@@ -777,7 +813,7 @@ private fun Poster(art: File?, name: String, modifier: Modifier) {
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun ArtGrid(tiles: List<Tile>, wide: Boolean = false) {
-    val square = tiles.isNotEmpty() && tiles.all { it.art == null && it.iconRes != null }
+    val square = tiles.isNotEmpty() && tiles.all { it.art == null && (it.iconRes != null || it.iconBitmap != null) }
     // Thumbnails to recognise a game by, not posters; icon tiles are squares.
     val minSize = if (square) 64.dp else if (wide) 92.dp else 70.dp
     val gap = 8.dp
@@ -821,7 +857,7 @@ private fun GameTile(t: Tile, wide: Boolean, square: Boolean, src: MutableIntera
             .hoverable(src).clickable(interactionSource = src, indication = LocalIndication.current, onClick = t.onClick),
     ) {
         Box(modifier = Modifier.fillMaxWidth().shine(hot)) {
-            Art(t.art, t.iconRes, t.title, Modifier.fillMaxWidth(), wide)
+            Art(t.art, t.iconRes, t.title, Modifier.fillMaxWidth(), wide, t.iconBitmap)
             androidx.compose.animation.AnimatedVisibility(
                 visible = hot, modifier = Modifier.align(Alignment.Center),
                 enter = scaleIn(Motion.sp(0.5f), initialScale = 0.5f) + fadeIn(Motion.tw(200)),
@@ -841,13 +877,14 @@ private fun GameTile(t: Tile, wide: Boolean, square: Boolean, src: MutableIntera
 }
 
 @Composable
-private fun Art(art: File?, iconRes: Int?, label: String, modifier: Modifier, wide: Boolean = false) {
+private fun Art(art: File?, iconRes: Int?, label: String, modifier: Modifier, wide: Boolean = false, iconBitmap: Bitmap? = null) {
     val colors = MaterialTheme.colorScheme
-    val ratio = if (art == null && iconRes != null) 1f else if (wide) 16f / 9f else 2f / 3f
-    Box(modifier = modifier.aspectRatio(ratio).background(if (art == null && iconRes == null) artBrush(hueOf(label)) else Brush.linearGradient(listOf(colors.surfaceVariant, colors.surface)))) {
+    val ratio = if (art == null && (iconRes != null || iconBitmap != null)) 1f else if (wide) 16f / 9f else 2f / 3f
+    Box(modifier = modifier.aspectRatio(ratio).background(if (art == null && iconRes == null && iconBitmap == null) artBrush(hueOf(label)) else Brush.linearGradient(listOf(colors.surfaceVariant, colors.surface)))) {
         when {
             art != null -> AsyncImage(model = art, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
             iconRes != null -> Image(painterResource(iconRes), null, contentScale = ContentScale.Fit, modifier = Modifier.fillMaxSize().padding(if (wide) 10.dp else 8.dp))
+            iconBitmap != null -> Image(bitmap = iconBitmap.asImageBitmap(), contentDescription = null, contentScale = ContentScale.Fit, modifier = Modifier.fillMaxSize().padding(8.dp))
             else -> {
                 Spacer(Modifier.fillMaxSize().background(Brush.verticalGradient(0f to Color.Transparent, 0.45f to Color.Transparent, 1f to Color.Black.copy(alpha = 0.55f))))
                 Text(label, fontSize = 9.sp, fontWeight = FontWeight.Bold, color = Color.White.copy(alpha = 0.92f), modifier = Modifier.align(Alignment.BottomStart).padding(5.dp), maxLines = 3, overflow = TextOverflow.Ellipsis)

@@ -129,7 +129,7 @@ fun AnchoredMenu(open: Boolean, onDismiss: () -> Unit, title: String? = null, no
 @Composable
 fun MenuItem(
     label: String, checked: Boolean, enabled: Boolean = true, detail: String? = null,
-    trailing: (@Composable () -> Unit)? = null, onClick: () -> Unit,
+    trailing: (@Composable () -> Unit)? = null, leading: (@Composable () -> Unit)? = null, onClick: () -> Unit,
 ) {
     val colors = MaterialTheme.colorScheme
     val pal = LocalPalette.current
@@ -147,6 +147,10 @@ fun MenuItem(
             .padding(horizontal = 10.dp, vertical = 9.dp),
     ) {
         Text("✓", fontSize = 12.sp, color = pal.signal, modifier = Modifier.width(18.dp).alpha(if (checked) 1f else 0f))
+        if (leading != null) {
+            leading()
+            Spacer(Modifier.width(8.dp))
+        }
         Column(modifier = Modifier.weight(1f)) {
             Text(label, fontSize = 13.5.sp, color = if (checked) pal.signal else colors.onBackground, maxLines = 2, overflow = TextOverflow.Ellipsis)
             if (detail != null) Text(detail, fontSize = 11.sp, color = colors.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis)

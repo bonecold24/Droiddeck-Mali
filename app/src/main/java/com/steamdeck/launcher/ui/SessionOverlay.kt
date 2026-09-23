@@ -29,12 +29,14 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.steamdeck.launcher.R
+import com.steamdeck.launcher.HomeApp
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Spring
@@ -54,6 +56,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
@@ -136,6 +139,9 @@ fun SessionPausedOverlay(onResume: () -> Unit) {
 /** Everything the drawer shows and does. */
 class DrawerActions(
     val steam: Boolean,
+    val isHomeApp: Boolean,
+    val defaultHomeLabel: String?,
+    val androidApps: List<HomeApp.LaunchableApp>,
     val hudOn: Boolean,
     val frameGenEngine: String,
     val frameGenMultiplier: Int,
@@ -160,6 +166,8 @@ class DrawerActions(
     val onFexPreset: (String) -> Unit,
     val onSecondScreenMode: (SecondScreenMode) -> Unit,
     val onSecondScreenDisplay: (Int) -> Unit,
+    val onHomeApp: () -> Unit,
+    val onLaunchAndroidApp: (HomeApp.LaunchableApp) -> Unit,
     val onBackground: () -> Unit,
     val onStop: () -> Unit,
     val onClose: () -> Unit,
@@ -170,6 +178,7 @@ fun SessionDrawer(open: Boolean, a: DrawerActions) {
     val colors = MaterialTheme.colorScheme
     val pal = LocalPalette.current
     val host = rememberMenuHost()
+    var androidAppsExpanded by rememberSaveable { mutableStateOf(false) }
     val veil by animateFloatAsState(if (open) 1f else 0f, Motion.tw(260), label = "veil")
     if (open || veil > 0.01f) Box(
         modifier = Modifier.fillMaxSize().graphicsLayer { alpha = veil }.background(Color(0x8A000000))
@@ -233,6 +242,40 @@ fun SessionDrawer(open: Boolean, a: DrawerActions) {
                     }
                 }
 
+                if (a.isHomeApp) SettingsGroup("Android apps") {
+                    ActionRow("Launch an app", null, if (androidAppsExpanded) "Hide" else "Show") {
+                        androidAppsExpanded = !androidAppsExpanded
+                    }
+                    if (androidAppsExpanded) {
+                        if (a.androidApps.isEmpty()) {
+                            Text("No launchable apps found", fontSize = 12.sp, color = colors.onSurfaceVariant,
+                                modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp))
+                        } else {
+                            for (app in a.androidApps) {
+                                MenuItem(
+                                    app.label,
+                                    checked = false,
+                                    leading = {
+                                        app.icon?.let { icon ->
+                                            Image(
+                                                bitmap = icon.asImageBitmap(),
+                                                contentDescription = null,
+                                                modifier = Modifier.size(26.dp).clip(RoundedCornerShape(6.dp)),
+                                            )
+                                        }
+                                    },
+                                ) { a.onLaunchAndroidApp(app) }
+                            }
+                        }
+                    }
+                }
+
+                if (a.isHomeApp) {
+                    SettingsGroup("Home screen") {
+                        ActionRow("Default Home app", a.defaultHomeLabel?.let { "Currently using $it" }, "Change") { a.onHomeApp() }
+                    }
+                }
+
                 SettingsGroup("Now") {
                     ToggleRow(host, "hud", "Performance HUD", null, a.hudOn, onChange = a.onHud)
                     val fgOpen = host.open == "fg"
@@ -282,7 +325,7 @@ fun SessionDrawer(open: Boolean, a: DrawerActions) {
                 SettingsGroup("Next session") {
                     ChoiceRow(
                         host, "shape", "Display shape", null,
-                        listOf(SessionPrefs.SHAPE_AUTO to "The panel's shape", SessionPrefs.SHAPE_WIDE to "16:9 with bars"), a.shapeMode, onPick = a.onShape,
+                        SessionPrefs.shapeChoices, a.shapeMode, onPick = a.onShape,
                     )
                     if (a.steam) ChoiceRow(
                         host, "fex", "FEX preset", null,
@@ -292,8 +335,11 @@ fun SessionDrawer(open: Boolean, a: DrawerActions) {
                 }
 
                 Spacer(Modifier.height(18.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
-                    SecondaryButton("Send to background") { host.open = null; a.onBackground() }
+                Row(
+                    horizontalArrangement = if (a.isHomeApp) Arrangement.End else Arrangement.spacedBy(10.dp),
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    if (!a.isHomeApp) SecondaryButton("Send to background") { host.open = null; a.onBackground() }
                     DangerButton("Stop session") { host.open = null; a.onStop() }
                 }
                 Spacer(Modifier.height(12.dp))

@@ -149,6 +149,7 @@ class MainActivity : ComponentActivity() {
     // The mode whose settings dialog is open, with what it shows; refreshed by openModeSettings().
     private var settingsMode by mutableStateOf<String?>(null)
     private var resolutionCap by mutableStateOf(1080)
+    private var customResolution by mutableStateOf<Pair<Int, Int>?>(null)
     private var fexPreset by mutableStateOf("")
     private var steamChannel by mutableStateOf("publicbeta")
     private var theme by mutableStateOf("paper")
@@ -172,6 +173,13 @@ class MainActivity : ComponentActivity() {
     private var runningLabel by mutableStateOf<String?>(null)
     private var logsEnabled by mutableStateOf(true)
     private var showRoms by mutableStateOf(false)
+    private var homeAppSelected by mutableStateOf(false)
+    private var defaultHomeLabel by mutableStateOf<String?>(null)
+    private var androidApps by mutableStateOf<List<HomeApp.LaunchableApp>>(emptyList())
+
+    private val homeRoleRequest = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) {
+        refreshHomeAppState()
+    }
 
     /** The session surface rises over the front end instead of cutting to it. */
     override fun startActivity(intent: Intent?) {
@@ -203,6 +211,9 @@ class MainActivity : ComponentActivity() {
                         lsfgReady = LsfgNative.isInstalled(this),
                         pageKey = sm?.let { "settings:$it" } ?: if (showPerformance) "performance" else if (showApps) "apps" else null,
                         theme = theme,
+                        isHomeApp = homeAppSelected,
+                        defaultHomeLabel = defaultHomeLabel,
+                        androidApps = androidApps,
                     ),
                     FrontEndActions(
                         onPlay = { startSession(Intent(this, SessionActivity::class.java)) },
@@ -261,6 +272,8 @@ class MainActivity : ComponentActivity() {
                         onCredits = { showCredits = true },
                         onPageBack = { settingsMode = null; showPerformance = false; showApps = false },
                         onTheme = { id -> SessionPrefs.setTheme(this, id); theme = id },
+                        onHomeApp = { manageHomeApp() },
+                        onAndroidApp = { app -> launchAndroidApp(app) },
                     ),
                     page = page,
                 )
@@ -322,11 +335,35 @@ class MainActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
+        refreshHomeAppState()
         refresh()
         // Added games' art (a store lookup for what the folders lack) starts here, not only when
         // the cog opens.
         refreshAddedGames()
         if (!busy) Thread({ checkCatalog() }, "catalog").start()
+    }
+
+    private fun refreshHomeAppState() {
+        homeAppSelected = HomeApp.isDefault(this)
+        defaultHomeLabel = HomeApp.defaultLabel(this)
+        androidApps = if (homeAppSelected) HomeApp.launchableApps(this) else emptyList()
+    }
+
+    private fun launchAndroidApp(app: HomeApp.LaunchableApp) {
+        try {
+            HomeApp.launch(this, app)
+        } catch (_: Exception) {
+            android.widget.Toast.makeText(this, "Could not open ${app.label}", android.widget.Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private fun manageHomeApp() {
+        val request = HomeApp.roleRequestIntent(this)
+        if (request != null) {
+            homeRoleRequest.launch(request)
+        } else {
+            HomeApp.openSystemHomeSettings(this)
+        }
     }
 
     /** Desktop & apps, in the front end's pane. */
@@ -414,7 +451,7 @@ class MainActivity : ComponentActivity() {
     private fun ModeSettingsHost(mode: String) {
         ModeSettingsPage(
             ModeSettings(
-                mode = mode, resolutionCap = resolutionCap, shapeMode = shapeMode,
+                mode = mode, resolutionCap = resolutionCap, customResolution = customResolution, shapeMode = shapeMode,
                 hdr = hdrOn, hdrReason = hdrReason,
                 linuxRows = linuxRows,
                 linuxSelected = if (mode == SessionService.MODE_STEAM) linuxSteam else linuxDesktop,
@@ -436,6 +473,7 @@ class MainActivity : ComponentActivity() {
             ),
             ModeSettingsActions(
                 onResolution = { cap -> SessionPrefs.setResolutionCap(this, mode, cap); resolutionCap = cap },
+                onCustomResolution = { size -> SessionPrefs.setCustomResolution(this, mode, size); customResolution = size },
                 onShape = { shape -> SessionPrefs.setShapeMode(this, shape); shapeMode = shape },
                 onHdr = { on -> SessionPrefs.setHdr(this, mode, on); hdrOn = on },
                 onSelectLinux = { id -> SessionPrefs.setLinuxDriver(this, mode, id); refreshDrivers() },
@@ -530,6 +568,7 @@ class MainActivity : ComponentActivity() {
         showApps = false
         refreshDrivers()
         resolutionCap = SessionPrefs.resolutionCap(this, mode)
+        customResolution = SessionPrefs.customResolution(this, mode)
         fexPreset = SessionPrefs.fexPreset(this)
         steamChannel = SessionPrefs.steamChannel(this)
         addedGamesDirs = SessionPrefs.addedGamesDirs(this)

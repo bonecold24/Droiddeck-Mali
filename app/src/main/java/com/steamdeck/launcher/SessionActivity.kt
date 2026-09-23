@@ -2,6 +2,7 @@ package com.steamdeck.launcher
 
 import android.hardware.input.InputManager
 import android.hardware.display.DisplayManager
+import android.content.Intent
 import android.os.Build
 import android.os.Bundle
 import android.os.Environment
@@ -19,6 +20,7 @@ import android.widget.FrameLayout
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.OnBackPressedCallback
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -108,6 +110,12 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
         override fun onDisplayRemoved(displayId: Int) = refreshSecondScreenDisplays()
         override fun onDisplayChanged(displayId: Int) = refreshSecondScreenDisplays()
     }
+    private var isHomeApp by mutableStateOf(false)
+    private var defaultHomeLabel by mutableStateOf<String?>(null)
+    private var androidApps by mutableStateOf<List<HomeApp.LaunchableApp>>(emptyList())
+    private val homeRoleRequest = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) {
+        refreshHomeApp()
+    }
 
     /**
      * Shows the on-screen pad when nothing is plugged in and takes it away the moment something
@@ -133,11 +141,9 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
         displayManager = getSystemService(DISPLAY_SERVICE) as DisplayManager
         refreshSecondScreenDisplays()
 
-        if (!LinuxRuntime.isInstalled(this)) {
-            Log.e(TAG, "the Linux runtime is not installed")
-            finish()
-            return
-        }
+        // No runtime is not a reason to leave: the loading screen installs it (installThenStart,
+        // below) and the session starts when it is in.
+        if (!LinuxRuntime.isInstalled(this)) Log.i(TAG, "the Linux runtime is not installed; the loading screen installs it")
 
         val root = FrameLayout(this)
         surfaceView = SurfaceView(this)
@@ -184,6 +190,9 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
                     if (loading.visible) LoadingOverlay(loading.step, loading.percent, loading.elapsed, loading.hint, loading.ended)
                     SessionDrawer(drawerOpen, DrawerActions(
                         steam = SessionState.mode == SessionService.MODE_STEAM,
+                        isHomeApp = isHomeApp,
+                        defaultHomeLabel = defaultHomeLabel,
+                        androidApps = androidApps,
                         hudOn = hudOn,
                         frameGenEngine = frameGenEngine, frameGenMultiplier = frameGenMultiplier,
                         lsfgReady = LsfgNative.isInstalled(this@SessionActivity),
@@ -200,16 +209,7 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
                             applyFrameGen()
                         },
                         onKeyboard = { drawerOpen = false; keyboard?.toggle() },
-                        onSteamMenu = if (SessionState.mode == SessionService.MODE_STEAM) ({
-                            // The Guide button, the way the on-screen ◉ sends it: a device with no
-                            // Xbox button, or a pad the client hides the controls for, has no other
-                            // way to open the client's menu in a game.
-                            drawerOpen = false
-                            padBridge?.applyTouch { st -> st.press(com.steamdeck.launcher.input.PadState.GUIDE, true) }
-                            Handler(Looper.getMainLooper()).postDelayed({
-                                padBridge?.applyTouch { st -> st.press(com.steamdeck.launcher.input.PadState.GUIDE, false) }
-                            }, 90)
-                        }) else null,
+                        onSteamMenu = if (SessionState.mode == SessionService.MODE_STEAM) ({ sendSteamGuide() }) else null,
                         onQam = if (SessionState.mode == SessionService.MODE_STEAM) ({
                             drawerOpen = false
                             padBridge?.triggerQam()
@@ -221,6 +221,15 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
                         onFexPreset = { v -> SessionPrefs.setFexPreset(this@SessionActivity, v); readPrefs() },
                         onSecondScreenMode = ::selectSecondScreenMode,
                         onSecondScreenDisplay = ::selectSecondScreenDisplay,
+                        onHomeApp = ::manageHomeApp,
+                        onLaunchAndroidApp = { app ->
+                            drawerOpen = false
+                            try {
+                                HomeApp.launch(this@SessionActivity, app)
+                            } catch (_: Exception) {
+                                Toast.makeText(this@SessionActivity, "Could not open ${app.label}", Toast.LENGTH_SHORT).show()
+                            }
+                        },
                         onBackground = { drawerOpen = false; moveTaskToBack(true) },
                         onStop = { drawerOpen = false; SessionService.stop(this@SessionActivity); finish() },
                         onClose = { drawerOpen = false },
@@ -239,6 +248,7 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
             }
         })
         setContentView(root)
+        handleHomeGuideIntent(intent)
 
         updateOnScreenControls()
         WaylandCompositor.setFirstFrameListener {
@@ -267,6 +277,33 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
         protonRows = ProtonExtras.tools.map {
             ProtonRow(it.id, it.name, ProtonExtras.installed(this, it), ProtonExtras.queued(this, it))
         }
+    }
+
+    private fun refreshHomeApp() {
+        isHomeApp = HomeApp.isDefault(this)
+        defaultHomeLabel = HomeApp.defaultLabel(this)
+        androidApps = if (isHomeApp) HomeApp.launchableApps(this) else emptyList()
+    }
+
+    private fun manageHomeApp() {
+        val request = HomeApp.roleRequestIntent(this)
+        if (request != null) homeRoleRequest.launch(request)
+        else HomeApp.openSystemHomeSettings(this)
+    }
+
+    private fun sendSteamGuide() {
+        drawerOpen = false
+        padBridge?.applyTouch { state -> state.press(com.steamdeck.launcher.input.PadState.GUIDE, true) }
+        uiHandler.postDelayed({
+            padBridge?.applyTouch { state -> state.press(com.steamdeck.launcher.input.PadState.GUIDE, false) }
+        }, 90)
+    }
+
+    private fun handleHomeGuideIntent(incoming: Intent?) {
+        if (incoming?.action != SessionService.ACTION_HOME_GUIDE) return
+        incoming.action = null
+        setIntent(incoming)
+        if (SessionState.running && SessionState.mode == SessionService.MODE_STEAM) sendSteamGuide()
     }
 
     private fun readPrefs() {
@@ -466,13 +503,20 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
         // Wider than 16:9 is fine - games and the client cope with a phone's 20:9 - so the
         // panel's aspect is kept above that, unless the user pinned 16:9 for a foldable, and the
         // compositor letterboxes onto a squarer panel.
-        val aspect = if (SessionPrefs.shapeMode(this) == SessionPrefs.SHAPE_WIDE) 16f / 9f
-                     else maxOf(panelW / panelH, 16f / 9f)
+        // "Exactly this panel" drops that floor, for a 4:3 or 3:2 handheld whose games should
+        // fill it.
+        val aspect = when (SessionPrefs.shapeMode(this)) {
+            SessionPrefs.SHAPE_WIDE -> 16f / 9f
+            SessionPrefs.SHAPE_EXACT -> panelW / panelH
+            else -> maxOf(panelW / panelH, 16f / 9f)
+        }
         // 720 tall at most by default, client and desktop alike: the client's CEF is the heaviest
         // thing in the session, and pixels above that cost frames for nothing anyone can see on a
         // handheld panel. The mode's settings (the cog beside Play / Desktop) can change
         // the cap or lift it to the panel.
         val mode = SessionPrefs.prefMode(intent.getStringExtra(SessionService.EXTRA_MODE) ?: SessionService.MODE_STEAM)
+        // A custom resolution is taken as given; the compositor fits it to the panel.
+        SessionPrefs.customResolution(this, mode)?.let { return it }
         val cap = SessionPrefs.resolutionCap(this, mode)
         val height = (if (cap <= 0) panelH else minOf(panelH, cap.toFloat())).toInt()
         val width = (height * aspect).toInt()
@@ -890,7 +934,9 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
     override fun onNewIntent(intent: android.content.Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
-        if (intent.action == SessionService.ACTION_RESUME) {
+        if (intent.action == SessionService.ACTION_HOME_GUIDE) {
+            handleHomeGuideIntent(intent)
+        } else if (intent.action == SessionService.ACTION_RESUME) {
             intent.action = null
             SessionService.resume(this)
         }
@@ -898,6 +944,7 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
 
     override fun onResume() {
         super.onResume()
+        refreshHomeApp()
         if (intent?.action == SessionService.ACTION_RESUME) {
             intent.action = null
             SessionService.resume(this)
