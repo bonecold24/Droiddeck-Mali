@@ -28,7 +28,7 @@ import com.steamdeck.launcher.runtime.LinuxRuntime
 import com.steamdeck.launcher.runtime.DesktopCatalog
 import com.steamdeck.launcher.runtime.LinuxRuntimeInstaller
 import com.steamdeck.launcher.session.SessionService
-import com.steamdeck.launcher.ui.DesktopAppsDialog
+import com.steamdeck.launcher.ui.DesktopAppsPage
 import com.steamdeck.launcher.ui.PackageRow
 import com.steamdeck.launcher.session.OfflineMode
 import com.steamdeck.launcher.session.ProtonExtras
@@ -84,6 +84,7 @@ class MainActivity : ComponentActivity() {
     private var showApps by mutableStateOf(false)
     private var catalog by mutableStateOf<List<DesktopCatalog.Entry>?>(emptyList())
     private var packageRows by mutableStateOf<List<PackageRow>?>(emptyList())
+    private var pkgId by mutableStateOf<String?>(null)
     private var pkgStage by mutableStateOf<String?>(null)
     private var pkgPercent by mutableIntStateOf(-1)
     private var desktopInstalled by mutableStateOf(false)
@@ -187,6 +188,7 @@ class MainActivity : ComponentActivity() {
                 val page: (@Composable () -> Unit)? = when {
                     sm != null -> { { ModeSettingsHost(sm) } }
                     showPerformance -> { { PerformanceHost() } }
+                    showApps -> { { AppsHost() } }
                     else -> null
                 }
                 FrontEndScreen(
@@ -199,7 +201,7 @@ class MainActivity : ComponentActivity() {
                         steamGames = steamGames, emulators = emulatorList, running = runningLabel,
                         frameGenEngine = FrameGen.engine(this), frameGenMultiplier = FrameGen.multiplier(this),
                         lsfgReady = LsfgNative.isInstalled(this),
-                        pageKey = sm?.let { "settings:$it" } ?: if (showPerformance) "performance" else null,
+                        pageKey = sm?.let { "settings:$it" } ?: if (showPerformance) "performance" else if (showApps) "apps" else null,
                         theme = theme,
                     ),
                     FrontEndActions(
@@ -235,7 +237,7 @@ class MainActivity : ComponentActivity() {
                             frameGenLabel = FrameGen.label(this)
                         },
                         onProtons = { refreshProtons(); showProtons = true },
-                        onPerformance = { refreshCores(); showPerformance = true },
+                        onPerformance = { refreshCores(); showApps = false; showPerformance = true },
                         onRoms = { showRoms = true },
                         onFiles = { startActivity(Intent(this, com.steamdeck.launcher.files.FileManagerActivity::class.java)) },
                         onLogs = {
@@ -257,7 +259,7 @@ class MainActivity : ComponentActivity() {
                         },
                         onEmulatorHelp = { showEmulatorHelp = true },
                         onCredits = { showCredits = true },
-                        onPageBack = { settingsMode = null; showPerformance = false },
+                        onPageBack = { settingsMode = null; showPerformance = false; showApps = false },
                         onTheme = { id -> SessionPrefs.setTheme(this, id); theme = id },
                     ),
                     page = page,
@@ -270,13 +272,6 @@ class MainActivity : ComponentActivity() {
                     },
                     onClear = { SessionPrefs.setRomsDir(this, ""); romsDir = null; showRoms = false },
                     onDismiss = { showRoms = false },
-                )
-                if (showApps) DesktopAppsDialog(
-                    rows = packageRows, busyStage = pkgStage, busyPercent = pkgPercent,
-                    onInstall = { id -> installPackage(id) },
-                    onRemove = { id -> catalog?.firstOrNull { it.id == id }?.let { DesktopCatalog.remove(this, it) }; refreshPackages() },
-                    onLaunch = { path -> showApps = false; launchProgram(path) },
-                    onDismiss = { showApps = false },
                 )
                 if (showProtons) ProtonDialog(
                     rows = protonRows,
@@ -334,7 +329,21 @@ class MainActivity : ComponentActivity() {
         if (!busy) Thread({ checkCatalog() }, "catalog").start()
     }
 
+    /** Desktop & apps, in the front end's pane. */
+    @Composable
+    private fun AppsHost() {
+        DesktopAppsPage(
+            rows = packageRows, busyId = pkgId, busyStage = pkgStage, busyPercent = pkgPercent,
+            onInstall = { id -> installPackage(id) },
+            onRemove = { id -> catalog?.firstOrNull { it.id == id }?.let { DesktopCatalog.remove(this, it) }; refreshPackages() },
+            onLaunch = { path -> showApps = false; launchProgram(path) },
+            onBack = { showApps = false },
+        )
+    }
+
     private fun openApps() {
+        settingsMode = null
+        showPerformance = false
         showApps = true
         if (catalog.isNullOrEmpty()) Thread({
             val fetched = DesktopCatalog.fetch()
@@ -385,13 +394,13 @@ class MainActivity : ComponentActivity() {
     private fun installPackage(id: String) {
         val entry = catalog?.firstOrNull { it.id == id } ?: return
         if (pkgStage != null) return
-        pkgStage = "Starting…"; pkgPercent = -1
+        pkgId = id; pkgStage = "Starting…"; pkgPercent = -1
         Thread({
             val problem = DesktopCatalog.install(this, entry) { stage, percent ->
                 ui.post { pkgStage = stage; pkgPercent = percent }
             }
             ui.post {
-                pkgStage = null
+                pkgStage = null; pkgId = null
                 if (problem != null) android.widget.Toast.makeText(this, "${entry.name}: $problem", android.widget.Toast.LENGTH_LONG).show()
                 refreshPackages()
             }
@@ -518,6 +527,7 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun openModeSettings(mode: String) {
+        showApps = false
         refreshDrivers()
         resolutionCap = SessionPrefs.resolutionCap(this, mode)
         fexPreset = SessionPrefs.fexPreset(this)

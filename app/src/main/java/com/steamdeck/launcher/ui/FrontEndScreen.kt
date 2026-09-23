@@ -331,7 +331,7 @@ private fun Rail(
                             ) { if (e.id != "retroarch") a.onRoms() }
                         }
                     }
-                    if (s.emulators.none { it.installed }) NavItem("Install emulators", "x", false, small = true, muted = true, register = register, unregister = unregister) { a.onApps() }
+                    if (s.emulators.none { it.installed }) NavItem("Install emulators", "apps", selected == "apps", small = true, muted = true, register = register, unregister = unregister) { a.onApps() }
                     NavItem("Settings", "settings:lxqt", selected == "settings:lxqt", small = true, tiny = true, muted = true, i = s.emulators.count { it.installed }, register = register, unregister = unregister) { a.onDesktopSettings() }
                 }
             Spacer(Modifier.height(6.dp))
@@ -342,7 +342,7 @@ private fun Rail(
             NavItem("Setup", "x", false, caret = openSetup, count = 10, onClick = onToggleSetup)
             Sub(openSetup) {
                 item("Files", null, 0, null, a.onFiles)
-                item("Desktop & apps", null, 1, null, a.onApps)
+                item("Desktop & apps", null, 1, "apps", a.onApps)
                 item("Compatibility tools", null, 2, null, a.onProtons)
                 Box {
                     item("Frame generation", s.frameGenLabel, 3, null) { menus.open = "fg" }
