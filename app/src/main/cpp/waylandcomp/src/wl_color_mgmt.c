@@ -1,6 +1,6 @@
 /*
- * wp_color_manager_v1 (wayland-protocols staging color-management-v1, version 1) — the subset Mesa's
- * Wayland WSI binds — plus the HDR gate, the per-surface image descriptions and the session log's
+ * wp_color_manager_v1 (wayland-protocols staging color-management-v1, version 1) - the subset Mesa's
+ * Wayland WSI binds - plus the HDR gate, the per-surface image descriptions and the session log's
  * HDR evidence. See banner_color.h for the design and HDR_RECON.md for why it is shaped this way.
  *
  * Strictness policy. A protocol error disconnects the client, and the client here is a GAME, so

@@ -23,7 +23,7 @@ import java.util.zip.ZipInputStream;
 
 /**
  * Imported LINUX Vulkan drivers: glibc Turnip ICDs ({@code Turnip-<tag>[-variant]-Linux.zip} from
- * Banners-Turnip) for the runtime — the gamescope session that runs Valve's native ARM64 Steam
+ * Banners-Turnip) for the runtime - the gamescope session that runs Valve's native ARM64 Steam
  * client, and the labwc desktop beside it. This is the driver that DRAWS there: the client's own UI
  * (OpenGL through the runtime's Zink), every game the client launches (D3D through Proton's
  * DXVK/VKD3D) and everything on the desktop. Putting the frame on the screen stays the Android
@@ -31,7 +31,7 @@ import java.util.zip.ZipInputStream;
  *
  * <p>Not interchangeable with that one: the client and its games are glibc processes and cannot
  * load a bionic object at all, and this one cannot be loaded by the app. The check that separates
- * them is the libc the driver links against — {@code libc.so.6} here, {@code libc.so} there.
+ * them is the libc the driver links against - {@code libc.so.6} here, {@code libc.so} there.
  *
  * <p>Layout (under the app's files dir, which the session sees by its full host path):
  * <pre>
@@ -171,7 +171,7 @@ public class LinuxVulkanDriverManager {
             // are in the driver's .dynstr, so a byte scan is enough and needs no ELF parsing:
             // glibc's is versioned ("libc.so.6"), bionic's is not ("libc.so").
             if (!containsAscii(so, "libc.so.6")) {
-                throw new IllegalArgumentException(soName + " is not a glibc driver — it links Android's libc. "
+                throw new IllegalArgumentException(soName + " is not a glibc driver - it links Android's libc. "
                         + "The Linux runtime needs a \"-Linux\" zip; a plain or \"-Wayland\" Turnip cannot be "
                         + "loaded by the Steam client at all.");
             }

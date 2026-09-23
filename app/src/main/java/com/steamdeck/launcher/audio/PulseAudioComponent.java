@@ -23,7 +23,7 @@ import java.util.ArrayList;
  * needs no translating.
  *
  * <p>Ported down from Bannerlator's component: no sink suspend/resume and no route-change
- * recreate — those need the pasink native client, and a session here is a foreground activity
+ * recreate - those need the pasink native client, and a session here is a foreground activity
  * that does not background the way a game container does.
  */
 public class PulseAudioComponent extends EnvironmentComponent {

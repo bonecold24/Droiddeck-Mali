@@ -315,7 +315,7 @@ uint32_t lookupDescriptorSet(const std::vector<uint32_t>& w, uint32_t targetId) 
     return 0;
 }
 
-// Precompiled blobs are renumbered into set/binding order — that is the
+// Precompiled blobs are renumbered into set/binding order - that is the
 // convention they were built with. The DXBC path uses encounter order instead
 // (see lsfg_dxbc), which is what DXVK's output pairs with. Do not merge them.
 bool renumberBindingsSetOrder(std::vector<uint32_t>& w) {

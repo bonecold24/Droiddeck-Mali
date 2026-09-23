@@ -1,12 +1,12 @@
 #pragma once
 // ============================================================================
-// lsfg_dll — extract the Lossless Scaling frame-generation shader chain from
+// lsfg_dll - extract the Lossless Scaling frame-generation shader chain from
 // the user's own Lossless.dll, and cache it on device as SPIR-V.
 //
 // The 25 compute shaders that make up LSFG 3.1 are NOT redistributable. They
 // ship as RCDATA resources inside Lossless.dll from the user's own paid copy
-// of Lossless Scaling (Steam app 993090). Every implementation — upstream
-// lsfg-vk, LSFG-Android, eden, WinNative — requires the user to supply their
+// of Lossless Scaling (Steam app 993090). Every implementation - upstream
+// lsfg-vk, LSFG-Android, eden, WinNative - requires the user to supply their
 // own DLL and extracts the resources on device. Bannerlator does the same, and
 // bundles nothing.
 //
@@ -18,8 +18,8 @@
 //     and is DXBC. It has always been DXBC.
 //   * Lossless Scaling MAY additionally carry precompiled SPIR-V copies at
 //     base+49 (native fp16) and base+98 (native fp32). No build currently
-//     downloadable from Steam carries them — public buildId 19655272 was
-//     measured with zero SPIR-V anywhere in the 311 MB install — so the DXBC
+//     downloadable from Steam carries them - public buildId 19655272 was
+//     measured with zero SPIR-V anywhere in the 311 MB install - so the DXBC
 //     path is the normal path and the translator is not optional. The SPIR-V
 //     path is kept because it costs nothing and a future build may ship them.
 //
@@ -95,7 +95,7 @@ const char* variantName(Variant v);
 
 // Does this file look like a usable Lossless.dll? Checks the base chain only,
 // so a DLL without the SPIR-V variants (i.e. every build on Steam today) is
-// reported as valid — the translator handles it.
+// reported as valid - the translator handles it.
 DllStatus validateDll(const std::string& dllPath);
 
 // Which producer would be used for this DLL.

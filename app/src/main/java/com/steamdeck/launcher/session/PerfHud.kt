@@ -16,7 +16,7 @@ import java.util.concurrent.atomic.AtomicInteger
 
 /**
  * The numbers behind the top-right line: the game's own frame rate and, when frame generation
- * is on, what the screen is actually being shown — "60 → 118 fps" is the proof that the engine
+ * is on, what the screen is actually being shown - "60 → 118 fps" is the proof that the engine
  * is doing something, and "FG starting" or a reason is the proof that it is not.
  *
  * The base rate is counted here from the compositor's per-frame callback, so it is right with or

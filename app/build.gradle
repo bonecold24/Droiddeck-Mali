@@ -40,7 +40,7 @@ android {
 
     signingConfigs {
         // AOSP testkey (android@android.com), the same key Bannerlator ships with. It is publicly
-        // known, so it proves nothing about who built the apk — what it buys is ONE stable
+        // known, so it proves nothing about who built the apk - what it buys is ONE stable
         // signature: every build installs over the last one instead of asking the user to
         // uninstall first. v1 (JAR) + v2 + v3 so every installer and Android version accepts it.
         testkey {
@@ -69,7 +69,7 @@ android {
     lint {
         // targetSdk 28 is deliberate and structural: an app on 29+ may not execute a file out of
         // its own data directory, and executing a rootfs is the whole of what this app does. Lint
-        // fails a release build over it because Google Play will not accept an sdk that old —
+        // fails a release build over it because Google Play will not accept an sdk that old -
         // true, and not something this app can trade away. Every other check stays on.
         disable 'ExpiredTargetSdkVersion'
     }

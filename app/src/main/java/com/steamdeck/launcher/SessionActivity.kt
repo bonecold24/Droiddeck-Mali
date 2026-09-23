@@ -56,13 +56,13 @@ import java.io.File
 
 /**
  * The session's screen: our Wayland compositor presenting onto this activity's Surface, and the
- * input that reaches it. The session itself — gamescope, the Steam client, audio — belongs to
+ * input that reaches it. The session itself - gamescope, the Steam client, audio - belongs to
  * [SessionService] and keeps running when this activity does not exist, which is what lets the
  * user leave Big Picture for another app and come back to it still signed in and still
  * downloading.
  *
  * Three layers: the SurfaceView the compositor draws into, the on-screen pad (a canvas View,
- * since it is input rather than a menu), and one Compose layer on top for everything else —
+ * since it is input rather than a menu), and one Compose layer on top for everything else -
  * the HUD line, the loading overlay, the drawer and its dialogs.
  */
 class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
@@ -95,7 +95,7 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
 
     /**
      * Shows the on-screen pad when nothing is plugged in and takes it away the moment something
-     * is — a user with a controller in their hands should not be looking at buttons they cannot
+     * is - a user with a controller in their hands should not be looking at buttons they cannot
      * press, and a user without one must not be left with no way to answer Big Picture.
      */
     private val deviceListener = object : InputManager.InputDeviceListener {
@@ -264,7 +264,7 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
         // The output size belongs to the session, not to the Surface: gamescope's display is
         // sized once when the session starts and cannot change. A foldable recreates the Surface
         // on the other panel, and recomputing the size there told the compositor a 21:9 buffer
-        // was 16:9 — the picture came back squashed sideways. While a session runs, keep its size.
+        // was 16:9 - the picture came back squashed sideways. While a session runs, keep its size.
         val size = if (SessionState.running) SessionState.outputSize else outputSize()
         SessionState.outputSize = size
         onScreenControls?.setPicture(drawnRect())
@@ -318,7 +318,7 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
         // period, so a long frame raises CPU clocks now rather than after the load averages up.
         PerfHints.arm(this, refreshHz())
         // The service owns everything below the compositor. It is started whenever no session is
-        // running — NOT only when the compositor was just started: the compositor lives for the
+        // running - NOT only when the compositor was just started: the compositor lives for the
         // whole process, so the second Play after a session ended used to re-attach the Surface,
         // start nothing, and leave the loading panel counting up over a dead session.
         if (!SessionState.running) {
@@ -344,7 +344,7 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
         // The on-screen controls follow the picture: into the bars beside or under it when there are any.
         onScreenControls?.setPicture(drawnRect())
         if (resized) {
-            Log.i(TAG, "surface resized to ${width}x$height — rebinding the compositor")
+            Log.i(TAG, "surface resized to ${width}x$height - rebinding the compositor")
             CompositorHost.resize(holder.surface) { applyFrameGen() }
         }
     }
@@ -374,7 +374,7 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
         val panelH = minOf(bounds.width(), bounds.height()).toFloat()
         // Never narrower than 16:9. A foldable's inner panel is nearly square, and a game handed a
         // square display draws for the frame it was made for and cuts the sides off itself.
-        // Wider than 16:9 is fine — games and the client cope with a phone's 20:9 — so the
+        // Wider than 16:9 is fine - games and the client cope with a phone's 20:9 - so the
         // panel's aspect is kept above that, unless the user pinned 16:9 for a foldable, and the
         // compositor letterboxes onto a squarer panel.
         val aspect = if (SessionPrefs.shapeMode(this) == SessionPrefs.SHAPE_WIDE) 16f / 9f
@@ -516,12 +516,12 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
             val down = event.action == KeyEvent.ACTION_DOWN
             if (down || event.action == KeyEvent.ACTION_UP) {
                 var evdev = EvdevKeys.fromKeyCode(event.keyCode)
-                // What the key stands for, and the key it would sit on without Shift — non-zero
+                // What the key stands for, and the key it would sit on without Shift - non-zero
                 // only for a character Shift puts there: every capital and the symbol row.
                 val ch = event.unicodeChar
                 val plain = if (ch > 0) EvdevKeys.unshiftedChar(ch) else 0
                 // A soft keyboard's symbol keys are in neither the table nor a scan code, so they
-                // reached the session as nothing at all — a sign-in took an address without its @.
+                // reached the session as nothing at all - a sign-in took an address without its @.
                 // Work back from the character instead: which key carries it.
                 if (evdev <= 0 && ch > 0) {
                     val code = EvdevKeys.fromKeyCode(EvdevKeys.keycodeForChar(if (plain != 0) plain else ch))

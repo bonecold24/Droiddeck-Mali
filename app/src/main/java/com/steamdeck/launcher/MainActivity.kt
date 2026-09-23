@@ -56,8 +56,8 @@ import com.steamdeck.launcher.session.GameStorage
 
 /**
  * The whole app outside a session: is the runtime installed, is there a newer one, frame
- * generation, and one button that starts Steam. Everything a Steam client can do — the library,
- * the store, downloads, settings — is the client's own job once [SessionActivity] has it on screen.
+ * generation, and one button that starts Steam. Everything a Steam client can do - the library,
+ * the store, downloads, settings - is the client's own job once [SessionActivity] has it on screen.
  */
 class MainActivity : ComponentActivity() {
     private val ui = Handler(Looper.getMainLooper())
@@ -480,7 +480,7 @@ class MainActivity : ComponentActivity() {
         val auto = td.autoId()
         androidRows = buildList {
             add(DriverRow(
-                TurnipDriver.AUTO, "Auto — picked by GPU",
+                TurnipDriver.AUTO, "Auto - picked by GPU",
                 if (auto == "system") "system Vulkan: no bundled build for this GPU" else "${td.displayName(auto)} (bundled)",
                 false,
             ))
@@ -491,8 +491,8 @@ class MainActivity : ComponentActivity() {
     }
 
     /**
-     * Import off the main thread — a driver zip is a few MB and the glibc check reads the whole
-     * library — then say what happened. A refusal's message is the user-facing reason.
+     * Import off the main thread - a driver zip is a few MB and the glibc check reads the whole
+     * library - then say what happened. A refusal's message is the user-facing reason.
      */
     private fun importDriver(uri: Uri, linux: Boolean) {
         val name = displayNameOf(uri)
@@ -544,7 +544,7 @@ class MainActivity : ComponentActivity() {
         }.getOrNull().let { v ->
             when (v?.lowercase()) {
                 "false", "0" -> null
-                else -> "Android 12 and later kill the extra processes an app starts for itself once there are more than a few, and a session is made of dozens: proot, gamescope, the client and its helpers, Wine. Where that is left on, the client dies with nothing in its log, because nothing in the session did it. Some phones have a \"restrict child processes\" switch in Developer options — turn it off. Otherwise, over adb:\n\n    adb shell settings put global settings_enable_monitor_phantom_procs false\n\nThis phone " + (if (v == null) "has not been set either way, so the ROM's default applies." else "currently reports it as on.")
+                else -> "Android 12 and later kill the extra processes an app starts for itself once there are more than a few, and a session is made of dozens: proot, gamescope, the client and its helpers, Wine. Where that is left on, the client dies with nothing in its log, because nothing in the session did it. Some phones have a \"restrict child processes\" switch in Developer options - turn it off. Otherwise, over adb:\n\n    adb shell settings put global settings_enable_monitor_phantom_procs false\n\nThis phone " + (if (v == null) "has not been set either way, so the ROM's default applies." else "currently reports it as on.")
             }
         }
     }

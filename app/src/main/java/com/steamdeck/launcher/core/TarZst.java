@@ -15,7 +15,7 @@ import java.io.OutputStream;
 
 /**
  * The small zstd tarballs that ship inside the apk (the Turnip driver, the PulseAudio modules).
- * The runtime rootfs is not one of these — it needs hard links and symlinks preserved, which
+ * The runtime rootfs is not one of these - it needs hard links and symlinks preserved, which
  * {@link com.steamdeck.launcher.runtime.LinuxRuntimeInstaller} handles itself.
  */
 public final class TarZst {

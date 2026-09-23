@@ -20,7 +20,7 @@ object FrameGen {
 
     /** Win-FG's Performance preset, pinned: changing it live rebuilds the whole chain. */
     private const val WINFG_PERF_PRESET = 2
-    /** Bidirectional flow with the occlusion gate — the chain's own default. */
+    /** Bidirectional flow with the occlusion gate - the chain's own default. */
     private const val WINFG_MODEL = 4
     /** Optical-flow resolution as a fraction of the output; Bannerlator's per-engine defaults. */
     private const val FLOW_SCALE_WINFG = 0.60f
@@ -39,7 +39,7 @@ object FrameGen {
             .putString("engine", engine).putInt("multiplier", multiplier).apply()
     }
 
-    /** "Off", "Win-FG 2×", "LSFG 3×" — for the main screen. */
+    /** "Off", "Win-FG 2×", "LSFG 3×" - for the main screen. */
     fun label(context: Context): String = when (engine(context)) {
         ENGINE_WINFG -> "Win-FG ${multiplier(context)}×"
         ENGINE_LSFG -> "LSFG ${multiplier(context)}×"
@@ -84,12 +84,12 @@ object FrameGen {
 
     /**
      * Off, or an engine at 2x/3x/4x; saved on pick, then [onChanged]. The LSFG rows are greyed
-     * and unpickable until Lossless Scaling is installed in the Steam client — the engine cannot
+     * and unpickable until Lossless Scaling is installed in the Steam client - the engine cannot
      * run without its DLL, so offering it would only produce a setting that silently does nothing.
      */
     fun showPicker(activity: android.app.Activity, onChanged: () -> Unit) {
         val lsfgReady = LsfgNative.isInstalled(activity)
-        val lsfgNote = if (lsfgReady) "" else "  — install Lossless Scaling in Steam"
+        val lsfgNote = if (lsfgReady) "" else "  - install Lossless Scaling in Steam"
         val choices = listOf("Off",
             "Win-FG 2×", "Win-FG 3×", "Win-FG 4×",
             "LSFG 2×$lsfgNote", "LSFG 3×$lsfgNote", "LSFG 4×$lsfgNote")

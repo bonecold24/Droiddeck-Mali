@@ -1,4 +1,4 @@
-/* Screen-effect chain — see effects_chain.h. Compositor thread unless noted. */
+/* Screen-effect chain - see effects_chain.h. Compositor thread unless noted. */
 #define _POSIX_C_SOURCE 200809L
 #include "effects_chain.h"
 #include "vk_loader.h"
@@ -309,7 +309,7 @@ static VkShaderModule shader(const uint32_t *code, size_t size) {
 }
 
 /* One full-quad post pipeline: upscale.vert + the effect's fragment shader, opaque, dynamic
- * viewport/scissor — the X11 renderer's createPostPipeline. */
+ * viewport/scissor - the X11 renderer's createPostPipeline. */
 static VkPipeline post_pipeline(VkShaderModule vert, const uint32_t *frag_code, size_t frag_size, const char *name) {
     VkShaderModule frag = shader(frag_code, frag_size);
     if (!frag) { banner_log("error", "effects: %s: vkCreateShaderModule failed", name); return VK_NULL_HANDLE; }

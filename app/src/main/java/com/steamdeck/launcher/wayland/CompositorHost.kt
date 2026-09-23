@@ -76,8 +76,8 @@ object CompositorHost {
     /**
      * The window the guest presents through has changed (the Steam menu opening or closing over a
      * fullscreen game swaps gamescope between forwarding the game's own buffers and its composited
-     * output). The engine's ring and history straddle that switch and come back wrong-sized — a
-     * game shown as a strip in a corner — so it is disarmed and re-armed against the new window.
+     * output). The engine's ring and history straddle that switch and come back wrong-sized - a
+     * game shown as a strip in a corner - so it is disarmed and re-armed against the new window.
      */
     fun rearmFrameGen(rearm: () -> Unit) {
         if (!started) return
@@ -87,7 +87,7 @@ object CompositorHost {
     }
 
     /**
-     * The activity is going away. The compositor keeps running with nothing to present into —
+     * The activity is going away. The compositor keeps running with nothing to present into -
      * the guest carries on, and its next frames land on the Surface the next activity brings.
      */
     /** The Surface the compositor presents on; only its own owner may take it away. */

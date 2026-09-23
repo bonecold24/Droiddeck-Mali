@@ -1,4 +1,4 @@
-// win-fg — compute frame-generation engine.
+// win-fg - compute frame-generation engine.
 // Owns the compute pipelines (our of3_* optical flow + wfg_synth) and the
 // per-resolution intermediate images, and records the flow+synth graph that
 // turns (prev, curr) into an interpolated frame. Written for win-fg; no code
@@ -17,7 +17,7 @@ public:
     // Applies a new config. Recomputes the active finest flow level from
     // cfg_.perfPreset; if it changed while resources are live, safely rebuilds the
     // affected per-size flow images (like a resize) and resets the flow predictor,
-    // so a perf_preset change is FULLY LIVE — no FG toggle needed. Defined in
+    // so a perf_preset change is FULLY LIVE - no FG toggle needed. Defined in
     // record_impl.inc (needs the scratch-state teardown). See flowFinestForPreset.
     void configure(const Config& c);
     // (Re)build per-resolution resources for a swapchain of the given size/format.
@@ -30,7 +30,7 @@ public:
     // gmSlot selects which C1 global-motion SSBO to reduce into / read back; the
     // caller MUST pass the ring-slot index of the FrameCtx it just fence-waited
     // (that guarantees this slot's PREVIOUS reduce has completed and is safe to
-    // read on the host — see the decoupled-LK note in record_impl.inc).
+    // read on the host - see the decoupled-LK note in record_impl.inc).
     void record(VkCommandBuffer cmd, VkImageView prevView, VkImageView currView,
                 VkImageView outView, float alpha, uint32_t gmSlot = 0);
     void destroy();
@@ -54,7 +54,7 @@ public:
     // 2 Performance=3). kFlowFinestDefault is the Balanced value (today's behaviour);
     // the ACTIVE level lives in flowFinest_ and is read through flowFinest(). onResize
     // sizes the stabilized-curr pyramid + C2 scratch from it, and record_impl.inc
-    // wires the flow/expand inputs to it — both must agree, so they all read
+    // wires the flow/expand inputs to it - both must agree, so they all read
     // flowFinest()/flowFinest_ (never a hard-coded 2). (Was a static constexpr = 2.)
     static constexpr int kFlowFinestDefault = 2;   // Balanced (perf_preset=1)
     // Map perf_preset -> finest solved level. Out-of-range -> Balanced. A higher

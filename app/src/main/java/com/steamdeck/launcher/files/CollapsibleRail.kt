@@ -257,7 +257,7 @@ fun CollapsibleRail(
 
         HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.4f))
 
-        // ── Sections + items (SCROLLABLE so a tall rail — e.g. many File Manager favourites — is
+        // ── Sections + items (SCROLLABLE so a tall rail - e.g. many File Manager favourites - is
         //    fully reachable in both orientations; the header above and footer below stay pinned) ──
         Column(
             modifier = Modifier
@@ -307,7 +307,7 @@ fun CollapsibleRail(
                 val iconTint = if (active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
                 val labelColor = if (active) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant
                 if (collapsed) {
-                    // Icon-only width is unchanged — a TINY label goes UNDER the icon (2 lines max,
+                    // Icon-only width is unchanged - a TINY label goes UNDER the icon (2 lines max,
                     // centre-aligned, wrapping/abbreviated) so every button stays identifiable without
                     // widening the rail.
                     Column(
@@ -362,7 +362,7 @@ fun CollapsibleRail(
 /**
  * Portrait counterpart to [CollapsibleRail]: the same navigation [items] laid out as a horizontal
  * icon-over-label bar pinned across the top, with an accent underline under the selected one. Mirrors
- * the container editor's top tab bar so every editor reads the same — pin this in portrait wherever a
+ * the container editor's top tab bar so every editor reads the same - pin this in portrait wherever a
  * [CollapsibleRail] is used in landscape. Optional [links] (Help / Reset …) are appended after a
  * faint separator, exactly like the rail's links.
  *
@@ -407,7 +407,7 @@ fun RailTopTabs(
     }
 }
 
-/** One cell of [RailTopTabs] — icon over a small label, with an accent underline (zero-width when
+/** One cell of [RailTopTabs] - icon over a small label, with an accent underline (zero-width when
  *  unselected, so every cell keeps the same height). Mirrors the container editor's TopCell. */
 @Composable
 private fun TopTabCell(

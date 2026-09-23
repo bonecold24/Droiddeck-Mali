@@ -1,6 +1,6 @@
 #pragma once
 // ============================================================================
-// lsfg_engine — the compositor's handle on native LSFG frame generation.
+// lsfg_engine - the compositor's handle on native LSFG frame generation.
 //
 // Owns the shader modules, the interpolation chain and the pacer, and exposes
 // the small contract the render loop needs:

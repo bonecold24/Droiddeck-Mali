@@ -1,4 +1,4 @@
-// win-fg — runtime config: enable gate, model, multiplier, and the synthesis
+// win-fg - runtime config: enable gate, model, multiplier, and the synthesis
 // tuning parameters. Sourced from environment variables and an optional
 // conf.toml (a config file, when present, wins over the env defaults).
 #pragma once
@@ -17,7 +17,7 @@ struct Config {
     // emits a per-frame, step-by-step trail (logcat tag "win-fg") so a freeze/
     // crash-on-enable leaves an obvious LAST line at the exact stage that hung or
     // faulted (acquire-spare, compute-submit, present-generated/real, fence wait,
-    // fallback). Zero behaviour change and effectively zero cost when off — one
+    // fallback). Zero behaviour change and effectively zero cost when off - one
     // predicted-not-taken bool test per step, no logcat writes.
     // WIN_FG_DEBUG=1|0 / conf.toml debug=on|off.
     bool     debug       = false;
@@ -25,11 +25,11 @@ struct Config {
     // Default ON. The 2x insert path presents the GENERATED frame then the REAL
     // frame back-to-back in one vkQueuePresentKHR hook call, so on Mailbox/
     // Immediate both land in ~one instant followed by a full frame-interval gap
-    // until the next pair — uneven in time → judder ("slows down to catch up").
+    // until the next pair - uneven in time → judder ("slows down to catch up").
     // With pacing on, the layer measures the real-frame interval (EMA of a
     // monotonic clock) and holds the REAL present to its scheduled beat so the
     // generated frame lands near the temporal MIDPOINT between consecutive real
-    // frames (even gen,real,gen,real cadence). Pure bounded CPU sleep — no GPU
+    // frames (even gen,real,gen,real cadence). Pure bounded CPU sleep - no GPU
     // wait added; if a frame is already behind schedule the wait is SKIPPED
     // (present immediately) so worst case is one un-paced pair, never a hitch.
     // FIFO self-paces so the waits collapse to ~0 there. Off ⇒ byte-identical
@@ -49,7 +49,7 @@ struct Config {
     // slowly to tolerate the extra present with only the +1 spare and freeze on the
     // first inserted frame; the AYANEO (Adreno 750) recycles fast enough to tolerate
     // it. Default 2 (a few MB VRAM), applied on all devices. On a device that already
-    // works this only grows the pool — no FPS/quality change; the pool-headroom guard
+    // works this only grows the pool - no FPS/quality change; the pool-headroom guard
     // in QueuePresentKHR stays a no-op when headroom is adequate.
     // WIN_FG_EXTRA_IMAGES / conf.toml extra_images.
     int      extraImages = 2;
@@ -62,7 +62,7 @@ struct Config {
     // Out-of-range clamps to Balanced (1), so an unset/older conf.toml is byte-
     // identical to today. Changing this LIVE rebuilds the affected per-size flow
     // images (like a resize) inside the layer and resets the flow predictor, so a
-    // preset change is fully hot — no FG toggle needed. See FrameGen::configure /
+    // preset change is fully hot - no FG toggle needed. See FrameGen::configure /
     // FrameGen::flowFinestForPreset. WIN_FG_PERF_PRESET / conf.toml perf_preset.
     int      perfPreset  = 1;      // 0 quality, 1 balanced (default), 2 performance
     float    flowScale   = 1.0f;   // scales solved flow magnitude
@@ -76,8 +76,8 @@ struct Config {
     // C2 FLOW REGULARIZATION (TV-L1 smoothness prior). After C1 removes the camera
     // motion, the dense flow (flowLvl_ at kFlowFinest, 1/4-res) is the OBJECT-only
     // residual; it still carries spurious per-block vectors. C2 runs N semi-implicit
-    // TV-L1 denoising iterations on that field — an L1 data term + edge-aware Total-
-    // Variation regularizer — to kill incoherent vectors while KEEPING true motion
+    // TV-L1 denoising iterations on that field - an L1 data term + edge-aware Total-
+    // Variation regularizer - to kill incoherent vectors while KEEPING true motion
     // discontinuities (object edges) sharp. Solved in-place; expand's median + C1
     // add-back consume the cleaned field unchanged. 0 iterations ⇒ byte-identical to
     // pre-C2. See shaders/of3_flowreg.comp.
@@ -91,7 +91,7 @@ struct Config {
     // synthesis (wfg_synth) tuning
     float    beta        = 8.0f;   // softmax sharpness on importance Z
     float    lambda      = 0.6f;   // FB-consistency vs photometric weight
-    // Tightened 2026-08-17 to prioritise "no ghost" over max sharpness — the
+    // Tightened 2026-08-17 to prioritise "no ghost" over max sharpness - the
     // remaining single-frame ghosts came from pixels that the previous defaults
     // still trusted with warp when they should have cross-faded. Raising both
     // pushes borderline pixels toward the safe cross-fade path (softer, but no
@@ -107,7 +107,7 @@ struct Config {
     // passed through as the real current frame (no warp, no synth) so text /
     // overlays don't ghost. Disabled when x0 >= x1 or y0 >= y1 (the default).
     // Sourced from WIN_FG_HUD_RECT="x0,y0,x1,y1" env var or conf.toml
-    // (hudRect="x0,y0,x1,y1"). Pattern is Isygold's Vegas DXVK framegen —
+    // (hudRect="x0,y0,x1,y1"). Pattern is Isygold's Vegas DXVK framegen -
     // host knows where the HUD is, tell the shader to skip it.
     float    hudX0       = 0.0f;
     float    hudY0       = 0.0f;
@@ -116,11 +116,11 @@ struct Config {
 
     // ── TRAINING-DATA CAPTURE MODE (Route-B VFI dataset collection) ───────────
     // A dev-only gate. When OFF (default) the present path is byte-identical to a
-    // build without this feature — a single bool test and nothing else. When ON,
+    // build without this feature - a single bool test and nothing else. When ON,
     // every real present is downscaled on the GPU, read back async, and written to
     // disk as lossless QOI (motion-rich 256² triplet patches by default, or full
     // downscaled frames) plus a JSONL manifest, for offline (i-1,i+1)->i training.
-    // NEVER captures win-fg's generated frames — capture reads the real swapchain
+    // NEVER captures win-fg's generated frames - capture reads the real swapchain
     // image at the TOP of QueuePresentKHR, before any interpolation.
     // WIN_FG_CAPTURE=on|off  /  conf.toml capture=on|off.
     bool     capture       = false;
@@ -197,7 +197,7 @@ static inline int parse_capmode(const std::string& v, int dflt) {
     return dflt;
 }
 
-// key=value TOML-lite reader (flat keys, '#' comments) — enough for our knobs.
+// key=value TOML-lite reader (flat keys, '#' comments) - enough for our knobs.
 static inline void apply_toml(Config& c, const std::string& path) {
     std::ifstream f(path);
     if (!f) return;
@@ -303,7 +303,7 @@ static inline Config load_config() {
     c.capShardMB   = envi("WIN_FG_CAPTURE_SHARD_MB", c.capShardMB);
     if (const char* cd = std::getenv("WIN_FG_CAPTURE_DIR")) c.capDir = cd;
     if (const char* h = std::getenv("WIN_FG_HUD_RECT")) {
-        // "x0,y0,x1,y1" — pixel coords; disabled when x0>=x1 or y0>=y1
+        // "x0,y0,x1,y1" - pixel coords; disabled when x0>=x1 or y0>=y1
         float r[4] = {0,0,0,0}; int n = 0;
         std::string s = h; size_t start = 0;
         for (; n < 4; ++n) {
@@ -321,17 +321,17 @@ static inline Config load_config() {
     return c;
 }
 
-// UBO layout — MUST match wfg_synth.comp binding 0.
+// UBO layout - MUST match wfg_synth.comp binding 0.
 // The vec4 hudRect is 16-byte aligned in std140, sits at offset 32 (after the
 // 8 leading floats which naturally occupy 32B). Disabled when hudX0>=hudX1.
 struct SynthUBO {
     float flowScale, alpha, beta, lambda, epsilon, photoScale, pad0, pad1;
     float hudX0, hudY0, hudX1, hudY1;
 };
-// UBO layout — MUST match of3_flow / of3_expand_m4 binding 0 (Model3UBO).
+// UBO layout - MUST match of3_flow / of3_expand_m4 binding 0 (Model3UBO).
 struct FlowUBO { float flowScale; uint32_t level; float occlLo; float occlHi; };
 
-// C1 global-motion UBO — MUST match binding 1 in of3_gm_reduce / of3_gm_prewarp /
+// C1 global-motion UBO - MUST match binding 1 in of3_gm_reduce / of3_gm_prewarp /
 // of3_expand(_m4). std140: four vec4 = 64 bytes. The affine is in centered-UV
 // space: P = [[p1,p3],[p2,p4]], translation (tx,ty); warp uvSrc = uv + P*(uv-0.5)
 // + t maps a prev(template) coord to the curr(image) coord it samples (prev→curr).
@@ -345,13 +345,13 @@ struct GMUBO {
     float appT[4];  // tx,ty, pad, pad
 };
 
-// C2 flow-regularization UBO — MUST match binding 0 (vec4 params) in
+// C2 flow-regularization UBO - MUST match binding 0 (vec4 params) in
 // of3_flowreg.comp. std140: one vec4 = 16 bytes. See Config::fr* fields.
 struct FlowRegUBO {
-    float dt;         // params.x — semi-implicit smoothing step
-    float lambda;     // params.y — L1 data-fidelity weight (θ = dt·lambda)
-    float edgeAlpha;  // params.z — luma-gradient edge sensitivity for g
-    float epsTV;      // params.w — Charbonnier epsilon (px) for the TV diffusivity
+    float dt;         // params.x - semi-implicit smoothing step
+    float lambda;     // params.y - L1 data-fidelity weight (θ = dt·lambda)
+    float edgeAlpha;  // params.z - luma-gradient edge sensitivity for g
+    float epsTV;      // params.w - Charbonnier epsilon (px) for the TV diffusivity
 };
 
 } // namespace winfg

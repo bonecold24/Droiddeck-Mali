@@ -19,19 +19,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 
-/** One hosted package as the dialog shows it. */
 class PackageRow(
     val id: String, val name: String, val tier: Int, val version: String, val size: String,
     val notes: String, val installed: String?,
-    /** What the package can launch on its own under gamescope: label to path inside the runtime. */
     val launchers: List<Pair<String, String>> = emptyList(),
 )
 
-/**
- * The desktop and everything that goes on it, installed into the runtime on request. Tier 1 is
- * packaged natively for this hardware; tier 2 is an upstream ARM64 build we mirror and expect
- * little of on a phone; tier 3 is built by us from source.
- */
 @Composable
 fun DesktopAppsDialog(
     rows: List<PackageRow>?,
@@ -39,7 +32,6 @@ fun DesktopAppsDialog(
     busyPercent: Int,
     onInstall: (String) -> Unit,
     onRemove: (String) -> Unit,
-    /** Start [path] as its own session under gamescope. */
     onLaunch: (path: String) -> Unit,
     onDismiss: () -> Unit,
 ) {
@@ -58,7 +50,7 @@ fun DesktopAppsDialog(
                     rows == null -> Text("Could not reach the package catalog", color = MaterialTheme.colorScheme.onSurfaceVariant)
                     rows.isEmpty() -> Text("Loading the catalog…", color = MaterialTheme.colorScheme.onSurfaceVariant)
                     else -> Text(
-                        "▶ starts an emulator fullscreen under gamescope, with the GPU — on the desktop, Vulkan programs cannot draw. " +
+                        " starts an emulator fullscreen under gamescope, with the GPU - on the desktop, Vulkan programs cannot draw. " +
                             "ROMs are at /root/ROMs, the phone at /root/Storage.",
                         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -70,8 +62,8 @@ fun DesktopAppsDialog(
                         Text(
                             when (row.tier) {
                                 1 -> "Native for this hardware"
-                                2 -> "Upstream ARM64 builds — experimental on a phone"
-                                else -> "Built from source — experimental"
+                                2 -> "Upstream ARM64 builds - experimental on a phone"
+                                else -> "Built from source - experimental"
                             },
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.primary,
@@ -83,7 +75,7 @@ fun DesktopAppsDialog(
                             Text(row.name, style = MaterialTheme.typography.bodyMedium)
                             Text(
                                 (if (row.installed != null) "installed ${row.installed}" else "${row.version} · ${row.size}") +
-                                    (if (row.notes.isNotEmpty()) " — ${row.notes}" else ""),
+                                    (if (row.notes.isNotEmpty()) " - ${row.notes}" else ""),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
@@ -91,14 +83,11 @@ fun DesktopAppsDialog(
                         if (row.installed != null) TextButton(enabled = busyStage == null, onClick = { onRemove(row.id) }) { Text("Remove") }
                         else TextButton(enabled = busyStage == null, onClick = { onInstall(row.id) }) { Text("Install") }
                     }
-                    // An emulator starts as a session of its own, fullscreen under gamescope: that
-                    // is where the GPU is. On the desktop (software-composited) a Vulkan program
-                    // has no swapchain to draw into and dies at its first frame.
                     if (row.installed != null && row.launchers.isNotEmpty()) {
                         Row(modifier = Modifier.fillMaxWidth().padding(start = 12.dp, bottom = 2.dp)) {
                             for ((label, path) in row.launchers) {
                                 TextButton(enabled = busyStage == null, onClick = { onLaunch(path) }) {
-                                    Text("▶ $label", style = MaterialTheme.typography.labelMedium)
+                                    Text(" $label", style = MaterialTheme.typography.labelMedium)
                                 }
                             }
                         }

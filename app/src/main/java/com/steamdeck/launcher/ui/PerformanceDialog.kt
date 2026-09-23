@@ -17,15 +17,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-/** One core as the page labels it: its number and, where known, its ceiling. */
 class CoreRow(val core: Int, val label: String)
 
-/**
- * The two core masks a Steam session carries, kept separate because they are wanted at the same
- * time and suit different things: the client's menus and a game each get their own. Both apply
- * at the next session start; the game's is applied by the Proton wrapper at each launch. Below
- * them, the session fixes for a device the runtime does not sit well on.
- */
 @Composable
 fun PerformancePage(
     cores: List<CoreRow>,
@@ -63,7 +56,7 @@ fun PerformancePage(
         SettingsGroup("Steam client cores") {
             ToggleRow(
                 host, "override", "Override Steam's own core choice",
-                "Steam pins its interface to a subset of cores it picks — on one device 5 of 8, leaving out the fastest — which suits a running game and makes the menus sluggish when the client is all there is. On: the client, its UI helper and gamescope are pinned to the cores below instead, re-applied every few seconds.",
+                "Steam pins its interface to a subset of cores it picks - on one device 5 of 8, leaving out the fastest - which suits a running game and makes the menus sluggish when the client is all there is. On: the client, its UI helper and gamescope are pinned to the cores below instead, re-applied every few seconds.",
                 clientOverride, onChange = onClientOverride,
             )
             MultiRow(
@@ -74,7 +67,7 @@ fun PerformancePage(
         SettingsGroup("Game cores") {
             MultiRow(
                 host, "gameCores", "Game cores",
-                "Applied by exec'ing the game through taskset, so every thread inherits the mask. Every core ticked sends nothing — that is what the scheduler does unaided. Untick the small cores to keep a heavy game off them.",
+                "Applied by exec'ing the game through taskset, so every thread inherits the mask. Every core ticked sends nothing - that is what the scheduler does unaided. Untick the small cores to keep a heavy game off them.",
                 coreItems, gameCores, note = "Tick or untick as many as you like; the menu stays open.", onToggle = onGameCore,
             )
         }
@@ -103,7 +96,7 @@ fun PerformancePage(
         SettingsGroup("Session fixes") {
             ToggleRow(
                 host, "sysmem", "Turnip: sysmem rendering",
-                "Renders without the GPU's tile memory (TU_DEBUG=sysmem). A fix for an Adreno 8xx that shows corruption, and required on a 710/720/722 (set on its own there). Not a speed setting: elsewhere it COSTS frames — leave it off unless the picture is wrong.",
+                "Renders without the GPU's tile memory (TU_DEBUG=sysmem). A fix for an Adreno 8xx that shows corruption, and required on a 710/720/722 (set on its own there). Not a speed setting: elsewhere it COSTS frames - leave it off unless the picture is wrong.",
                 tuSysmem, onChange = onTuSysmem,
             )
             ToggleRow(

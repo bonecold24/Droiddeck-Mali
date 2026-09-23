@@ -73,7 +73,7 @@ class LinuxNetworkLinkComponent(
 
     /**
      * The guest's resolver, from the network it is actually on. glibc reads /etc/resolv.conf,
-     * and the image ships two public servers there, which is why Steam resolves at all — but a
+     * and the image ships two public servers there, which is why Steam resolves at all - but a
      * captive portal, a private-DNS network or a v6-only carrier wants the network's own
      * servers. Those come first, IPv4 before IPv6 and never a link-local one (Android lists
      * fe80:: resolvers a guest cannot reach; handing Bannerlator's Wine guests exactly that was

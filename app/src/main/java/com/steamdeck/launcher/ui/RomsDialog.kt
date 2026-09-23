@@ -11,7 +11,6 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.unit.dp
 
-/** The ROMs folder: where it is, and where the emulators will find it. */
 @Composable
 fun RomsDialog(path: String?, onChoose: () -> Unit, onClear: () -> Unit, onDismiss: () -> Unit) {
     AlertDialog(
@@ -21,7 +20,7 @@ fun RomsDialog(path: String?, onChoose: () -> Unit, onClear: () -> Unit, onDismi
             Column {
                 Text(
                     "A folder on this device that every session shows as ROMs in the home folder " +
-                        "(/root/ROMs) — open it from any emulator's file dialog. All of internal " +
+                        "(/root/ROMs) - open it from any emulator's file dialog. All of internal " +
                         "storage is there too, as Storage.",
                     style = MaterialTheme.typography.bodyMedium,
                 )

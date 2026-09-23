@@ -42,7 +42,7 @@ import java.util.Locale
  * keep all three alive while the app is not on screen.
  *
  * The session deliberately does **not** belong to the activity. Android demotes a process the
- * moment it loses its last visible activity, and the low-memory killer then reaps the guest — so
+ * moment it loses its last visible activity, and the low-memory killer then reaps the guest - so
  * leaving Big Picture to answer a message would come back to a dead Steam. A foreground service
  * holds the process at perceptible priority, a partial wake lock keeps the CPU from dropping the
  * guest's threads, and a high-performance WiFi lock keeps the radio out of power-save so a
@@ -305,8 +305,8 @@ class SessionService : Service() {
             SessionState.fakeInputDir = fakeInputDir
         }
         // The desktop is wlroots (labwc), and wlroots allocates its buffers through gbm on a real
-        // DRM render node. Ours is a KGSL stand-in that gbm cannot use — labwc dies at "unable to
-        // create allocator" — so the desktop shell is composited by pixman (software, a shm
+        // DRM render node. Ours is a KGSL stand-in that gbm cannot use - labwc dies at "unable to
+        // create allocator" - so the desktop shell is composited by pixman (software, a shm
         // allocator, no DRM). Accelerated clients on it pay a CPU copy; a 2D emulator does not
         // notice, a demanding one does. steamdeck-wlr-renderer in Downloads (pixman/vulkan/gles2)
         // overrides it, for trying acceleration on a device that has a real node.
@@ -561,7 +561,7 @@ class SessionService : Service() {
         // seccomp-trapped syscall then failed with ENOSYS, they spun on retries at a full core
         // for over an hour, and the reaper could not even open /proc to kill them. So: SIGTERM,
         // a grace for proot's own cleanup, SIGKILL only if it will not go, then a sweep of the
-        // tree it had — snapshotted first, each pid checked against its start time so a number
+        // tree it had - snapshotted first, each pid checked against its start time so a number
         // reused by a new process is never touched. Same shape as Bannerlator's fix (4509d788).
         if (sessionPid != -1) {
             val prootPid = sessionPid
@@ -595,7 +595,7 @@ class SessionService : Service() {
      * guest would survive as an orphan holding the rootfs and the GPU. Treat the swipe as "quit".
      */
     override fun onTaskRemoved(rootIntent: Intent?) {
-        Log.i(TAG, "task removed — ending the session")
+        Log.i(TAG, "task removed - ending the session")
         stopSession(0)
         super.onTaskRemoved(rootIntent)
     }
@@ -620,7 +620,7 @@ class SessionService : Service() {
             }
             Log.i(TAG, "wake lock held=${wakeLock?.isHeld}")
         } catch (t: Throwable) {
-            Log.w(TAG, "no wake lock (${t.message}) — the session may be killed in the background")
+            Log.w(TAG, "no wake lock (${t.message}) - the session may be killed in the background")
         }
         try {
             val wifi = applicationContext.getSystemService(Context.WIFI_SERVICE) as? WifiManager
@@ -634,7 +634,7 @@ class SessionService : Service() {
         } catch (t: Throwable) {
             // A partial wake lock keeps the process alive but does not stop WiFi power-save from
             // throttling a backgrounded download to nothing, which is what this lock is for.
-            Log.w(TAG, "no wifi lock (${t.message}) — a backgrounded download may stall")
+            Log.w(TAG, "no wifi lock (${t.message}) - a backgrounded download may stall")
         }
     }
 

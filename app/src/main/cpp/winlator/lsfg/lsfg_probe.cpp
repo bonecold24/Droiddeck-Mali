@@ -110,7 +110,7 @@ bool probeStorageFormat(const VkTable& vk, VkPhysicalDevice pd, VkFormat fmt) {
 
     // The composite target is COLOR_ATTACHMENT (effect chain writes it),
     // SAMPLED (next frame's LSFG input reads it), STORAGE (generate writes it)
-    // and both blit ends (it is copied — or, below panel resolution, blitted —
+    // and both blit ends (it is copied - or, below panel resolution, blitted -
     // into the swapchain image).
     const VkFormatFeatureFlags need =
           VK_FORMAT_FEATURE_STORAGE_IMAGE_BIT

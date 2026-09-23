@@ -13,7 +13,7 @@ import java.io.File;
  *
  * <p>The 25 compute shaders are not redistributable. They live as resources inside the user's
  * paid {@code Lossless.dll} (Steam app 993090), which in this app the user installs from the
- * Steam client itself — so the DLL sits in the runtime's own Steam library. It is mapped
+ * Steam client itself - so the DLL sits in the runtime's own Steam library. It is mapped
  * read-only and parsed as data, never loaded or executed. Extraction is slow enough to be worth
  * doing once (the DXBC chain is translated to SPIR-V), so the result is cached, keyed on the
  * DLL's size and hash. Call {@link #ensureCache} off the main thread.

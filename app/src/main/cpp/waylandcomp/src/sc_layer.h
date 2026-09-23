@@ -2,8 +2,8 @@
 #define SC_LAYER_H
 /*
  * Layer mode (BANNER_WAYLAND_ZERO_COPY=1): the scene is handed to SurfaceFlinger as a small,
- * deliberately ordered SET of Android display layers — ASurfaceControl children of the
- * compositor's SurfaceView — instead of being blitted into the compositor's own swapchain.
+ * deliberately ordered SET of Android display layers - ASurfaceControl children of the
+ * compositor's SurfaceView - instead of being blitted into the compositor's own swapchain.
  *
  *     app window ......... Compose UI, the in-game drawer, the HUD, the on-screen controls and
  *                          the pointer arrow: ordinary Android views, ALWAYS above everything
@@ -21,21 +21,21 @@
  *
  * MEASURED on the Pocket FIT (Adreno 750, portrait panel + landscape session, so every layer is
  * ROT_90 + scaled), `dumpsys android.hardware.graphics.composer3.IComposer/default`: one layer is
- * `composition: DEVICE/DEVICE`, effects on the layer keep it DEVICE/DEVICE — but a SECOND layer
+ * `composition: DEVICE/DEVICE`, effects on the layer keep it DEVICE/DEVICE - but a SECOND layer
  * flips the whole frame to `DEVICE/CLIENT`. It does not come back when the overlay goes away.
  * The overlay layer is retired rather than hidden for that reason, but the fallback outlives it.
  * The likely mechanism is the DPU's rotator budget (one rotated+scaled layer), not the layer count
  * as such, so a device or orientation needing no rotation may well take both on the DPU. Even in
- * client composition the overlay layer is not a loss — SurfaceFlinger does the one blit the
- * compositor would have done — but the hardware-composition win is only real for one layer.
+ * client composition the overlay layer is not a loss - SurfaceFlinger does the one blit the
+ * compositor would have done - but the hardware-composition win is only real for one layer.
  *
  * COMPOSITION RECOVERY (sc_layer.c, swap_sc_begin): retiring the overlay arms the game layer, and
  * the NEXT frame is presented on a brand-new SurfaceControl while the old one is hidden and
  * unparented in the SAME transaction. SurfaceFlinger applies a transaction atomically, so no
- * composited frame is ever missing the game — no black frame, no dropped frame beyond the layer
+ * composited frame is ever missing the game - no black frame, no dropped frame beyond the layer
  * creation itself. One `layer` line is written when it happens.
  *
- * ⚠️ It does NOT restore hardware composition on this panel, and that was measured, not assumed
+ *  It does NOT restore hardware composition on this panel, and that was measured, not assumed
  * (2026-09-14, Wizardry on the game layer + Wine's Task Manager on the overlay, reproduced twice):
  *   - two layers                                  -> DEVICE/CLIENT
  *   - overlay retired + fresh game SurfaceControl -> still DEVICE/CLIENT, 24 s later too
@@ -43,12 +43,12 @@
  *   - drawer opened and closed, no second window  -> DEVICE/DEVICE (control: the drawer is not the cause)
  *   - HOME + resume                               -> DEVICE/DEVICE
  * HOME + resume re-creates the app's whole window and SurfaceView (`VRI[XServerDisplayActivity]#0`
- * becomes `#4`), not just this child layer — so the sticky state belongs to the parent surface or
+ * becomes `#4`), not just this child layer - so the sticky state belongs to the parent surface or
  * the display. Re-creating the parent would cost a real black frame and a swapchain rebuild, which
  * is worse than the few percent of GPU that client composition costs. The cure that actually keeps
  * the win is PREVENTION, and it IS implemented: sc_layer_overlay_affordable() declines the second
  * layer when the game layer is both rotated and scaled, and the window above the game goes down the
- * copy path instead (what the pre-phase-4 code did) — one blit SurfaceFlinger would have done
+ * copy path instead (what the pre-phase-4 code did) - one blit SurfaceFlinger would have done
  * anyway, and the session keeps DEVICE composition throughout. Where a second layer costs nothing,
  * nothing changes.
  *
@@ -56,7 +56,7 @@
  *   - the game's own gralloc buffer (ahb_swapchain.c, true zero-copy: no copy anywhere);
  *   - one blit of the game's frame into a compositor-allocated AHardwareBuffer (sc_layer_present);
  *   - with screen effects on, the compositor pass's result blitted into such a buffer
- *     (sc_layer_present_pass) — the game STAYS on its layer while a Look is applied, and the
+ *     (sc_layer_present_pass) - the game STAYS on its layer while a Look is applied, and the
  *     scene -> output mapping is done by the display (setGeometry) instead of a second GPU blit.
  * The compositor never alpha-blends (it composes with blits, which overwrite), so every layer is
  * marked OPAQUE and the overlay layer is cropped to the window it carries: the picture is the
@@ -141,9 +141,9 @@ void sc_layer_set_frame_rate(float fps);
  * layer, not after: on a display where the answer is no, the whole scene must go down the copy path
  * from the start, or the game layer would be shown and hidden again on every frame.
  *
- * The answer is computed from what the layer path knows — the rotation the presentation engine
+ * The answer is computed from what the layer path knows - the rotation the presentation engine
  * applies to everything we hand it (VkSurfaceCapabilitiesKHR::currentTransform) and the game
- * layer's own src -> dst rectangles — and never from a device or panel allowlist. ROTATED AND
+ * layer's own src -> dst rectangles - and never from a device or panel allowlist. ROTATED AND
  * SCALED is the combination measured to cost hardware composition (below); either alone is fine.
  * The reason is written to the session log once, and again if the answer changes. */
 int sc_layer_overlay_affordable(void);
@@ -156,7 +156,7 @@ int sc_layer_present_overlay(struct vkp_image *src, const int geo[8]);
 /* The scene is not a single fullscreen window this frame: hide every layer that is up. */
 void sc_layer_hide(void);
 /* Only the overlay layer: nothing is above the game any more. The game keeps its layer, but its
- * SurfaceControl is swapped for a fresh one on the next frame (composition recovery, above — which
+ * SurfaceControl is swapped for a fresh one on the next frame (composition recovery, above - which
  * on this panel does not in fact win hardware composition back; see the measurement there). */
 void sc_layer_hide_overlay(void);
 
@@ -164,7 +164,7 @@ void sc_layer_hide_overlay(void);
 void sc_layer_window_gone(void);
 
 /* Frames the compositor put on a layer through one of its own buffers (a blit or the effects
- * pass) since the last call — the zero-copy frames ahb_swapchain.c counts are NOT included.
+ * pass) since the last call - the zero-copy frames ahb_swapchain.c counts are NOT included.
  * For the 10 s summary. */
 unsigned sc_layer_frames_take(void);
 /* Frames dropped since the last call because every layer buffer was still held by the display (the

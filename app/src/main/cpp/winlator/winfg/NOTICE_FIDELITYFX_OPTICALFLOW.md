@@ -1,4 +1,4 @@
-# NOTICE — FidelityFX Optical Flow (model 3)
+# NOTICE - FidelityFX Optical Flow (model 3)
 
 win-fg "model 3" (FSR3 Optical Flow) embeds compute shaders that are an
 adaptation of the **AMD FidelityFX SDK FSR3 Optical Flow** algorithm.

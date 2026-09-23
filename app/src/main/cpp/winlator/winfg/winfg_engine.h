@@ -1,6 +1,6 @@
 #pragma once
 // ============================================================================
-// winfg_engine — win-fg (Bannerlator's own frame generation) running inside
+// winfg_engine - win-fg (Bannerlator's own frame generation) running inside
 // the compositor, behind the same contract the LSFG engine uses:
 //
 //   prepare(w, h, format)            build/rebuild the chain for this size

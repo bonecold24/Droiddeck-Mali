@@ -6,7 +6,7 @@ import com.steamdeck.launcher.runtime.LinuxRuntime
 import java.io.File
 
 /**
- * Third-party Proton builds for the client — GE-Proton and proton-cachyos, both published as
+ * Third-party Proton builds for the client - GE-Proton and proton-cachyos, both published as
  * native ARM64 tarballs. The runtime's own registrar (bannerlator-proton-extra) downloads and
  * installs one into the client's compatibilitytools.d and patches it past pressure-vessel; this
  * side only leaves it the request, one line in ~/.bl-proton-extra, which the session script reads

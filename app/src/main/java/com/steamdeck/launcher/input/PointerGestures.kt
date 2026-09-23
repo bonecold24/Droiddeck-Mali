@@ -17,7 +17,7 @@ import kotlin.math.roundToInt
  *  - two fingers up / down .......... scroll wheel
  *
  * The listener gets pointer positions in the view's pixels; the activity maps them onto the
- * compositor. Mouse events are not handled here — a mouse has real buttons.
+ * compositor. Mouse events are not handled here - a mouse has real buttons.
  */
 class PointerGestures(
     private val slopPx: Float,

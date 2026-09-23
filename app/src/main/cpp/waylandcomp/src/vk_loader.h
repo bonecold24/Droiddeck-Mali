@@ -2,7 +2,7 @@
 #define VK_LOADER_H
 /*
  * Loads Turnip via adrenotools (the same path the app uses for the guest renderer)
- * and resolves every Vulkan entry point through its vkGetInstanceProcAddr — NOT the
+ * and resolves every Vulkan entry point through its vkGetInstanceProcAddr - NOT the
  * process-default system Adreno driver, which lacks VK_EXT_image_drm_format_modifier /
  * dmabuf import. All compositor Vulkan calls go through g_vk.* .
  */

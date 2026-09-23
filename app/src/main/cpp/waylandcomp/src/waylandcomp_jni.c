@@ -147,7 +147,7 @@ void banner_on_pointer_lock(int locked, int x, int y) {
     if ((*env)->ExceptionCheck(env)) (*env)->ExceptionClear(env);
 }
 
-/* A program copied text (UTF-8, not NUL-terminated for the app's sake — a byte[] so emoji and
+/* A program copied text (UTF-8, not NUL-terminated for the app's sake - a byte[] so emoji and
  * NULs survive JNI). Compositor thread. */
 void banner_on_clipboard_text(const char *utf8, int len) {
     JNIEnv *env;
@@ -227,7 +227,7 @@ Java_com_steamdeck_launcher_wayland_WaylandCompositor_nativeCompositorTid(JNIEnv
     return (jint)g_comp_tid;
 }
 
-/* Headless start (no output window) — used for bring-up tests. */
+/* Headless start (no output window) - used for bring-up tests. */
 JNIEXPORT void JNICALL
 Java_com_steamdeck_launcher_wayland_WaylandCompositor_nativeStart(JNIEnv *env, jclass clazz,
                                                              jstring xdgRuntimeDir) {
@@ -412,7 +412,7 @@ Java_com_steamdeck_launcher_wayland_WaylandCompositor_nativeSetDeband(JNIEnv *en
 }
 
 /* Colour grade (slider units: brightness/contrast -100..100, gamma 0.5..3, saturation 0..200 %) and the
- * FXAA / Toon / CRT / NTSC toggles — VulkanRenderer.setScreenEffects. */
+ * FXAA / Toon / CRT / NTSC toggles - VulkanRenderer.setScreenEffects. */
 JNIEXPORT void JNICALL
 Java_com_steamdeck_launcher_wayland_WaylandCompositor_nativeSetScreenEffects(JNIEnv *env, jclass clazz, jfloat brightness,
         jfloat contrast, jfloat gamma, jfloat saturation, jboolean fxaa, jboolean toon, jboolean crt, jboolean ntsc) {
@@ -573,7 +573,7 @@ Java_com_steamdeck_launcher_wayland_WaylandCompositor_nativeHdrToneMappedOnScree
     return banner_color_tonemapped_on_screen() ? JNI_TRUE : JNI_FALSE;
 }
 
-/* The Look the controls currently match (null = Custom) — only named in the session log. */
+/* The Look the controls currently match (null = Custom) - only named in the session log. */
 JNIEXPORT void JNICALL
 Java_com_steamdeck_launcher_wayland_WaylandCompositor_nativeSetLookName(JNIEnv *env, jclass clazz, jstring name) {
     char *s = dup_jstr(env, name);

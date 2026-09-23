@@ -1,6 +1,6 @@
 #pragma once
 // ============================================================================
-// winfg_vkd — fill win-fg's own dispatch tables from the renderer's VkTable.
+// winfg_vkd - fill win-fg's own dispatch tables from the renderer's VkTable.
 //
 // win-fg's chain (framegen.cpp / record_impl.inc) was written as a Vulkan
 // LAYER and calls through winfg::DeviceDispatch / InstanceDispatch. Inside the

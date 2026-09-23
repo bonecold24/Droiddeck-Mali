@@ -18,7 +18,7 @@ public final class FileUtils {
 
     private FileUtils() {}
 
-    /** Recursive delete that does not follow symlinks — a rootfs is full of them. */
+    /** Recursive delete that does not follow symlinks - a rootfs is full of them. */
     public static void delete(File file) {
         if (file == null || !file.exists() && !isSymlink(file)) return;
         if (file.isDirectory() && !isSymlink(file)) {

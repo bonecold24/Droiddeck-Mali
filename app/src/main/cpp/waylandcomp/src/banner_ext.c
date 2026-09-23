@@ -3,7 +3,7 @@
  *
  * The app's threads (UI thread, clipboard listener) hand text to the compositor through
  * banner_host_* ; the messages are queued under a mutex and a pipe byte wakes the wl event
- * loop, which drains them on the compositor thread — the only thread that may touch
+ * loop, which drains them on the compositor thread - the only thread that may touch
  * wl_resources.
  */
 #define _GNU_SOURCE 1

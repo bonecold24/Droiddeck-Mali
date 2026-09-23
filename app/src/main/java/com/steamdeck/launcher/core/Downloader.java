@@ -14,7 +14,7 @@ import java.nio.charset.StandardCharsets;
 
 /**
  * The two fetches this app makes: the runtime catalog (a few hundred bytes of JSON) and the
- * runtime tarball itself (~790 MB). Plain HttpURLConnection — nothing here needs a client library,
+ * runtime tarball itself (~790 MB). Plain HttpURLConnection - nothing here needs a client library,
  * and one fewer dependency is one fewer thing that can fail a release build.
  */
 public final class Downloader {

@@ -69,9 +69,9 @@ class OnScreenControls(context: Context, private val pad: PadBridge) : View(cont
 
     private val controls = listOf(
         Control("up", "▲", -1, 0, -1, dp(26f)),
-        Control("right", "▶", -1, 1, -1, dp(26f)),
+        Control("right", ">", -1, 1, -1, dp(26f)),
         Control("down", "▼", -1, 2, -1, dp(26f)),
-        Control("left", "◀", -1, 3, -1, dp(26f)),
+        Control("left", "<", -1, 3, -1, dp(26f)),
         Control("ls", "L", -1, -1, 0, dp(48f)),
         Control("rs", "R", -1, -1, 1, dp(48f)),
         Control("a", "A", 0, -1, -1, dp(30f)),

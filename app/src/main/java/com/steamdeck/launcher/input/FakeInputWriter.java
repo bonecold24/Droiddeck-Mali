@@ -20,7 +20,7 @@ import java.nio.channels.FileChannel;
  * snapshot is published alongside under a seqlock so the native reader can replay
  * a full keyframe to heal any desync (open, ring overflow) without duplicate
  * input. Ring layout (magic/version/offsets) is a paired ABI with the native
- * {@code FakeInputRingHeader} — keep the two in lockstep.
+ * {@code FakeInputRingHeader} - keep the two in lockstep.
  */
 public class FakeInputWriter {
     private static final String TAG = "FakeInputWriter";
@@ -73,7 +73,7 @@ public class FakeInputWriter {
     private static final int BUFFER_SIZE = EVENT_SIZE * MAX_EVENTS_PER_UPDATE;
     private static final int MAX_FAKE_INPUT_SLOTS = 4;
 
-    // Ring layout — MUST match FakeInputRingHeader in fakeinput.cpp.
+    // Ring layout - MUST match FakeInputRingHeader in fakeinput.cpp.
     private static final int RING_CAPACITY_EVENTS = 4096;
     private static final int RING_HEADER_SIZE = 64;
     private static final int RING_SIZE = RING_HEADER_SIZE + (RING_CAPACITY_EVENTS * EVENT_SIZE);

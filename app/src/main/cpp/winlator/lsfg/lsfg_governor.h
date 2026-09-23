@@ -1,6 +1,6 @@
 #pragma once
 // ============================================================================
-// lsfg_governor — decides whether an extra generated frame is actually WORTH
+// lsfg_governor - decides whether an extra generated frame is actually WORTH
 // it on this device, right now.
 //
 // The ported pacer answers "how many frames fit in the panel's budget". That

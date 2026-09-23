@@ -39,8 +39,8 @@
 
         <!-- A game, to the OS: Android 12+ routes the category through GameManager and the OEM
              performance frameworks (Game Booster, Game Turbo, Game Space) key off it. Without it
-             a regular flagship runs the session under its "app" power profile — a conservative
-             governor and GPU DVFS — which is why the same chipset feels slower here than in a
+             a regular flagship runs the session under its "app" power profile - a conservative
+             governor and GPU DVFS - which is why the same chipset feels slower here than in a
              gaming phone whose mode is on for everything. The config says what the OS may do. -->
         <meta-data android:name="android.game_mode_config" android:resource="@xml/game_mode_config" />
 
@@ -61,7 +61,7 @@
 
             Resizable, deliberately: a foldable opening or closing changes the window, and the
             compositor re-fits the picture with bars. Declared non-resizable, the system keeps a
-            fixed-shape window instead and STRETCHES it onto the other panel — the app never sees a
+            fixed-shape window instead and STRETCHES it onto the other panel - the app never sees a
             size change, so nothing it does can help.
         -->
         <activity
@@ -86,7 +86,7 @@
             android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboard|keyboardHidden|navigation|uiMode|density" />
 
         <!--
-            Owns the session — gamescope, the Steam client, audio — so it survives the activity
+            Owns the session - gamescope, the Steam client, audio - so it survives the activity
             going away. Without it Android demotes the process as soon as the last visible
             activity goes, and the low-memory killer reaps the guest: leaving Big Picture to
             answer a message would come back to a dead Steam and a half-finished download.

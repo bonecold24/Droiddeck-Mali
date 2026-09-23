@@ -71,7 +71,7 @@ public final class PadBridge {
     /** True when the device this event came from is a gamepad or joystick, not the touchscreen. */
     public static boolean isFromController(InputDevice device) {
         if (device == null) return false;
-        // A virtual device is the system's own synthetic input, not a pad somebody is holding —
+        // A virtual device is the system's own synthetic input, not a pad somebody is holding -
         // counting it would hide the on-screen controls with nothing to replace them.
         if (device.isVirtual()) return false;
         int sources = device.getSources();

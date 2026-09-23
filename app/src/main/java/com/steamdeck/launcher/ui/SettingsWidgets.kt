@@ -64,16 +64,10 @@ import androidx.compose.ui.window.Popup
 import androidx.compose.ui.window.PopupPositionProvider
 import androidx.compose.ui.window.PopupProperties
 
-/*
- * Settings without a pop-up: a page of rows, each with its value in a chip on the right, and a
- * small faded menu that opens right under the chip when it is tapped. One menu at a time per
- * page; the rest of the page dims a little while it is open.
- */
 
 private val RowShape = RoundedCornerShape(12.dp)
 private val GroupShape = RoundedCornerShape(14.dp)
 
-/** Which row's menu is open on a page, so the page can dim and only one menu shows. */
 class MenuHost {
     var open by mutableStateOf<String?>(null)
 }
@@ -81,7 +75,6 @@ class MenuHost {
 @Composable
 fun rememberMenuHost(): MenuHost = remember { MenuHost() }
 
-/** Under the anchor, right edges aligned; above it when the bottom of the window is too close. */
 private class BelowEndProvider(private val gap: Int) : PopupPositionProvider {
     override fun calculatePosition(anchorBounds: IntRect, windowSize: IntSize, layoutDirection: LayoutDirection, popupContentSize: IntSize): IntOffset {
         var x = anchorBounds.right - popupContentSize.width
@@ -93,11 +86,6 @@ private class BelowEndProvider(private val gap: Int) : PopupPositionProvider {
     }
 }
 
-/**
- * The menu itself, anchored to whatever composable it is placed inside (put it in the same Box as
- * the chip). It fades and scales in from its top-right corner and out again on dismiss; the popup
- * is only removed once the exit has finished.
- */
 @Composable
 fun AnchoredMenu(open: Boolean, onDismiss: () -> Unit, title: String? = null, note: String? = null, content: @Composable ColumnScope.() -> Unit) {
     val state = remember { MutableTransitionState(false) }
@@ -138,7 +126,6 @@ fun AnchoredMenu(open: Boolean, onDismiss: () -> Unit, title: String? = null, no
     }
 }
 
-/** One line of a menu: a check mark when it is the current value, a label, an optional second line. */
 @Composable
 fun MenuItem(
     label: String, checked: Boolean, enabled: Boolean = true, detail: String? = null,
@@ -168,7 +155,6 @@ fun MenuItem(
     }
 }
 
-/** The value on the right of a row: the current choice and a caret that turns while the menu is open. */
 @Composable
 fun ValueChip(text: String, open: Boolean, enabled: Boolean = true, onClick: () -> Unit) {
     val colors = MaterialTheme.colorScheme
@@ -198,7 +184,6 @@ fun ValueChip(text: String, open: Boolean, enabled: Boolean = true, onClick: () 
     }
 }
 
-/** A group of rows on one surface, with a section label above it. */
 @Composable
 fun SettingsGroup(title: String, content: @Composable ColumnScope.() -> Unit) {
     val colors = MaterialTheme.colorScheme
@@ -210,7 +195,6 @@ fun SettingsGroup(title: String, content: @Composable ColumnScope.() -> Unit) {
     Column(modifier = Modifier.fillMaxWidth().clip(GroupShape).background(colors.surface).border(1.dp, pal.line, GroupShape)) { content() }
 }
 
-/** A row: label and hint on the left, whatever control on the right. */
 @Composable
 fun SettingsRow(label: String, hint: String?, highlighted: Boolean = false, control: @Composable () -> Unit) {
     val colors = MaterialTheme.colorScheme
@@ -229,7 +213,6 @@ fun SettingsRow(label: String, hint: String?, highlighted: Boolean = false, cont
     Box(Modifier.fillMaxWidth().height(1.dp).background(pal.line))
 }
 
-/** A row whose value is one of a list: the chip opens the menu, a pick closes it. */
 @Composable
 fun <T> ChoiceRow(
     host: MenuHost, key: String, label: String, hint: String?,
@@ -239,7 +222,7 @@ fun <T> ChoiceRow(
     val open = host.open == key
     SettingsRow(label, hint, highlighted = open) {
         Box {
-            ValueChip(options.firstOrNull { it.first == selected }?.second ?: "—", open, enabled) { host.open = if (open) null else key }
+            ValueChip(options.firstOrNull { it.first == selected }?.second ?: "-", open, enabled) { host.open = if (open) null else key }
             AnchoredMenu(open, onDismiss = { if (host.open == key) host.open = null }, title = label, note = note) {
                 for ((value, text) in options) MenuItem(text, checked = value == selected) { onPick(value); host.open = null }
             }
@@ -247,12 +230,10 @@ fun <T> ChoiceRow(
     }
 }
 
-/** On or off, as a two-line menu, so every row on the page behaves the same way under a pad. */
 @Composable
 fun ToggleRow(host: MenuHost, key: String, label: String, hint: String?, checked: Boolean, enabled: Boolean = true, onChange: (Boolean) -> Unit) =
     ChoiceRow(host, key, label, hint, listOf(true to "On", false to "Off"), checked, enabled, onPick = onChange)
 
-/** Several of a list at once (the core masks): the menu stays open while boxes are ticked. */
 @Composable
 fun MultiRow(
     host: MenuHost, key: String, label: String, hint: String?,
@@ -278,13 +259,11 @@ fun MultiRow(
     }
 }
 
-/** A row that does something (import, choose a folder) instead of holding a value. */
 @Composable
 fun ActionRow(label: String, hint: String?, button: String, onClick: () -> Unit) {
     SettingsRow(label, hint) { SecondaryButton(button, onClick = onClick) }
 }
 
-/** A page: eyebrow with a way back, title, lede, and the rows below it, dimmed while a menu is open. */
 @Composable
 fun SettingsPage(host: MenuHost, eyebrow: String, title: String, lede: String, onBack: () -> Unit, content: @Composable ColumnScope.() -> Unit) {
     val colors = MaterialTheme.colorScheme

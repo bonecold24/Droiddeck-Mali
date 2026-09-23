@@ -1,6 +1,6 @@
-# HDR on the Wayland backend — reconnaissance
+# HDR on the Wayland backend - reconnaissance
 
-> **2026-09-14: round 1 of Phase A is built** (branch `feat/wayland-hdr`, opt-in, testing only) —
+> **2026-09-14: round 1 of Phase A is built** (branch `feat/wayland-hdr`, opt-in, testing only) -
 > see **§10** at the end for what was built, how it is gated and how a tester's log proves it.
 > The recon below is kept as written.
 
@@ -24,7 +24,7 @@ carries `dxgi.enableHDR` / `DXVK_HDR` and the `VK_COLOR_SPACE_HDR10_ST2084_EXT` 
 information. **Everything that is missing is in our compositor**, which advertises no colour
 protocol, offers only four 8-bit DRM formats over `zwp_linux_dmabuf_v1`, takes
 `surfaceFormats[0]` for its own swapchain, runs an 8-bit scene/effects chain, and never calls
-`ASurfaceTransaction_setBufferDataSpace`. The work is therefore **app-side only** — the memory
+`ASurfaceTransaction_setBufferDataSpace`. The work is therefore **app-side only** - the memory
 note in `project_bannerlator_wayland_phase4` that HDR "does need a new wcp" is **wrong for the
 HDR10 (10-bit PQ) path**; a new wcp is only needed for scRGB/FP16 zero-copy. Estimated
 **4–6 engineer-days** to a plumbed, log-verifiable HDR10 path. But the Pocket FIT's panel
@@ -35,7 +35,7 @@ in §8: **not now.**
 
 ---
 
-## 1. Game side — how far an HDR request gets today
+## 1. Game side - how far an HDR request gets today
 
 ### 1.1 What a Windows game does
 
@@ -62,7 +62,7 @@ Swapchain formats DXVK will accept per colour space (`Presenter::pickFormat`,
 * `EXTENDED_SRGB_LINEAR` (scRGB) → **`R16G16B16A16_SFLOAT` only**
 
 `VK_EXT_hdr_metadata` is optional in both DXVK and vkd3d-proton. `VK_EXT_swapchain_colorspace`
-is *not* requested as an instance extension by DXVK's win32 WSI — it simply trusts the driver to
+is *not* requested as an instance extension by DXVK's win32 WSI - it simply trusts the driver to
 report the extra `VkColorSpaceKHR` values from `vkGetPhysicalDeviceSurfaceFormatsKHR`. Mesa's
 Wayland WSI does exactly that (§2.3), so this is not a problem for us.
 
@@ -82,7 +82,7 @@ DXGI enumeration for D3D12 titles is still DXVK's `dxgi.dll`, so `DXVK_HDR` stil
 contains `VK_EXT_hdr_metadata`. Nothing needs rebuilding on the D3D side.
 
 Proton-level gating: GE's `proton` script maps `PROTON_ENABLE_HDR` / `PROTON_USE_HDR` to
-`DXVK_HDR=1` and nothing else. For us that is one container env var — no launcher work.
+`DXVK_HDR=1` and nothing else. For us that is one container env var - no launcher work.
 
 ### 1.2 The failure mode today, exactly
 
@@ -90,19 +90,19 @@ DXVK's `DXGI_OUTPUT_DESC1` will claim HDR10 as soon as `DXVK_HDR=1`, regardless 
 `SetColorSpace1` then fails with `E_INVALIDARG` because our compositor advertises no colour
 management, so Mesa lists only `SRGB_NONLINEAR` + `PASS_THROUGH` (§2.3). Well-behaved games fall
 back to SDR. Games that trust `GetDesc1` without checking `CheckColorSpaceSupport` can render an
-HDR-authored image into an SDR swapchain (washed out) — this is a pre-existing foot-gun, not
+HDR-authored image into an SDR swapchain (washed out) - this is a pre-existing foot-gun, not
 something we introduce. **Recommendation regardless of whether we do HDR: do not expose a
 `DXVK_HDR` container toggle until the compositor answers truthfully**, or we invite exactly that
 bug class.
 
-### 1.3 `winewayland.drv` — carries nothing for colour, and blocks nothing
+### 1.3 `winewayland.drv` - carries nothing for colour, and blocks nothing
 
 `/home/claude-user/proton-wine-wayland2-wt/dlls/winewayland.drv/vulkan.c` is 121 lines:
 `wayland_vulkan_surface_create` wraps the `wl_surface` in a `VkSurfaceKHR`,
 `wayland_map_instance_extensions` aliases `VK_KHR_win32_surface` ⇄ `VK_KHR_wayland_surface`.
 There is **no surface-format or colour-space filtering**, so whatever Mesa advertises reaches
 DXVK unmodified. A grep for `color|colour|hdr|st2084|bt2020|gamut|10.?bit` across the whole
-driver returns only GDI colour-bitmap helpers — nothing colorimetric.
+driver returns only GDI colour-bitmap helpers - nothing colorimetric.
 
 One real consequence: `wayland_output.c` publishes no EDID, and nothing in the tree writes the
 `EDID` registry value `win32u/sysparams.c:815-818` reads. DXVK's
@@ -111,7 +111,7 @@ HDR luminances (`wsi_edid.h:38-56`: min 0.01 / max 1499 / maxFullFrame 799 nits)
 size its tonemapper for a 1499-nit display. Correctable later by synthesising an EDID in
 `winewayland.drv` (that *would* need a new wcp), but not a blocker.
 
-### 1.4 Our bundled Turnip already speaks colour management — verified on the device
+### 1.4 Our bundled Turnip already speaks colour management - verified on the device
 
 ```
 $ strings .../Proton/11.0-2.1-arm64ec-6/lib/libvulkan_freedreno_wayland.so
@@ -125,11 +125,11 @@ VK_EXT_hdr_metadata                        PRESENT
 
 The plain adrenotools driver the compositor itself loads
 (`contents/adrenotools/Mesa Turnip v26.3.0-7cda785 (Android + Wayland)/libvulkan_freedreno.so`)
-has the same colour-management symbols. Our own WSI patch is already aware of the protocol —
+has the same colour-management symbols. Our own WSI patch is already aware of the protocol -
 `patches/wayland/banner_ahb_wsi.py` anchors one of its edits on Mesa's
 `if (display->color_manager) wp_color_manager_v1_destroy(...)` teardown line.
 
-**And the zero-copy patch already maps 10-bit to gralloc** — `banner_ahb_wsi.py:99-100, 225-237`:
+**And the zero-copy patch already maps 10-bit to gralloc** - `banner_ahb_wsi.py:99-100, 225-237`:
 
 ```c
 #define BANNER_AHB_FORMAT_R8G8B8A8_UNORM    1u
@@ -140,10 +140,10 @@ case VK_FORMAT_A2B10G10R10_UNORM_PACK32:  return BANNER_AHB_FORMAT_R10G10B10A2_U
 
 So a 10-bit HDR10 swapchain can already be gralloc-backed and go onto the display layer with the
 **shipped** wcp. `VK_FORMAT_R16G16B16A16_SFLOAT` is *not* mapped, so `banner_ahb_skip_format`
-(:239-242, applied at `:606-617`) hides FP16 surface formats whenever zero-copy is on — scRGB
+(:239-242, applied at `:606-617`) hides FP16 surface formats whenever zero-copy is on - scRGB
 zero-copy is the one thing that needs a driver change (one enum: `AHARDWAREBUFFER_FORMAT_R16G16B16A16_FLOAT = 0x16`).
 
-### 1.5 X11 has no path — confirmed
+### 1.5 X11 has no path - confirmed
 
 `app/src/main/cpp/winlator/VulkanRendererContext.cpp:439` hardcodes
 `swapchainFmt = VK_FORMAT_R8G8B8A8_UNORM` and `:492` hardcodes
@@ -170,7 +170,7 @@ Implementers: KWin (reference impl, most mature), Mutter (merged 2025-02-25 but 
 advertise enough features for automatic HDR), wlroots 0.20 / Sway 1.12 (HDR10 on the Vulkan
 renderer), gamescope (v1 semantics + frog), Weston (experimental, no tone mapping).
 Proton-CachyOS's changelog notes that its `winewayland.drv` `windows_bt2100` path needs protocol
-**v3** and that *"no compositor supports it yet"* — everybody is converged on **v1**.
+**v3** and that *"no compositor supports it yet"* - everybody is converged on **v1**.
 
 **We only need v1.** That is what Mesa binds.
 
@@ -178,7 +178,7 @@ Proton-CachyOS's changelog notes that its `winewayland.drv` `windows_bt2100` pat
 
 At bind, on the `wp_color_manager_v1` global, send one event per supported item then `done`:
 
-* `supported_intent`: `perceptual` (mandatory anyway — it is all Mesa ever asks for)
+* `supported_intent`: `perceptual` (mandatory anyway - it is all Mesa ever asks for)
 * `supported_feature`: `parametric` (gates `create_parametric_creator`); optionally
   `set_mastering_display_primaries`, and `extended_target_volume` **only if** we want scRGB
 * `supported_primaries_named`: `bt2020` (HDR10), `srgb` (needed for scRGB and for Mesa's
@@ -195,9 +195,9 @@ Then implement: `create_parametric_creator` → `wp_image_description_creator_pa
 **Not needed:** ICC creator, `wp_color_management_surface_feedback_v1`,
 `wp_image_description_info_v1`, output image descriptions, v2/v3 requests. Mesa uses none of them.
 
-### 2.3 What Mesa's WSI does — read from the exact commit we build
+### 2.3 What Mesa's WSI does - read from the exact commit we build
 
-Read from `src/vulkan/wsi/wsi_common_wayland.c` at Mesa `7cda7850` (4121 lines — the commit
+Read from `src/vulkan/wsi/wsi_common_wayland.c` at Mesa `7cda7850` (4121 lines - the commit
 recorded in `banners-turnip-wayland/mesa_hash.txt`). Landed upstream as MR !32038 (Xaver Hugl,
 merged 2025-02-25, Mesa 25.1).
 
@@ -227,7 +227,7 @@ merged 2025-02-25, Mesa 25.1).
 
   Consequence: if we advertise BT.2020 + PQ but keep only 8-bit DRM formats, Mesa will happily
   offer `R8G8B8A8_UNORM` + `HDR10_ST2084` and DXVK will **not** take it (`pickFormat`'s HDR10 list
-  is 10-bit/16-bit only) — so there is no accidental 8-bit-PQ trap, but there is also no HDR
+  is 10-bit/16-bit only) - so there is no accidental 8-bit-PQ trap, but there is also no HDR
   unless we also advertise a 10-bit DRM format.
 * **Apply:** `wsi_wl_swapchain_update_colorspace` (`:1323-1455`) builds the parametric creator,
   blocks on `ready`/`failed` (it dispatches the queue in a loop), sets mastering primaries /
@@ -248,7 +248,7 @@ Globals (`compositor.c:2527-2538`, plus `ahb_swapchain.c:406`,
 `zwp_linux_dmabuf_v1` **v3**, `wl_seat` v5, `banner_desktop_v1`, `wp_presentation` v2,
 pointer constraints, relative pointer, `banner_ahb_v1` v2, data device/control, text input,
 toplevel icon. **No `wp_color_manager_v1`.** `protocols/` has no colour-management XML, and
-protocol C glue is pre-generated into `generated/` (no `wayland-scanner` at app build time —
+protocol C glue is pre-generated into `generated/` (no `wayland-scanner` at app build time -
 `CMakeLists.txt:1-4`), so adding a protocol means generating and committing the files offline.
 
 The dmabuf format table is 8-bit only (`compositor.c:1323-1326`):
@@ -267,14 +267,14 @@ Good news: the machinery around it is already format-agnostic.
 `FOURCC` defines next to `compositor.c:415-421`.
 
 The compositor's own output swapchain is oblivious (`vk_present.c:301-311, 437-466`): two instance
-extensions (`VK_KHR_surface`, `VK_KHR_android_surface` — **no `VK_EXT_swapchain_colorspace`**),
-and `VkSurfaceFormatKHR chosen = fmts[0];` (`:441`) — the first format the Android WSI happens to
+extensions (`VK_KHR_surface`, `VK_KHR_android_surface` - **no `VK_EXT_swapchain_colorspace`**),
+and `VkSurfaceFormatKHR chosen = fmts[0];` (`:441`) - the first format the Android WSI happens to
 return, with whatever colour space rides along. The scene image and the whole 13-pass effects
 chain are 8-bit (`vk_present.c:54` `SCENE_FMT = VK_FORMAT_R8G8B8A8_UNORM`; `effects_chain.c:29`
 `FX_FORMAT = VK_FORMAT_R8G8B8A8_UNORM`).
 
 > **Naming collision, flag it in any UI work.** The drawer already has an "HDR" effect. It is
-> `effects_chain.c:197` `P_HDR` / `app/src/main/cpp/winlator/hdr.frag` — a dual-radius bloom +
+> `effects_chain.c:197` `P_HDR` / `app/src/main/cpp/winlator/hdr.frag` - a dual-radius bloom +
 > contrast lift ported from `HDREffect.java`, `HDRPower = 1.30`, entirely SDR and entirely fake.
 > Real HDR must be named something else ("HDR output", "HDR10") or users will conflate them.
 
@@ -283,7 +283,7 @@ chain are 8-bit (`vk_present.c:54` `SCENE_FMT = VK_FORMAT_R8G8B8A8_UNORM`; `effe
 No. A `DRM_FORMAT_ABGR2101010` buffer is equally valid as SDR BT.709 or as PQ BT.2020; the format
 and modifier describe byte layout, not colorimetry. That ambiguity is precisely why
 `wp_color_management_v1` exists. We *could* add a `set_dataspace` request to our own
-`banner_ahb_v1` and skip the standard protocol — but Mesa would never call it, so that would need
+`banner_ahb_v1` and skip the standard protocol - but Mesa would never call it, so that would need
 a driver patch (new wcp) to buy something Mesa already gives us for free. **Implement
 `wp_color_manager_v1` v1 server-side; it is strictly cheaper.**
 
@@ -301,16 +301,16 @@ a driver patch (new wcp) to buy something Mesa already gives us for free. **Impl
 | `ASurfaceTransaction_setHdrMetadata_smpte2086(tx, sc, AHdrMetadata_smpte2086*)` | **29** | **PRESENT** |
 | `ASurfaceTransaction_setHdrMetadata_cta861_3(tx, sc, AHdrMetadata_cta861_3*)` | **29** | **PRESENT** |
 | `ASurfaceTransaction_setExtendedRangeBrightness(tx, sc, float cur, float desired)` | **34** | **PRESENT** |
-| `ASurfaceTransaction_setDesiredHdrHeadroom(tx, sc, float)` | **35** | absent (expected — device is 34) |
+| `ASurfaceTransaction_setDesiredHdrHeadroom(tx, sc, float)` | **35** | absent (expected - device is 34) |
 | `ASurfaceTransaction_setLuts` | 36 | n/a |
-| `ASurfaceTransaction_setColorSpace` | **does not exist** | — |
-| `ASurfaceTransaction_setLuma` | **does not exist** | — |
+| `ASurfaceTransaction_setColorSpace` | **does not exist** | - |
+| `ASurfaceTransaction_setLuma` | **does not exist** | - |
 
 (Checked with `strings` on the device's own `libandroid.so`; `setEnableBackPressure` and
 `setFrameRateWithChangeStrategy` confirmed present alongside, matching what `sc_layer.c` already
 dlsyms.)
 
-Our dlsym table is `sc_layer.c:82-97` — 15 entries, **none of them colorimetric**. The additions
+Our dlsym table is `sc_layer.c:82-97` - 15 entries, **none of them colorimetric**. The additions
 needed are `setBufferDataSpace` (the only mandatory one), plus optionally
 `setHdrMetadata_smpte2086` / `_cta861_3` and `setExtendedRangeBrightness`. All four are API ≤ 34,
 i.e. inside the range `sc_layer.c` already targets, so the existing "missing symbol → path
@@ -333,10 +333,10 @@ Every layer on the device right now reports `dataspace=UNKNOWN (0)`, which SF tr
 ### 3.3 Buffer formats
 
 `AHARDWAREBUFFER_FORMAT_R10G10B10A2_UNORM = 0x2b` (API 26) ↔ `VK_FORMAT_A2B10G10R10_UNORM_PACK32`
-— the normal 10-bit scanout format on Adreno DPUs. QTI gralloc on this device knows it:
+- the normal 10-bit scanout format on Adreno DPUs. QTI gralloc on this device knows it:
 `strings /vendor/lib64/libqdMetaData.so` lists `RGBA_1010102`, `RGBX_1010102`, `BGRA_1010102`,
 `BGRX_1010102`. `AHARDWAREBUFFER_FORMAT_R16G16B16A16_FLOAT = 0x16` (API 26) exists but is a
-compositing intermediate, not normally a scanout format — it was **not** found in the vendor
+compositing intermediate, not normally a scanout format - it was **not** found in the vendor
 gralloc strings, so treat FP16 gralloc allocation on this SoC as unproven.
 `AHardwareBuffer_isSupported()` (API 29) is the correct runtime probe, and we should use it rather
 than assume.
@@ -345,7 +345,7 @@ The compositor's own AHB pool is hardcoded 8-bit (`sc_layer.c:302`
 `.format = AHARDWAREBUFFER_FORMAT_R8G8B8A8_UNORM`) and the imported view is built with
 `DRM_ABGR8888` (`sc_layer.c:326`). That is the *copy* path; the zero-copy path
 (`sc_layer_present_ahb`, `sc_layer.c:430`) takes the game's own buffer and so already carries
-whatever format the game allocated — it just never labels it.
+whatever format the game allocated - it just never labels it.
 
 ### 3.4 What SurfaceFlinger does with an HDR layer on an SDR panel
 
@@ -353,7 +353,7 @@ From `services/surfaceflinger/CompositionEngine/src/Output.cpp`, `getBestDataspa
 `pickColorProfile()`:
 
 * A `BT2020_PQ` layer sets `outHdrDataSpace = BT2020_PQ` but the output only *adopts* it when
-  `DisplayColorProfile::hasLegacyHdrSupport(BT2020_PQ)` is true — i.e. when the Composer HAL
+  `DisplayColorProfile::hasLegacyHdrSupport(BT2020_PQ)` is true - i.e. when the Composer HAL
   reported HDR types for that display. Otherwise the output dataspace stays `DISPLAY_P3` with
   `COLORIMETRIC` intent, and the layer is **tone-mapped, not rejected**.
 * Because the HWC for an SDR-only display cannot consume a PQ buffer, the standard
@@ -364,7 +364,7 @@ From `services/surfaceflinger/CompositionEngine/src/Output.cpp`, `getBestDataspa
 * **This is the trap for us.** Our whole zero-copy win is that `banner_wayland_game` composites
   DEVICE (proven 2026-09-13: DEVICE with ROT_90 + 1.5× scale at 144 Hz, −4 pts GPU busy, −3 %
   power). Tagging that layer `BT2020_PQ` on a panel with no HDR types is very likely to drop it to
-  CLIENT — i.e. HDR would **buy a washed-out tone-map and pay for it with the zero-copy saving**.
+  CLIENT - i.e. HDR would **buy a washed-out tone-map and pay for it with the zero-copy saving**.
   Any implementation must gate the dataspace on the *display's* reported HDR types, not on the
   game's request.
 * `setExtendedRangeBrightness` is a different mechanism: it applies only to `RANGE_EXTENDED`
@@ -373,7 +373,7 @@ From `services/surfaceflinger/CompositionEngine/src/Output.cpp`, `getBestDataspa
   reads brighter by simultaneous contrast without exceeding the panel ceiling.
   **It needs the display to expose an HDR/SDR ratio.** This panel does not (§4).
 * `setDesiredHdrHeadroom` (API 35) is the PQ/HLG equivalent and overrides/`is overridden by`
-  `setExtendedRangeBrightness` — last call wins. Not available on the test device at all.
+  `setExtendedRangeBrightness` - last call wins. Not available on the test device at all.
 
 ### 3.5 `has_HDR_display` vs `getHdrCapabilities()`
 
@@ -382,7 +382,7 @@ that the device *has* a wide-gamut, high-luminance panel; it gates SF-internal c
 machinery. `Display.getHdrCapabilities().getSupportedHdrTypes()` is the **runtime, per-display**
 answer, built from the Composer HAL's `getHdrCapabilities()` for that connector, itself derived
 from the EDID CTA-861.3 Static Metadata Data Block. **They can disagree, and on this device they
-do.** An empty list does not mean rejection — it means "tone-map it."
+do.** An empty list does not mean rejection - it means "tone-map it."
 
 ### 3.6 External display
 
@@ -390,7 +390,7 @@ On hotplug, the framework queries `getDisplayConfigs`, `getColorModes`, `getHdrC
 `getDisplayCapabilities` for the new display handle exactly as for the internal panel, so
 `Display.getHdrCapabilities()` on an external `Display` *is* architecturally wired to reflect the
 monitor's EDID. Whether it actually does is a vendor-HWC question; empty lists for genuinely
-HDR10 USB-C monitors are a commonly reported Snapdragon gap. **Unproven for the Pocket FIT — the
+HDR10 USB-C monitors are a commonly reported Snapdragon gap. **Unproven for the Pocket FIT - the
 only way to know is to plug one in.**
 
 ---
@@ -441,7 +441,7 @@ Reading:
 * `hdrSdrRatio not_available` / `NaN` and `displayBrightnessNits = -1` mean
   `Display.isHdrSdrRatioAvailable()` is false → **`setExtendedRangeBrightness` has nothing to act
   on here.** The "brighten highlights on an SDR panel" trick is unavailable on this device.
-* `supportedColorModes=[0]` also means **Display-P3 wide gamut is not available either** — not
+* `supportedColorModes=[0]` also means **Display-P3 wide gamut is not available either** - not
   just HDR. A P3-tagged layer would be colour-converted into the panel's native gamut, i.e. into
   whatever the panel natively is, with no way for us to know what that is.
 * 500 nits max luminance is below the ~540-nit bar AOSP's own `has_HDR_display` doc cites, and
@@ -456,13 +456,13 @@ Vulkan-side, for completeness (device `strings`):
 
 | Library | `VK_EXT_swapchain_colorspace` | `VK_EXT_hdr_metadata` |
 |---|---|---|
-| `/system/lib64/libvulkan.so` (platform loader — implements the Android swapchain) | **PRESENT** | **PRESENT** |
+| `/system/lib64/libvulkan.so` (platform loader - implements the Android swapchain) | **PRESENT** | **PRESENT** |
 | `/vendor/lib64/hw/vulkan.adreno.so` (Qualcomm blob) | absent | absent |
 | `/vendor/lib64/hw/vulkan.turnip.so` (vendor-shipped Turnip) | **PRESENT** | **PRESENT** |
 | wcp v6 `libvulkan_freedreno_wayland.so` (game driver) | **PRESENT** | **PRESENT** |
 
 The platform loader contains the string `native_window_set_buffers_data_space(%d) failed: %s (%d)`
-— i.e. Android's own swapchain implementation is what turns a `VkColorSpaceKHR` into a surface
+- i.e. Android's own swapchain implementation is what turns a `VkColorSpaceKHR` into a surface
 dataspace. So for the **copy path**, the compositor's output HDR is genuinely just "enable
 `VK_EXT_swapchain_colorspace` at instance creation and pick a better surface format than
 `fmts[0]`". No driver work.
@@ -474,11 +474,11 @@ dataspace. So for the **copy path**, the compositor's output HDR is genuinely ju
 Sizes are engineer-days for someone who already knows this code. "Prove" = device-visible in logs
 or `dumpsys`, not by eye. **App-only unless marked.**
 
-### Phase A — make the truth reachable (no user-visible HDR yet)
+### Phase A - make the truth reachable (no user-visible HDR yet)
 
 | # | Repo | Work | Size |
 |---|---|---|---|
-| A1 | app | **Advertise 10-bit DRM formats over `zwp_linux_dmabuf_v1`.** Add `AB30`/`XB30` (and optionally `AR30`/`XR30`, `AB4H`/`XB4H`) to `compositor.c:1323-1326` + `FOURCC` defines near `:415-421`. `vkp_dmabuf_modifiers` and `drm_to_vk` already handle them, so this is a table edit + a log line. Risk: a client picking a 10-bit format while the scene/effects chain stays 8-bit — the import works (`drm_to_vk`), the blit downconverts. Gate behind a flag until A4. | **0.5 d** |
+| A1 | app | **Advertise 10-bit DRM formats over `zwp_linux_dmabuf_v1`.** Add `AB30`/`XB30` (and optionally `AR30`/`XR30`, `AB4H`/`XB4H`) to `compositor.c:1323-1326` + `FOURCC` defines near `:415-421`. `vkp_dmabuf_modifiers` and `drm_to_vk` already handle them, so this is a table edit + a log line. Risk: a client picking a 10-bit format while the scene/effects chain stays 8-bit - the import works (`drm_to_vk`), the blit downconverts. Gate behind a flag until A4. | **0.5 d** |
 | A2 | app | **Generate + commit `color-management-v1` protocol glue.** Fetch `staging/color-management/color-management-v1.xml` from wayland-protocols ≥ 1.41, run `wayland-scanner` offline, commit XML + `generated/color-management-v1-{protocol.c,server-protocol.h}`, add to `CMakeLists.txt`. Mechanical. | **0.5 d** |
 | A3 | app | **Implement `wp_color_manager_v1` v1 server-side** (new `wl_color_mgmt.c`, ~400–500 lines): the global + bind-time feature/intent/primaries/tf events; the parametric creator with `set_primaries_named`/`set_tf_named`/`set_max_cll`/`set_max_fall`/`set_mastering_*`; image-description objects with `ready`/`failed`; `get_surface` → `wp_color_management_surface_v1` and `set_image_description` stored double-buffered on our `struct surface`. **Watch the blocking loop:** Mesa dispatches its queue waiting for `ready`, so we must send `ready` from the request handler's own flush, not defer it to the next frame, or a game stalls at swapchain creation. Advertise only what the *current output* can actually honour (see A5). | **2 d** |
 | A4 | app | **Carry the image description onto the Android layer.** dlsym `ASurfaceTransaction_setBufferDataSpace` (+ `setHdrMetadata_smpte2086` / `_cta861_3`) in `sc_layer.c:82-97`; map surface image description → `ADataSpace` + `AHdrMetadata_*`; apply in `sc_layer_present_ahb` (`sc_layer.c:430-470`, next to the existing `setBuffer`). Plumb the per-surface description from `compositor.c` through `ahb_swapchain.c:219`. Also set an explicit `ADATASPACE_SRGB` on the existing 8-bit path so we stop relying on `UNKNOWN`. | **1 d** |
@@ -488,7 +488,7 @@ or `dumpsys`, not by eye. **App-only unless marked.**
 genuinely HDR display gets an HDR10 swapchain, its buffer reaches an `ASurfaceControl` layer
 tagged `BT2020_PQ` with real mastering metadata, and `dumpsys SurfaceFlinger` proves it.
 
-### Phase B — the copy path and the effects chain (only if A is kept)
+### Phase B - the copy path and the effects chain (only if A is kept)
 
 | # | Repo | Work | Size |
 |---|---|---|---|
@@ -498,7 +498,7 @@ tagged `BT2020_PQ` with real mastering metadata, and `dumpsys SurfaceFlinger` pr
 
 **Phase B total: ~3 days. App-only. No new wcp.**
 
-### Phase C — scRGB, and the one thing that needs a wcp
+### Phase C - scRGB, and the one thing that needs a wcp
 
 | # | Repo | Work | Size |
 |---|---|---|---|
@@ -508,17 +508,17 @@ tagged `BT2020_PQ` with real mastering metadata, and `dumpsys SurfaceFlinger` pr
 
 ---
 
-## 6. Cheap partial wins — and which are visible on a 500-nit panel
+## 6. Cheap partial wins - and which are visible on a 500-nit panel
 
 | Idea | Verdict on the Pocket FIT | Notes |
 |---|---|---|
-| **10-bit output (banding)** | **Visible, and the best value here.** | This is the one real win. B1 alone (0.5 d) gets a 10-bit output swapchain; A1 (0.5 d) lets the *game* render 10-bit. Adreno 750 + the DPU handle `RGBA_1010102` natively, and `vendor.display.enable_hdr10_gpu_target=1` says the GPU target path expects it. Pairs with the existing debanding pass — arguably makes it unnecessary for 10-bit-capable games, which saves a full-screen pass. Visible on gradients (skyboxes, fog, dark interiors) where our deband pass currently earns its keep. |
-| **Display-P3 wide gamut on SDR** | **Not visible. Do not build.** | `supportedColorModes=[0]` / `ColorMode::NATIVE` — the HWC exposes no P3 mode. `persist.sys.sf.color_mode=9` asks for P3 and is ignored. Tagging a layer `ADATASPACE_DISPLAY_P3` would make SF convert P3 → the panel's native gamut, which on a NATIVE-mode display is an unknown-to-us transform. Net effect on this device: at best nothing, at worst a colour shift. |
+| **10-bit output (banding)** | **Visible, and the best value here.** | This is the one real win. B1 alone (0.5 d) gets a 10-bit output swapchain; A1 (0.5 d) lets the *game* render 10-bit. Adreno 750 + the DPU handle `RGBA_1010102` natively, and `vendor.display.enable_hdr10_gpu_target=1` says the GPU target path expects it. Pairs with the existing debanding pass - arguably makes it unnecessary for 10-bit-capable games, which saves a full-screen pass. Visible on gradients (skyboxes, fog, dark interiors) where our deband pass currently earns its keep. |
+| **Display-P3 wide gamut on SDR** | **Not visible. Do not build.** | `supportedColorModes=[0]` / `ColorMode::NATIVE` - the HWC exposes no P3 mode. `persist.sys.sf.color_mode=9` asks for P3 and is ignored. Tagging a layer `ADATASPACE_DISPLAY_P3` would make SF convert P3 → the panel's native gamut, which on a NATIVE-mode display is an unknown-to-us transform. Net effect on this device: at best nothing, at worst a colour shift. |
 | **`setExtendedRangeBrightness` to lift highlights** | **Not available.** | `hdrSdrRatio not_available` / `NaN`, `displayBrightnessNits=-1`, `sdrWhitePointNits=-1`. `Display.isHdrSdrRatioAvailable()` is false, so there is no headroom to claim and SF has no nits data to dim the other layers against. |
 | **`setDesiredHdrHeadroom`** | **Not available.** | API 35; device is API 34. Absent from `libandroid.so`. |
 | **Set `ADATASPACE_SRGB` explicitly on our layers** | **Invisible but worth doing anyway (part of A4, ~0 extra cost).** | Every layer currently reports `dataspace=UNKNOWN (0)`. It works today because SF treats UNKNOWN as sRGB, but it is an accident we are relying on, and it will become wrong the moment any colour management is enabled. |
 
-**So: of the three "cheap wins" in the brief, exactly one — 10-bit — is real on this hardware,
+**So: of the three "cheap wins" in the brief, exactly one - 10-bit - is real on this hardware,
 and it is worth about 1 engineer-day (A1 + B1) on its own, independent of HDR.**
 
 ---
@@ -535,13 +535,13 @@ candidates, easiest first:
   *Mass Effect Legendary Edition*. RE Engine titles are the usual smoke test on Linux because they
   call `SetColorSpace1` early and unconditionally when DXGI reports HDR.
 * **D3D12 + HDR10:** *Cyberpunk 2077*, *Forza Horizon 5*, *Horizon Zero Dawn*. These go through
-  vkd3d-proton's stricter path (§1.1) — good for catching a half-done implementation, since a
+  vkd3d-proton's stricter path (§1.1) - good for catching a half-done implementation, since a
   wrong answer **stalls presentation** instead of degrading.
 * **Sanity harness, no game needed:** anything that calls `vkGetPhysicalDeviceSurfaceFormatsKHR`
   under the layer. `vulkaninfo` is not available in the prefix, but a tiny Win32 Vulkan probe
   built against the layer's headers, or simply DXVK's own `VK_INSTANCE_LAYERS`-free log with
   `DXVK_LOG_LEVEL=info` and `DXVK_HDR=1`, will say whether the colour space was accepted. **Start
-  here** — it is the cheapest signal and needs no HDR display at all.
+  here** - it is the cheapest signal and needs no HDR display at all.
 
 ### 7.2 Platform-side verification (not by eye)
 
@@ -553,11 +553,11 @@ Order of proof, each step gating the next:
 2. **Guest log.** `DXVK_HDR=1` + `DXVK_LOG_LEVEL=info` → DXVK prints the chosen colour space and
    format at swapchain creation. If `SetColorSpace1` was refused, DXVK says so. Mesa's WSI prints
    `Not using HDR metadata to avoid protocol errors` when `is_hdr_metadata_legal` rejects metadata
-   — catching that string is a direct test of A3's metadata plumbing.
+   - catching that string is a direct test of A3's metadata plumbing.
 3. **`dumpsys SurfaceFlinger | grep banner_wayland_game`.** Today it prints
    `dataspace=UNKNOWN (0) hdr metadata types=0`. Success = `dataspace:0x9c60000` (`BT2020_PQ`, 163971072 =
    `STANDARD_BT2020|TRANSFER_ST2084|RANGE_FULL`) and `hdr metadata types=` non-zero. **Also record `composition:` on the same line**
-   — if it flips DEVICE → CLIENT, HDR cost us the zero-copy win (§3.4) and that is a failure, not a
+   - if it flips DEVICE → CLIENT, HDR cost us the zero-copy win (§3.4) and that is a failure, not a
    success.
 4. **`dumpsys display`.** On whatever display is in use: `supportedHdrTypes=[...]` non-empty,
    `colorMode` ≠ 0, `hdrSdrRatio` ≠ `not_available`. This is the gate for steps 5–6; on the Pocket
@@ -567,14 +567,14 @@ Order of proof, each step gating the next:
    `UNKNOWN (0)`.
 6. **Only then, by eye.**
 
-### 7.3 Getting a display that can actually show it — three options, ranked
+### 7.3 Getting a display that can actually show it - three options, ranked
 
 1. **External HDR display over USB-C (recommended, cheapest).** The app already reparents the game
-   into a `Presentation` on a secondary display —
+   into a `Presentation` on a secondary display -
    `app/src/main/java/com/winlator/star/display/ExternalDisplayController.java`,
    `findPresentationDisplay()` picks a `DISPLAY_CATEGORY_PRESENTATION` display that is not the
    activity's own. In the Wayland session the compositor's `SurfaceView` is the reparented view, so
-   `sc_layer.c`'s `ASurfaceControl_createFromWindow(vkp_window(), ...)` follows it automatically —
+   `sc_layer.c`'s `ASurfaceControl_createFromWindow(vkp_window(), ...)` follows it automatically -
    **no new plumbing to test on an external panel.** Risk: `Display.getHdrCapabilities()` for a
    DP-alt-mode display depends on the vendor HWC reading the external EDID, and empty lists for
    genuinely HDR10 monitors are a common Snapdragon gap (§3.6). **Step zero is a five-minute,
@@ -587,7 +587,7 @@ Order of proof, each step gating the next:
    "Other GPUs… the Galaxy Fold (A840) logs are still outstanding"). Chasing HDR there before
    plain Wayland is proven there inverts the priority order.
 3. **Plumbing-only verification on SDR.** Everything in §7.2 steps 1–3 works on the Pocket FIT.
-   This proves the code is *correct* but proves nothing about whether it *looks right* — and
+   This proves the code is *correct* but proves nothing about whether it *looks right* - and
    tone-mapping quality is the entire user-visible payload of HDR. **Do not ship on this evidence
    alone.**
 
@@ -600,7 +600,7 @@ Order of proof, each step gating the next:
 The reasoning, plainly:
 
 * **The effort is genuinely small and smaller than we thought.** ~4.5 days to a plumbed HDR10
-  path, **app-only, no new wcp** — because Mesa's colour-management client is already inside the
+  path, **app-only, no new wcp** - because Mesa's colour-management client is already inside the
   shipped wcp v6 driver and our zero-copy WSI patch already maps 10-bit to gralloc. The phase-4
   memory note saying HDR "does need a new wcp" should be corrected: only scRGB/FP16 zero-copy (C1)
   does, and that is optional.
@@ -616,7 +616,7 @@ The reasoning, plainly:
   a feature nobody can exercise.
 * **It is also out of order.** The pre-4 checkpoint's ranked list puts "other GPUs" and "prove
   zero-copy where it can win, then make it the default" first, with multi-layer presentation in
-  flight. HDR competes with those for the same `sc_layer.c` surface area — and multi-layer will
+  flight. HDR competes with those for the same `sc_layer.c` surface area - and multi-layer will
   rewrite exactly the code A4 touches. Landing HDR into `sc_layer.c` now means merging it twice.
 
 **What the user would actually see for the effort, honestly:**
@@ -626,16 +626,16 @@ The reasoning, plainly:
 * **Today, Pocket FIT, the 10-bit slice only (A1 + B1, ~1 day):** *slightly* smoother gradients in
   dark scenes and skyboxes for games that offer a 10-bit swapchain, and a plausible route to
   retiring the debanding pass (one fewer fullscreen pass) for those games. Small, real, and it is
-  the foundation Phase A sits on anyway — so it is not wasted work if HDR later goes ahead.
+  the foundation Phase A sits on anyway - so it is not wasted work if HDR later goes ahead.
 * **Later, on an HDR display (external monitor or the Fold), full Phase A:** genuinely brighter
   highlights and a wider gamut in the ~15 PC titles that implement HDR properly, on the one Android
-  emulator that can do it. That is a real headline feature and a real differentiator — but only
+  emulator that can do it. That is a real headline feature and a real differentiator - but only
   once there is a panel to show it on.
 
 **Recommended sequence:**
 
 1. **Five minutes, zero code:** plug an HDR monitor into the Pocket FIT's USB-C and run
-   `dumpsys display | grep -A2 hdrCapabilities`. This single reading decides everything —
+   `dumpsys display | grep -A2 hdrCapabilities`. This single reading decides everything -
    it is the difference between "we can develop and prove HDR today on hardware we own" and
    "HDR is blocked on the Fold."
 2. **~1 day, independent of HDR:** the 10-bit slice (A1 + B1), gated and A/B'd for banding and
@@ -656,7 +656,7 @@ The reasoning, plainly:
   No external display was connected and I did not connect one. This is the single highest-value
   unknown in the whole report (§8, step 1).
 * **Whether an HDR-tagged layer really drops DEVICE → CLIENT on this HWC.** The AOSP code path is
-  clear (§3.4) but it is vendor-HWC behaviour and I did not test it — testing it would mean
+  clear (§3.4) but it is vendor-HWC behaviour and I did not test it - testing it would mean
   launching a game, which was out of scope.
 * **What the Galaxy Fold (Adreno 840, Android version unknown to me) reports.** Not connected.
   Its `getHdrCapabilities()` and `isHdrSdrRatioAvailable()` are the other decisive readings.
@@ -674,7 +674,7 @@ The reasoning, plainly:
 
 ---
 
-## 10. Round 1 — as built (2026-09-14, `feat/wayland-hdr`)
+## 10. Round 1 - as built (2026-09-14, `feat/wayland-hdr`)
 
 Phase A (A1–A5) for HDR10, opt-in, proven by the app's own logs because the first HDR panel in the
 loop is a tester's non-rooted Galaxy Fold (Adreno 840, Android API 37: HDR10/HLG/HDR10+, 1351 nits,
@@ -691,7 +691,7 @@ Open only when ALL hold when the compositor starts:
 | display layers with dataspace control | `sc_layer_can_tag_hdr()` = SurfaceControl API + `ASurfaceTransaction_setBufferDataSpace` |
 | the zero-copy global | `ahb_swapchain_advertised()` |
 
-`BANNER_WAYLAND_HDR=force` skips the display row only (testing the negotiation on an SDR panel —
+`BANNER_WAYLAND_HDR=force` skips the display row only (testing the negotiation on an SDR panel -
 SurfaceFlinger then tone-maps the layer). A **closed** gate advertises nothing (no
 `wp_color_manager_v1` global, no 10-bit dma-buf rows), writes `color … HDR gate CLOSED: <why>` and
 `HDR on screen: no, because <why>`, and the session is otherwise byte-for-byte the old one. With the
@@ -706,13 +706,13 @@ only right on the game's own layer) and exports `BANNER_WSI_AHB=1` to match.
 primaries `bt2020`; transfer `st2084_pq`. Not advertised: `srgb` (so Mesa creates no colour surface for
 SDR swapchains at all), HLG (no DXGI swapchain uses it), `ext_linear`/`extended_target_volume` (scRGB =
 Phase C, needs FP16 gralloc + a layer change), ICC, `windows_scrgb`. `zwp_linux_dmabuf_v1` gains
-`AB30`/`XB30` (A2B10G10R10 — Mesa lists a VkFormat only when both the alpha and opaque fourcc are there),
+`AB30`/`XB30` (A2B10G10R10 - Mesa lists a VkFormat only when both the alpha and opaque fourcc are there),
 appended after the four 8-bit rows. Protocol glue generated from wayland-protocols **1.41** with
 wayland-scanner 1.24.0 (`protocols/color-management-v1.xml`).
 
 Strictness: protocol errors only where a conforming client can never hit them (un-advertised
 feature/intent/primaries/tf, a property set twice, an incomplete set, a not-ready description).
-Everything a conforming client can produce on a bad day is logged and absorbed instead — out-of-range
+Everything a conforming client can produce on a bad day is logged and absorbed instead - out-of-range
 HDR metadata is dropped from what Android gets (and `max_cll`/`max_fall` of 0 = "unknown", which Mesa
 sends as-is), a second colour surface for the same `wl_surface` replaces the first, requests on inert
 objects are ignored. `ready` is sent from inside `create` (Mesa blocks its swapchain on it).
@@ -727,7 +727,7 @@ puts it back to `UNKNOWN` and clears the metadata. The zero-copy frame gets the 
 description; the 8-bit pool copy of an HDR frame keeps the PQ tag (colours right, 8-bit precision,
 logged once); the effects pass and the overlay layer are always untagged.
 
-### 10.4 When an HDR frame cannot be zero-copy — round 1's decision
+### 10.4 When an HDR frame cannot be zero-copy - round 1's decision
 
 No tone-mapping anywhere (the copy path is `vkCmdBlitImage` into an 8-bit sRGB swapchain; a PQ→SDR
 shader pass is its own project). Instead:
@@ -741,7 +741,7 @@ shader pass is its own project). Instead:
   unavailable:** the scene goes through the copy path and the HDR frames are shown **untone-mapped
   (washed out)**; every such scene is counted and the reason logged.
 
-### 10.5 Proof without root — what a tester's logs say
+### 10.5 Proof without root - what a tester's logs say
 
 `Download/Wayland-logs/wayland-*.log`, tag `color` (plus the existing `display` capability line):
 
@@ -754,14 +754,14 @@ shader pass is its own project). Instead:
 | `<window> presents WxH buffers in XB30 (10-bit A2B10G10R10) …, gralloc RGBA1010102 (10-bit)` | the 10-bit swapchain really arrived |
 | `banner_wayland_game: dataspace BT2020_PQ (0x9c60000) set on the display layer …` | the tag + metadata SurfaceFlinger received |
 | `HDR last 10 s: N frames on the display layer tagged BT2020_PQ …` | steady state |
-| `display HDR/SDR ratio X (was Y; HDR frames on screen: yes …)` | `Display.getHdrSdrRatio()` — rises above 1.00 only when Android grants HDR headroom |
+| `display HDR/SDR ratio X (was Y; HDR frames on screen: yes …)` | `Display.getHdrSdrRatio()` - rises above 1.00 only when Android grants HDR headroom |
 | `HDR on screen: yes / tagged but NOT confirmed / no, because …` | the verdict (written on changes, at game exit and at session end; the last one counts) |
 
 DXVK's own `<exe>_dxgi.log` / `<exe>_d3d11.log` add `Color space: VK_COLOR_SPACE_HDR10_ST2084_EXT` and
 the 10-bit format at swapchain creation; Mesa's `Not using HDR metadata to avoid protocol errors`
 (stderr → `wine_debug.log`) means the game's metadata failed Mesa's own legality check.
 
-## 11. Round 2 — as built (2026-09-14, `feat/wayland-hdr`; CI only, not device-proven yet)
+## 11. Round 2 - as built (2026-09-14, `feat/wayland-hdr`; CI only, not device-proven yet)
 
 Round 1 is proven on the tester's Fold (God of War, DXVK v3.1: 10-bit zero-copy, `BT2020_PQ` on the
 layer, HDR/SDR ratio 1.00 → 2.51, `HDR on screen: yes`). Round 2 makes it a setting and removes
@@ -771,7 +771,7 @@ The gate itself is unchanged (§10.1) apart from its first input.
 ### 11.1 The setting, and what the launch does with it
 
 - `Container.isWaylandHdr()` (extraData `waylandHdr`) and the shortcut extra `waylandHdr` (`1`/`0`/unset
-  = the container's) — one resolver, `display/WaylandHdr.effective()`, used by the three editors
+  = the container's) - one resolver, `display/WaylandHdr.effective()`, used by the three editors
   (container, game shortcut, XMB game settings) and the launch path. `BANNER_WAYLAND_HDR` in the
   environment still overrides it (`1` / `0` / `force`). Editors grey the row with the reason when the
   built-in screen does not list HDR10 (`WaylandHdr.unavailableReason`), and say it applies from the
@@ -780,14 +780,14 @@ The gate itself is unchanged (§10.1) apart from its first input.
   after the user's env merge unless the user set `DXVK_HDR` themselves.
 - Every Wayland session whose display lists **HDR10** exports `BANNER_WAYLAND_HDR_MAX_NITS`,
   `…_MAX_AVG_NITS`, `…_MIN_NITS` (decimal nits from `Display.getHdrCapabilities()`; unknown values and
-  a max of 0 are left out) — the contract the Wayland layer from versionCode 10 turns into EDID HDR
+  a max of 0 are left out) - the contract the Wayland layer from versionCode 10 turns into EDID HDR
   metadata for DXGI (checked by the Wine side against DXVK's own EDID parser: the Fold's 1351/1351/0 →
   DXGI max 1345.43, max full-frame 1345.43, min 0.01). Never on an SDR display, whose EDID would then
   claim PQ support. One `session environment:` line logs them. Android has no live absolute nits; the
   live evidence stays the HDR/SDR ratio.
 - A "DXVK before 3.0 needs layer v10" warning was built and then **removed**: its premise was wrong
   (Wine already exposes `VK_EXT_swapchain_colorspace` at instance level; DXVK ≥ 2.1 looks for it in the
-  device list, logs 0 on every Mesa system — the working v3.1 run logs 0 too — and never uses it for the
+  device list, logs 0 on every Mesa system - the working v3.1 run logs 0 too - and never uses it for the
   HDR decision). Why God of War offered no HDR option on DXVK 2.4.1 is open (Fold A/B).
 
 ### 11.2 HDR-aware composition (`hdr_compose.c`, `hdr_encode.frag`, compositor.c `hdr_plan`)
@@ -907,4 +907,4 @@ hot, not recording, brightness 8-223 manual - and the HDR/SDR ratio at **1.00 th
   perceptual SDR-like data. If interpolation artefacts show only in HDR, that is the next thing to try.
 - Colour effects (brightness/contrast/saturation/gamma, the "HDR" bloom) operate on the PQ signal in
   route 1 and look stronger than in SDR; sharpening/AA/CRT/upscalers are perceptually fine.
-- scRGB (FP16) swapchains (Phase C) — unchanged: needs FP16 gralloc and a layer change.
+- scRGB (FP16) swapchains (Phase C) - unchanged: needs FP16 gralloc and a layer change.

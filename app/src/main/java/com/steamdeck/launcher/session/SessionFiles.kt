@@ -107,8 +107,8 @@ object SessionFiles {
     }
 
     /**
-     * Where the session writes its log. Downloads is the point — a failed run is handed over as a
-     * folder rather than dug out of app-private storage — but the session script redirects its own
+     * Where the session writes its log. Downloads is the point - a failed run is handed over as a
+     * folder rather than dug out of app-private storage - but the session script redirects its own
      * output there with `exec`, and a redirection a non-interactive shell cannot open ends that
      * shell. So a public directory is used only once it is proven writable; otherwise the app's
      * own files directory, which is bound into the session anyway, stands in.

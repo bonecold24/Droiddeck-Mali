@@ -9,11 +9,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
 
-/**
- * The pointer, drawn by the app. The nested desktop asks its parent compositor to show a cursor
- * and ours does not, and the Steam session has none either; this is the arrow for both, at the
- * position the app last sent. Takes no touches.
- */
 @Composable
 fun CursorOverlay(position: Offset, visible: Boolean, scale: Float) {
     if (!visible) return
