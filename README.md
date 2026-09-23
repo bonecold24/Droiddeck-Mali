@@ -26,11 +26,12 @@ _From the repository's pull requests; rewritten when one is opened, merged or cl
 
 | Contributor | Pull request | Opened | State |
 |---|---|---|---|
-| [@xXJSONDeruloXx](https://github.com/xXJSONDeruloXx) | [#1](https://github.com/The412Banner/SteamDeck/pull/1) initial decky installer stuff | 2026-09-23 | draft |
+| [@xXJSONDeruloXx](https://github.com/xXJSONDeruloXx) | [#1](https://github.com/The412Banner/SteamDeck/pull/1) initial decky installer stuff | 2026-09-23 | closed |
 | [@xXJSONDeruloXx](https://github.com/xXJSONDeruloXx) | [#3](https://github.com/The412Banner/SteamDeck/pull/3) Fix hardware back in Steam session | 2026-09-23 | merged 2026-09-23 |
 | [@xXJSONDeruloXx](https://github.com/xXJSONDeruloXx) | [#4](https://github.com/The412Banner/SteamDeck/pull/4) Update app launcher icon | 2026-09-23 | merged 2026-09-23 |
+| [@xXJSONDeruloXx](https://github.com/xXJSONDeruloXx) | [#5](https://github.com/The412Banner/SteamDeck/pull/5) Add reproducible local build and deploy helpers | 2026-09-23 | merged 2026-09-23 |
 
-- **@xXJSONDeruloXx**: 3 submitted, 2 merged
+- **@xXJSONDeruloXx**: 4 submitted, 3 merged
 <!-- contributions:end -->
 
 ## Requirements
@@ -141,10 +142,27 @@ first use.
 
 ## Building
 
-Nothing is built locally. Push, and the `Build APK` workflow produces `steamdeck-apk`, a
-debug-signed arm64 apk. It cross-compiles the two glibc preloads the session needs
-(`libfakeinput.so`, `libblsession.so`) from the sources in this repo before the app build, so
-those can never drift from what ships.
+The repeatable local build is `tools/build_local.sh`. It uses Docker's Ubuntu cross-toolchain for
+the two glibc ARM64 preloads (`libfakeinput.so`, `libblsession.so`), the Android SDK/NDK already
+installed on the machine, and the same release signing and native dependency checks as CI. The
+APK is written to `app/build/outputs/apk/release/app-release.apk`.
+
+```sh
+tools/build_local.sh
+```
+
+CI remains available through the `Build APK` workflow. Both paths cross-compile the preloads from
+the sources in this repo before the app build, so those cannot drift from what ships.
+
+With an authorized Android device attached over USB or ADB, install the locally built APK with:
+
+```sh
+tools/deploy_local.sh
+```
+
+Set `ADB_SERIAL` when more than one device is attached. The deploy helper installs over the
+existing `com.steamdeck.launcher` package using the repository's stable test key and verifies the
+package path afterward; it does not launch a session automatically.
 
 ## If Bannerlator is already installed
 

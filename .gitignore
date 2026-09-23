@@ -7,6 +7,7 @@ build/
 captures/
 .externalNativeBuild/
 .cxx/
+.kotlin/
 # Built in CI from tools/linuxfs and app/src/main/cpp/fakeinput.cpp, never committed, so the two
 # copies cannot drift.
 app/src/main/assets/linuxfs/
