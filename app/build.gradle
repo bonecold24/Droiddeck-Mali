@@ -80,6 +80,8 @@ android {
             // libraries are read out of the apk by the class loader: both want the old,
             // uncompressed-and-extracted layout.
             useLegacyPackaging = true
+            // Prefer the PTY helper built by this app's NDK target over Termux's prebuilt copy.
+            pickFirsts += ['**/libtermux.so']
         }
     }
 
