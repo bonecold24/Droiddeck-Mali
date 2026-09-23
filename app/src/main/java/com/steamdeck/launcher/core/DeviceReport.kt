@@ -146,7 +146,7 @@ object DeviceReport {
         k("FEX preset", SessionPrefs.fexPreset(context).ifEmpty { "FEX defaults" })
         k("Skip xalia", SessionPrefs.noXalia(context))
         k("proot without seccomp", SessionPrefs.prootNoSeccomp(context))
-        k("DirectAudio for games", SessionPrefs.directAudio(context))
+        k("DirectAudio (games and client)", SessionPrefs.directAudio(context))
         k("Microphone", SessionPrefs.micEnabled(context))
         k("On-screen controls", SessionPrefs.oscMode(context))
         k("Touch mode", SessionPrefs.touchMode(context))

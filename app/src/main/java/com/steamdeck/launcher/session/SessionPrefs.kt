@@ -69,10 +69,10 @@ object SessionPrefs {
     }
 
     /**
-     * DirectAudio for the games the client launches: Wine's audio driver inside them replaced by
-     * ours, which talks to a helper on this side. The client itself keeps PulseAudio either way.
+     * DirectAudio: games' Wine audio driver and the client's own sound both go through the relay
+     * helper on this side. On unless the user turned it off; off, PulseAudio drives the device.
      */
-    fun directAudio(context: Context): Boolean = prefs(context).getBoolean("directAudio", false)
+    fun directAudio(context: Context): Boolean = prefs(context).getBoolean("directAudio", true)
 
     fun setDirectAudio(context: Context, on: Boolean) {
         prefs(context).edit().putBoolean("directAudio", on).apply()
