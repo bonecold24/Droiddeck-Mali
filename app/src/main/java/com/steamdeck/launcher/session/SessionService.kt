@@ -9,12 +9,16 @@ import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
+import android.content.BroadcastReceiver
 import android.content.Intent
+import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.net.wifi.WifiManager
 import android.os.Build
 import android.os.Environment
 import android.os.IBinder
+import android.os.Handler
+import android.os.Looper
 import android.os.PowerManager
 import android.util.Log
 import com.steamdeck.launcher.R
@@ -52,22 +56,83 @@ import java.util.Locale
  * The activity comes and goes on top of this; see [com.steamdeck.launcher.wayland.CompositorHost].
  */
 class SessionService : Service() {
-    private val components = ArrayList<SessionPart>()
+    private val components = java.util.concurrent.CopyOnWriteArrayList<SessionPart>()
     private var wakeLock: PowerManager.WakeLock? = null
     private var wifiLock: WifiManager.WifiLock? = null
     private var sessionPid = -1
+    private val mainHandler = Handler(Looper.getMainLooper())
+    private var suspendController: SessionSuspendController? = null
+    private var suspendPolicy = SessionPrefs.SUSPEND_MANUAL
+    private var activityVisible = true
+    private var screenOn = true
+    private var manualPauseRequested = false
+    private var suspendOperationPending = false
+    private var suspendAttemptFailed = false
+    private var screenReceiverRegistered = false
+    private val screenReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            when (intent?.action) {
+                Intent.ACTION_SCREEN_OFF -> screenOn = false
+                Intent.ACTION_SCREEN_ON -> screenOn = true
+                else -> return
+            }
+            suspendAttemptFailed = false
+            updateSuspendPolicy()
+        }
+    }
     /** Counts sessions this service has started; a process exit from an earlier one is ignored. */
     private var sessionGen = 0
 
+    override fun onCreate() {
+        super.onCreate()
+        val power = getSystemService(Context.POWER_SERVICE) as? PowerManager
+        screenOn = power?.isInteractive ?: true
+        registerReceiver(screenReceiver, IntentFilter().apply {
+            addAction(Intent.ACTION_SCREEN_OFF)
+            addAction(Intent.ACTION_SCREEN_ON)
+        })
+        screenReceiverRegistered = true
+    }
+
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        if (intent?.action == ACTION_STOP) {
-            Log.i(TAG, "stop requested from the notification")
-            stopSession(0)
-            return START_NOT_STICKY
+        when (intent?.action) {
+            ACTION_STOP -> {
+                Log.i(TAG, "stop requested from the notification")
+                stopSession(0)
+                return START_NOT_STICKY
+            }
+            ACTION_ACTIVITY_VISIBLE -> {
+                activityVisible = true
+                suspendAttemptFailed = false
+                updateSuspendPolicy()
+                return START_NOT_STICKY
+            }
+            ACTION_ACTIVITY_HIDDEN -> {
+                activityVisible = false
+                suspendAttemptFailed = false
+                updateSuspendPolicy()
+                return START_NOT_STICKY
+            }
+            ACTION_RESUME -> {
+                activityVisible = true
+                screenOn = (getSystemService(Context.POWER_SERVICE) as? PowerManager)?.isInteractive ?: screenOn
+                manualPauseRequested = false
+                suspendAttemptFailed = false
+                updateSuspendPolicy()
+                return START_NOT_STICKY
+            }
         }
         startForeground(NOTIFICATION_ID, buildNotification())
         if (SessionState.running) return START_NOT_STICKY
         SessionState.mode = intent?.getStringExtra(EXTRA_MODE) ?: MODE_STEAM
+        suspendPolicy = SessionPrefs.suspendPolicy(this, SessionState.mode)
+        activityVisible = true
+        screenOn = (getSystemService(Context.POWER_SERVICE) as? PowerManager)?.isInteractive ?: true
+        manualPauseRequested = false
+        suspendOperationPending = false
+        suspendAttemptFailed = false
+        suspendController = null
+        SessionState.suspended = false
         SessionState.program = intent?.getStringExtra(EXTRA_PROGRAM)
         SessionState.programArgs = intent?.getStringArrayExtra(EXTRA_PROGRAM_ARGS)?.toList().orEmpty()
         SessionState.steamUi = intent?.getStringExtra(EXTRA_STEAM_UI)
@@ -460,6 +525,19 @@ class SessionService : Service() {
             stopSession(status ?: -1)
         }, null)
         Log.i(TAG, "session pid $sessionPid, log ${sessionLog.path}")
+        if (gen == sessionGen && SessionState.running) {
+            suspendController = SessionSuspendController(
+                sessionRoot = { sessionPid },
+                helperRoots = { components.mapNotNull { it.suspendPid().takeIf { pid -> pid > 1 } } },
+                suspendAudio = {
+                    if (!pulse.setSinkSuspended(true)) Log.w(TAG, "could not suspend audio sink")
+                },
+                resumeAudio = {
+                    if (!pulse.setSinkSuspended(false)) Log.w(TAG, "could not resume audio sink")
+                },
+            )
+            mainHandler.post { updateSuspendPolicy() }
+        }
     }
 
     private fun teardown(prootPid: Int) {
@@ -585,9 +663,68 @@ class SessionService : Service() {
         launchWatcher = watcher
     }
 
+    private fun updateSuspendPolicy() {
+        if (!SessionState.running) return
+        if (suspendPolicy == SessionPrefs.SUSPEND_MANUAL && (!activityVisible || !screenOn)) {
+            manualPauseRequested = true
+        }
+        val shouldSuspend = when (suspendPolicy) {
+            SessionPrefs.SUSPEND_AUTO -> !activityVisible || !screenOn
+            SessionPrefs.SUSPEND_MANUAL -> manualPauseRequested
+            else -> false
+        }
+        val controller = suspendController ?: return
+        if (suspendOperationPending || suspendAttemptFailed || shouldSuspend == SessionState.suspended) return
+        suspendOperationPending = true
+        if (shouldSuspend) {
+            controller.freeze { success ->
+                mainHandler.post {
+                    if (!SessionState.running) return@post
+                    suspendOperationPending = false
+                    if (success) {
+                        SessionState.suspended = true
+                        releaseLocks()
+                        refreshNotification()
+                    } else {
+                        suspendAttemptFailed = true
+                        Log.w(TAG, "could not confirm that the session stopped")
+                    }
+                    updateSuspendPolicy()
+                }
+            }
+        } else {
+            acquireLocks()
+            controller.resume { success ->
+                mainHandler.post {
+                    if (!SessionState.running) return@post
+                    suspendOperationPending = false
+                    if (success) {
+                        SessionState.suspended = false
+                        refreshNotification()
+                    } else {
+                        suspendAttemptFailed = true
+                        Log.w(TAG, "could not confirm that the session resumed")
+                    }
+                    updateSuspendPolicy()
+                }
+            }
+        }
+    }
+
+    private fun finishSessionStop(status: Int) {
+        mainHandler.post {
+            SessionState.suspended = false
+            releaseLocks()
+            SessionState.notifyEnded(status)
+            stopForeground(STOP_FOREGROUND_REMOVE)
+            stopSelf()
+        }
+    }
+
     private fun stopSession(status: Int) {
         if (!SessionState.running) return
         SessionState.running = false
+        suspendOperationPending = false
         launchWatcher?.stopWatching()
         launchWatcher = null
         // proot's --kill-on-exit takes the guest tree down only if proot gets to run it, and
@@ -596,12 +733,11 @@ class SessionService : Service() {
         // for over an hour, and the reaper could not even open /proc to kill them. So: SIGTERM,
         // a grace for proot's own cleanup, SIGKILL only if it will not go, then a sweep of the
         // tree it had - snapshotted first, each pid checked against its start time so a number
-        // reused by a new process is never touched. Same shape as Bannerlator's fix (4509d788).
-        if (sessionPid != -1) {
-            val prootPid = sessionPid
-            sessionPid = -1
-            Thread({ teardown(prootPid) }, "session-teardown").start()
-        }
+        // reused by a new process is never touched.
+        val prootPid = sessionPid
+        sessionPid = -1
+        val controller = suspendController
+        suspendController = null
         // On its own thread, never here: stopSession runs on the main thread (the notification's
         // Stop action arrives there), and collecting means copying the compositor's log, scrubbing
         // every Steam log line by line - 42 files on one measured run - and waiting for logcat to
@@ -618,10 +754,18 @@ class SessionService : Service() {
         }
         components.clear()
         FakeInputWriter.releaseAllRingSlots()
-        releaseLocks()
-        SessionState.notifyEnded(status)
-        stopForeground(STOP_FOREGROUND_REMOVE)
-        stopSelf()
+        val finishAfterTeardown: () -> Unit = {
+            if (prootPid > 1) {
+                Thread({
+                    teardown(prootPid)
+                    finishSessionStop(status)
+                }, "session-teardown").start()
+            } else {
+                finishSessionStop(status)
+            }
+        }
+        if (prootPid > 1) acquireLocks()
+        if (controller != null) controller.closeAndResume(finishAfterTeardown) else finishAfterTeardown()
     }
 
     /**
@@ -636,6 +780,10 @@ class SessionService : Service() {
 
     override fun onDestroy() {
         stopSession(0)
+        if (screenReceiverRegistered) {
+            unregisterReceiver(screenReceiver)
+            screenReceiverRegistered = false
+        }
         super.onDestroy()
     }
 
@@ -645,12 +793,12 @@ class SessionService : Service() {
 
     private fun acquireLocks() {
         try {
-            val power = getSystemService(Context.POWER_SERVICE) as? PowerManager
-            wakeLock = power?.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "SteamDeck:session")?.apply {
-                setReferenceCounted(false)
-                // Capped, so a crash on some path cannot pin the CPU awake for good. A session
-                // longer than this re-acquires from the notification tap; nothing else needs it.
-                acquire(12L * 60L * 60L * 1000L)
+            if (wakeLock?.isHeld != true) {
+                val power = getSystemService(Context.POWER_SERVICE) as? PowerManager
+                wakeLock = power?.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "SteamDeck:session")?.apply {
+                    setReferenceCounted(false)
+                    acquire(12L * 60L * 60L * 1000L)
+                }
             }
             Log.i(TAG, "wake lock held=${wakeLock?.isHeld}")
         } catch (t: Throwable) {
@@ -659,11 +807,13 @@ class SessionService : Service() {
         try {
             val wifi = applicationContext.getSystemService(Context.WIFI_SERVICE) as? WifiManager
             @Suppress("DEPRECATION") // deprecated from API 29, still honoured; targetSdk is 28
-            wifiLock = wifi?.createWifiLock(WifiManager.WIFI_MODE_FULL_HIGH_PERF, "SteamDeck:session-wifi")
-                ?.apply {
-                    setReferenceCounted(false)
-                    acquire()
-                }
+            if (wifiLock?.isHeld != true) {
+                wifiLock = wifi?.createWifiLock(WifiManager.WIFI_MODE_FULL_HIGH_PERF, "SteamDeck:session-wifi")
+                    ?.apply {
+                        setReferenceCounted(false)
+                        acquire()
+                    }
+            }
             Log.i(TAG, "wifi lock held=${wifiLock?.isHeld}")
         } catch (t: Throwable) {
             // A partial wake lock keeps the process alive but does not stop WiFi power-save from
@@ -711,16 +861,32 @@ class SessionService : Service() {
             this, 1, Intent(this, SessionService::class.java).setAction(ACTION_STOP),
             PendingIntent.FLAG_IMMUTABLE,
         )
+        val resume = PendingIntent.getActivity(
+            this, 2,
+            Intent(this, SessionActivity::class.java)
+                .setAction(ACTION_RESUME)
+                .setFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_REORDER_TO_FRONT),
+            PendingIntent.FLAG_IMMUTABLE,
+        )
         return Notification.Builder(this, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_stat_session)
             .setContentTitle(getString(R.string.app_name))
-            .setContentText(getString(R.string.session_notification))
+            .setContentText(getString(if (SessionState.suspended) R.string.session_notification_paused else R.string.session_notification))
             .setContentIntent(open)
+            .apply {
+                if (SessionState.suspended) {
+                    addAction(Notification.Action.Builder(null, getString(R.string.resume_session), resume).build())
+                }
+            }
             .addAction(Notification.Action.Builder(null, getString(R.string.stop_session), stop).build())
             .setOngoing(true)
             .setShowWhen(false)
             .apply { if (Build.VERSION.SDK_INT >= 31) setForegroundServiceBehavior(Notification.FOREGROUND_SERVICE_IMMEDIATE) }
             .build()
+    }
+
+    private fun refreshNotification() {
+        getSystemService(NotificationManager::class.java)?.notify(NOTIFICATION_ID, buildNotification())
     }
 
     companion object {
@@ -732,6 +898,9 @@ class SessionService : Service() {
         private const val CHANNEL_ID = "session"
         private const val NOTIFICATION_ID = 1001
         const val ACTION_STOP = "com.steamdeck.launcher.STOP_SESSION"
+        const val ACTION_RESUME = "com.steamdeck.launcher.RESUME_SESSION"
+        private const val ACTION_ACTIVITY_VISIBLE = "com.steamdeck.launcher.ACTIVITY_VISIBLE"
+        private const val ACTION_ACTIVITY_HIDDEN = "com.steamdeck.launcher.ACTIVITY_HIDDEN"
         /** Command lines that can only belong to a session of ours. */
         private val STRAGGLERS = listOf("bannerlator-session", "gamescope", "Xwayland", "steamrtarm64",
             "steamwebhelper", "linuxfs/opt/android-host/proot", "pulseaudio/libpulseaudio.so")
@@ -767,6 +936,17 @@ class SessionService : Service() {
 
         fun stop(context: Context) {
             context.startService(Intent(context, SessionService::class.java).setAction(ACTION_STOP))
+        }
+
+        fun setActivityVisible(context: Context, visible: Boolean) {
+            if (!SessionState.running) return
+            val action = if (visible) ACTION_ACTIVITY_VISIBLE else ACTION_ACTIVITY_HIDDEN
+            context.startService(Intent(context, SessionService::class.java).setAction(action))
+        }
+
+        fun resume(context: Context) {
+            if (!SessionState.running) return
+            context.startService(Intent(context, SessionService::class.java).setAction(ACTION_RESUME))
         }
     }
 }

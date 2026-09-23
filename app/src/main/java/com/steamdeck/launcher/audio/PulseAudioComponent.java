@@ -15,23 +15,20 @@ import java.net.URL;
 import java.nio.file.Files;
 import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
+import java.util.concurrent.TimeUnit;
 
 /**
  * PulseAudio 13.0 running in the app process, with Android's AAudio as its sink, so the guest's
  * libpulse clients (Steam and everything it launches) have a server to talk to. The socket lives
  * in the app's files directory and is bound into the session at its own path, so PULSE_SERVER
  * needs no translating.
- *
- * <p>Ported down from Bannerlator's component: no sink suspend/resume and no route-change
- * recreate - those need the pasink native client, and a session here is a foreground activity
- * that does not background the way a game container does.
  */
 public class PulseAudioComponent extends SessionPart {
     private static final String TAG = "PulseAudio";
     /** Where the guest reaches the daemon; the session exports PULSE_SERVER=unix:<this>. */
     public static final String SOCKET_NAME = "PS0";
     /** Identifies the bundled pulseaudio.tzst; a change here re-unpacks it over what a device has. */
-    private static final String BUNDLE_STAMP = "2026-09-23-pa13-relay-sink-r3";
+    private static final String BUNDLE_STAMP = "2026-09-23-pa13-suspend-r4";
 
     private final File workingDir;
     /** Where the daemon's own output is kept for this session, or null for logcat only. */
@@ -45,7 +42,7 @@ public class PulseAudioComponent extends SessionPart {
     private final String micFifoPath;
     /** The DirectAudio relay's socket when the client's output should go through it, else null. */
     private String relaySocketPath;
-    private int pid = -1;
+    private volatile int pid = -1;
 
     public PulseAudioComponent(Context context) {
         this(context, null);
@@ -94,6 +91,7 @@ public class PulseAudioComponent extends SessionPart {
         File stamp = new File(modulesDir, ".bundle");
         String have = FileUtils.readString(stamp);
         if (!new File(modulesDir, "arm64/module-aaudio-sink.so").isFile()
+                || !new File(workingDir, "pactl").isFile()
                 || have == null || !BUNDLE_STAMP.equals(have.trim())) {
             Log.i(TAG, "unpacking pulseaudio.tzst (" + BUNDLE_STAMP + "; had " + have + ")");
             FileUtils.delete(modulesDir);
@@ -103,6 +101,8 @@ public class PulseAudioComponent extends SessionPart {
                 Log.e(TAG, "pulseaudio.tzst did not unpack");
             }
         }
+        File pactl = new File(workingDir, "pactl");
+        if (pactl.isFile()) FileUtils.chmod(pactl, 0771);
         copyFromLibraryDir();
 
         //noinspection ResultOfMethodCallIgnored
@@ -166,6 +166,45 @@ public class PulseAudioComponent extends SessionPart {
         if (pid != -1) {
             Process.killProcess(pid);
             pid = -1;
+        }
+    }
+
+    public boolean setSinkSuspended(boolean suspended) {
+        File pactl = new File(workingDir, "pactl");
+        if (!pactl.isFile() || pid <= 1) {
+            Log.w(TAG, "cannot change sink state: PulseAudio control client or server unavailable");
+            return false;
+        }
+        java.lang.Process process = null;
+        try {
+            File modules = new File(workingDir, "modules/arm64");
+            ProcessBuilder builder = new ProcessBuilder(
+                    pactl.getAbsolutePath(), "suspend-sink", "@DEFAULT_SINK@", Boolean.toString(suspended));
+            builder.directory(workingDir);
+            builder.redirectErrorStream(true);
+            builder.redirectOutput(new File("/dev/null"));
+            builder.environment().put("LD_LIBRARY_PATH", "/system/lib64:" + modules + ":" + workingDir);
+            builder.environment().put("HOME", workingDir.getAbsolutePath());
+            builder.environment().put("TMPDIR", workingDir.getAbsolutePath());
+            builder.environment().put("PULSE_SERVER", "unix:" + socket().getAbsolutePath());
+            process = builder.start();
+            if (!process.waitFor(5, TimeUnit.SECONDS)) {
+                process.destroyForcibly();
+                Log.w(TAG, "timed out changing sink state to suspended=" + suspended);
+                return false;
+            }
+            int status = process.exitValue();
+            if (status != 0) Log.w(TAG, "sink state change failed with exit " + status);
+            return status == 0;
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            Log.w(TAG, "interrupted changing sink state", e);
+            return false;
+        } catch (Exception e) {
+            Log.w(TAG, "could not change sink state", e);
+            return false;
+        } finally {
+            if (process != null && process.isAlive()) process.destroyForcibly();
         }
     }
 

@@ -26,6 +26,8 @@ class ModeSettings(
     val androidRows: List<DriverRow>,
     val androidSelected: String,
     val touchMode: String,
+    val suspendPolicy: String,
+    /** Steam only. */
     val oscMode: String?,
     val directAudio: Boolean?,
     val mic: Boolean?,
@@ -56,6 +58,7 @@ class ModeSettingsActions(
     val onImportAndroid: () -> Unit,
     val onRemoveAndroid: (String) -> Unit,
     val onTouch: (String) -> Unit,
+    val onSuspendPolicy: (String) -> Unit,
     val onOsc: (String) -> Unit,
     val onDirectAudio: (Boolean) -> Unit,
     val onMic: (Boolean) -> Unit,
@@ -133,6 +136,20 @@ fun ModeSettingsPage(s: ModeSettings, a: ModeSettingsActions) {
                     SessionPrefs.OSC_NEVER to "Never",
                 ), s.oscMode,
                 note = "Auto shows all controls without a controller. Steam + QAM shows only those buttons.", onPick = a.onOsc,
+            )
+        }
+        SettingsGroup("Session") {
+            ChoiceRow(
+                host, "suspend", "Background behavior",
+                "How this session behaves when the app leaves the screen or the display turns off.",
+                listOf(
+                    SessionPrefs.SUSPEND_AUTO to "Auto",
+                    SessionPrefs.SUSPEND_MANUAL to "Manual",
+                    SessionPrefs.SUSPEND_NEVER to "Never",
+                ),
+                s.suspendPolicy,
+                note = "Auto pauses in the background and resumes when visible. Manual pauses there and waits for Resume. Never keeps the session running.",
+                onPick = a.onSuspendPolicy,
             )
         }
         if (steam && s.steamChannel != null) SettingsGroup("Client") {

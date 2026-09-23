@@ -49,6 +49,7 @@ import com.steamdeck.launcher.ui.LoadingOverlay
 import com.steamdeck.launcher.ui.ProtonDialog
 import com.steamdeck.launcher.ui.ProtonRow
 import com.steamdeck.launcher.ui.SessionDrawer
+import com.steamdeck.launcher.ui.SessionPausedOverlay
 import com.steamdeck.launcher.ui.SteamDeckTheme
 import com.steamdeck.launcher.wayland.CompositorHost
 import com.steamdeck.launcher.wayland.WaylandCompositor
@@ -203,6 +204,9 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
                         onRemove = { id -> ProtonExtras.tools.first { it.id == id }.let { ProtonExtras.remove(this@SessionActivity, it) }; refreshProtons() },
                         onDismiss = { showProtons = false },
                     )
+                    if (SessionState.suspended) SessionPausedOverlay {
+                        SessionService.resume(this@SessionActivity)
+                    }
                 }
             }
         })
@@ -682,8 +686,31 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
 
     // ── Lifecycle ───────────────────────────────────────────────────────────────────────────
 
+    override fun onStart() {
+        super.onStart()
+        SessionService.setActivityVisible(this, true)
+    }
+
+    override fun onStop() {
+        SessionService.setActivityVisible(this, false)
+        super.onStop()
+    }
+
+    override fun onNewIntent(intent: android.content.Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        if (intent.action == SessionService.ACTION_RESUME) {
+            intent.action = null
+            SessionService.resume(this)
+        }
+    }
+
     override fun onResume() {
         super.onResume()
+        if (intent?.action == SessionService.ACTION_RESUME) {
+            intent.action = null
+            SessionService.resume(this)
+        }
         (getSystemService(INPUT_SERVICE) as? InputManager)
             ?.registerInputDeviceListener(deviceListener, Handler(Looper.getMainLooper()))
         updateOnScreenControls()

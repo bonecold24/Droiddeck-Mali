@@ -153,6 +153,7 @@ class MainActivity : ComponentActivity() {
     private var hdrOn by mutableStateOf(false)
     private var hdrReason by mutableStateOf<String?>(null)
     private var touchMode by mutableStateOf(SessionPrefs.TOUCH_AUTO)
+    private var suspendPolicy by mutableStateOf(SessionPrefs.SUSPEND_MANUAL)
     private var oscMode by mutableStateOf(SessionPrefs.OSC_AUTO)
     private var renderer by mutableStateOf("pixman")
     private var gameStorage by mutableStateOf("")
@@ -390,6 +391,7 @@ class MainActivity : ComponentActivity() {
                 linuxSelected = if (mode == SessionService.MODE_STEAM) linuxSteam else linuxDesktop,
                 androidRows = androidRows, androidSelected = androidSelected,
                 touchMode = touchMode,
+                suspendPolicy = suspendPolicy,
                 oscMode = if (mode == SessionService.MODE_STEAM) oscMode else null,
                 directAudio = if (mode == SessionService.MODE_STEAM) directAudio else null,
                 mic = if (mode == SessionService.MODE_STEAM) mic else null,
@@ -413,6 +415,7 @@ class MainActivity : ComponentActivity() {
                 onImportAndroid = { pickAndroidDriver.launch(InAppFilePicker.buildIntent(this, ZIP_EXT, "Choose a display driver (AdrenoTools zip)")) },
                 onRemoveAndroid = { id -> TurnipDriver(this).remove(id); refreshDrivers() },
                 onTouch = { t -> SessionPrefs.setTouchMode(this, t); touchMode = t },
+                onSuspendPolicy = { policy -> SessionPrefs.setSuspendPolicy(this, mode, policy); suspendPolicy = policy },
                 onOsc = { o -> SessionPrefs.setOscMode(this, o); oscMode = o },
                 onDirectAudio = { on -> SessionPrefs.setDirectAudio(this, on); directAudio = on },
                 onMic = { on ->
@@ -503,6 +506,7 @@ class MainActivity : ComponentActivity() {
         hdrOn = SessionPrefs.hdr(this, mode)
         hdrReason = com.steamdeck.launcher.wayland.HdrSupport.probe(this).reason
         touchMode = SessionPrefs.touchMode(this)
+        suspendPolicy = SessionPrefs.suspendPolicy(this, mode)
         oscMode = SessionPrefs.oscMode(this)
         directAudio = SessionPrefs.directAudio(this)
         mic = SessionPrefs.micEnabled(this)

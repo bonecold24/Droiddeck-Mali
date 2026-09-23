@@ -38,7 +38,7 @@ public class DirectAudioRelayComponent extends SessionPart {
     private File logFile;
     /** Null when the microphone was not asked for; the helper then opens no input stream. */
     private final File micFifoPath;
-    private int pid = -1;
+    private volatile int pid = -1;
 
     public DirectAudioRelayComponent(File socketPath, File micFifoPath) {
         this.socketPath = socketPath;
@@ -128,5 +128,10 @@ public class DirectAudioRelayComponent extends SessionPart {
             Process.killProcess(pid);
             pid = -1;
         }
+    }
+
+    @Override
+    public int suspendPid() {
+        return pid;
     }
 }

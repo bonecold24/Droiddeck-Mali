@@ -12,9 +12,25 @@ API=26
 HERE=$(cd "$(dirname "$0")" && pwd)
 REPO=$(cd "$HERE/../.." && pwd)
 LIBS="$REPO/app/src/main/jniLibs/arm64-v8a"
-TOOLCHAIN="$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin"
+case "$(uname -s):$(uname -m)" in
+  Darwin:arm64) NDK_HOST=darwin-arm64 ;;
+  Darwin:x86_64) NDK_HOST=darwin-x86_64 ;;
+  Linux:x86_64) NDK_HOST=linux-x86_64 ;;
+  Linux:aarch64|Linux:arm64) NDK_HOST=linux-aarch64 ;;
+  *) echo "Unsupported build host: $(uname -s) $(uname -m)" >&2; exit 1 ;;
+esac
+TOOLCHAIN="$NDK/toolchains/llvm/prebuilt/$NDK_HOST/bin"
+if [[ ! -d "$TOOLCHAIN" && "$NDK_HOST" == darwin-arm64 && -d "$NDK/toolchains/llvm/prebuilt/darwin-x86_64/bin" ]]; then
+  TOOLCHAIN="$NDK/toolchains/llvm/prebuilt/darwin-x86_64/bin"
+fi
+if [[ ! -d "$TOOLCHAIN" && "$NDK_HOST" == linux-aarch64 && -d "$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin" ]]; then
+  TOOLCHAIN="$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin"
+fi
 CC="$TOOLCHAIN/aarch64-linux-android${API}-clang"
-test -x "$CC"
+if [[ ! -x "$CC" ]]; then
+  echo "Android NDK toolchain not found at $TOOLCHAIN" >&2
+  exit 1
+fi
 test -f "$PA_SRC/src/pulse/version.h.in"
 INC=$(mktemp -d)
 mkdir -p "$INC/pulse"

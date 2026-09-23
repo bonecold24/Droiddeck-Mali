@@ -110,6 +110,28 @@ fun LoadingOverlay(step: String, percent: Int, elapsed: String, hint: String, en
     }
 }
 
+@Composable
+fun SessionPausedOverlay(onResume: () -> Unit) {
+    val interactionSource = remember { MutableInteractionSource() }
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color(0xF20B0D10))
+            .clickable(interactionSource = interactionSource, indication = null) {},
+        contentAlignment = Alignment.Center,
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            modifier = Modifier.padding(32.dp),
+        ) {
+            OutlinedButton(onClick = onResume) {
+                Text("Resume session")
+            }
+        }
+    }
+}
+
+/** Everything the drawer shows and does. */
 class DrawerActions(
     val steam: Boolean,
     val hudOn: Boolean,
