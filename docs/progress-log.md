@@ -6,6 +6,17 @@ the timeline, then lessons and backlog. Companion to the README (what the app *d
 
 ---
 
+## 2026-09-23 - branch `feat/armada-and-lineage`
+
+- Steam Deck mode: `-steamdeck` only; SteamOS helper stubs staged from the apk under `/usr/bin` and `/usr/bin/steamos-polkit-helpers` (the missing `steamos-update` there was the "Update Error" dialog; `jupiter-dock-updater --check` answers 7 so no dock firmware row); Deck mode defaults the `steamdeck_publicbeta` channel (on `publicbeta` every start reinstalled the client and lost the launch URL); client branch row in the Steam cog.
+- QAM battery: `session/BatteryComponent.kt` writes BAT0/BAT1 from BatteryManager, bound over `/sys/class/power_supply`. Cloud saves checked on device: in sync, nothing was broken.
+- Added games: any number of Games folders, each bound under `/root/Games`; one shortcut per subfolder in the client's `shortcuts.vdf` under the ARM64 Proton; exe choice per game; art from the folder, else Steam's store (capsule, header, hero, logo) copied into the client's grid.
+- gamescope: the runtime's 3.16.29 rebuilt in CI (`tools/gamescope`, release `gamescope-3.16.29-p1`) with Armada's ARM64 client fixes, a realtime-queue switch and the gamepad cursor fix; staged over `/usr/local/bin`. Game windows forced fullscreen in Steam mode (a game came back in the top-left corner after the Steam menu).
+- Audio: own PulseAudio sinks in `tools/aaudio-sink`, built into the bundle by CI. With DirectAudio on, the client's sound goes through the relay's shared ring (`module-directaudio-sink`, sink named DirectAudio); off, `module-aaudio-sink`. Inside proot AAudio only gave 20 ms bursts, the relay gets 4 ms.
+- Winlator code rewritten or removed (SessionPart, HostEnvironment, HostProcess, PadState, cpp/framegen); rumble now served by `session/RumbleComponent.kt`.
+- Front end shelf laid out whole so the d-pad reaches every tile.
+- Hosted runtime and desktop packages untouched.
+
 ##  0.1.5 RELEASED 2026-09-23 03:17 - known-good point
 
 - **Tag `0.1.5` = `d2f4a84`** (bump commit, versionCode 6), notes `docs/releases/0.1.5.md` on main after it. Private release [0.1.5](https://github.com/The412Banner/SteamDeck/releases/tag/0.1.5) and public [`SteamDeck-0.1.5`](https://github.com/The412Banner/winlator-contents/releases/tag/SteamDeck-0.1.5) on winlator-contents, both Latest, asset `SteamDeck-0.1.5.apk` 21,093,959 bytes, sha256 `85b42954…`, run 35813465422. Staged as `/sdcard/Download/SteamDeck-0.1.5.apk`.
