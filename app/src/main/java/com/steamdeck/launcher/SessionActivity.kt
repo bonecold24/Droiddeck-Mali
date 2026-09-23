@@ -444,8 +444,13 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
         // Wider than 16:9 is fine - games and the client cope with a phone's 20:9 - so the
         // panel's aspect is kept above that, unless the user pinned 16:9 for a foldable, and the
         // compositor letterboxes onto a squarer panel.
-        val aspect = if (SessionPrefs.shapeMode(this) == SessionPrefs.SHAPE_WIDE) 16f / 9f
-                     else maxOf(panelW / panelH, 16f / 9f)
+        // "Exactly this panel" drops that floor, for a 4:3 or 3:2 handheld whose games should
+        // fill it.
+        val aspect = when (SessionPrefs.shapeMode(this)) {
+            SessionPrefs.SHAPE_WIDE -> 16f / 9f
+            SessionPrefs.SHAPE_EXACT -> panelW / panelH
+            else -> maxOf(panelW / panelH, 16f / 9f)
+        }
         // 720 tall at most by default, client and desktop alike: the client's CEF is the heaviest
         // thing in the session, and pixels above that cost frames for nothing anyone can see on a
         // handheld panel. The mode's settings (the cog beside Play / Desktop) can change

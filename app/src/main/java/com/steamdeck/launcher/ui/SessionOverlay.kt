@@ -261,7 +261,7 @@ fun SessionDrawer(open: Boolean, a: DrawerActions) {
                 SettingsGroup("Next session") {
                     ChoiceRow(
                         host, "shape", "Display shape", null,
-                        listOf(SessionPrefs.SHAPE_AUTO to "The panel's shape", SessionPrefs.SHAPE_WIDE to "16:9 with bars"), a.shapeMode, onPick = a.onShape,
+                        SessionPrefs.shapeChoices, a.shapeMode, onPick = a.onShape,
                     )
                     if (a.steam) ChoiceRow(
                         host, "fex", "FEX preset", null,

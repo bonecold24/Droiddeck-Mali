@@ -96,8 +96,8 @@ fun ModeSettingsPage(s: ModeSettings, a: ModeSettingsActions) {
                 onPick = a.onResolution,
             )
             ChoiceRow(
-                host, "shape", "Shape", "Adds bars to preserve 16:9.",
-                listOf("auto" to "The panel's shape", "16:9" to "16:9 with bars"), s.shapeMode, onPick = a.onShape,
+                host, "shape", "Shape", "The panel's shape stays at 16:9 or wider; pick Exactly this panel for a 4:3 or 3:2 screen.",
+                com.steamdeck.launcher.session.SessionPrefs.shapeChoices, s.shapeMode, onPick = a.onShape,
             )
         }
         SettingsGroup("HDR") {
