@@ -9,6 +9,8 @@
     <string name="session_channel">Session</string>
     <string name="session_channel_description">Keeps Steam running in the background</string>
     <string name="session_notification">Steam is running</string>
+    <string name="session_notification_paused">Session paused - tap Resume when ready</string>
+    <string name="resume_session">Resume</string>
     <string name="stop_session">Stop session</string>
     <string name="frame_gen_title">Frame generation</string>
 </resources>

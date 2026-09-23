@@ -10,7 +10,7 @@ On Android 12+, if Steam exits without a log, turn off **Restrict child processe
 
 ## Build
 
-Run `tools/build_local.sh` with Docker and the Android SDK/NDK installed. The APK is written to `app/build/outputs/apk/release/app-release.apk`. To install it on an attached device, run `tools/deploy_local.sh`.
+Run `tools/build_local.sh` with Docker, Java 17, the Android SDK/NDK, and `zstd` installed. It builds the ARM64 audio sinks from PulseAudio 13.0 and packages them into the APK at `app/build/outputs/apk/release/app-release.apk`. Set `STEAMDECK_PA13_SOURCE_DIR` to an existing PulseAudio 13.0 source directory to skip downloading it. To install the APK on an attached device, run `tools/deploy_local.sh`.
 
 ## Limits
 

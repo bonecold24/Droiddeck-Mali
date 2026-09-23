@@ -86,18 +86,89 @@ if [[ -z "${ndk_version}" || ! -d "${sdk_dir}/ndk/${ndk_version}" ]]; then
     exit 1
 fi
 
+for tool in curl tar zstd; do
+    if ! command -v "${tool}" >/dev/null 2>&1; then
+        echo "${tool} is required to build the bundled audio modules." >&2
+        exit 1
+    fi
+done
+
+staging_dir=$(mktemp -d "${TMPDIR:-/tmp}/steamdeck-build.XXXXXX")
+bundle_asset="${repo_root}/app/src/main/assets/pulseaudio.tzst"
+bundle_backup="${staging_dir}/pulseaudio.original.tzst"
+bundle_replaced=0
+cleanup() {
+    local exit_code=$?
+    trap - EXIT
+    if [[ "${bundle_replaced}" == 1 ]]; then
+        cp -p "${bundle_backup}" "${bundle_asset}" || exit_code=1
+    fi
+    rm -rf -- "${staging_dir}" || exit_code=1
+    exit "${exit_code}"
+}
+trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+
+pa_source=${STEAMDECK_PA13_SOURCE_DIR:-"${staging_dir}/pulseaudio-13.0"}
+if [[ -z "${STEAMDECK_PA13_SOURCE_DIR:-}" ]]; then
+    curl -fsSL -o "${staging_dir}/pulseaudio-13.0.tar.gz" \
+        https://github.com/pulseaudio/pulseaudio/archive/refs/tags/v13.0.tar.gz
+    mkdir -p "${pa_source}"
+    tar -xzf "${staging_dir}/pulseaudio-13.0.tar.gz" \
+        -C "${pa_source}" --strip-components=1
+fi
+if [[ ! -f "${pa_source}/src/pulse/version.h.in" ]]; then
+    echo "PulseAudio 13.0 source not found at ${pa_source}; set STEAMDECK_PA13_SOURCE_DIR." >&2
+    exit 1
+fi
+
+export NDK="${sdk_dir}/ndk/${ndk_version}"
+sink_output="${staging_dir}/sink-out"
+"${repo_root}/tools/aaudio-sink/build.sh" "${pa_source}" "${sink_output}"
+
+cp -p "${bundle_asset}" "${bundle_backup}"
+bundle_dir="${staging_dir}/pulseaudio-bundle"
+mkdir -p "${bundle_dir}"
+zstd -dc "${bundle_asset}" | tar -xf - -C "${bundle_dir}"
+if [[ -e "${bundle_dir}/modules/arm64/module-aaudio-sink.so" \
+        || -e "${bundle_dir}/modules/arm64/module-directaudio-sink.so" ]]; then
+    echo "The committed audio bundle already contains a built ARM64 sink." >&2
+    exit 1
+fi
+install -m755 "${sink_output}/module-aaudio-sink.so" \
+    "${bundle_dir}/modules/arm64/module-aaudio-sink.so"
+install -m755 "${sink_output}/module-directaudio-sink.so" \
+    "${bundle_dir}/modules/arm64/module-directaudio-sink.so"
+tar -cf - -C "${bundle_dir}" . | zstd -19 -c > "${staging_dir}/pulseaudio.tzst"
+bundle_replaced=1
+mv "${staging_dir}/pulseaudio.tzst" "${bundle_asset}"
+
 cd "${repo_root}"
 ./gradlew assembleRelease -PndkVersion="${ndk_version}"
+cp -p "${bundle_backup}" "${bundle_asset}"
+bundle_replaced=0
 
 apk="${repo_root}/app/build/outputs/apk/release/app-release.apk"
+audio_check="${staging_dir}/audio-check"
+mkdir -p "${audio_check}"
+unzip -p "${apk}" assets/pulseaudio.tzst | zstd -dc | tar -xf - -C "${audio_check}"
+for audio_file in \
+    pactl \
+    modules/arm64/module-aaudio-sink.so \
+    modules/arm64/module-directaudio-sink.so; do
+    if [[ ! -f "${audio_check}/${audio_file}" ]]; then
+        echo "APK audio bundle is missing ${audio_file}." >&2
+        exit 1
+    fi
+done
+
 build_tools=$(find "${sdk_dir}/build-tools" -mindepth 1 -maxdepth 1 -type d -print | sort -V | tail -1)
 if [[ ! -x "${build_tools}/zipalign" || ! -x "${build_tools}/apksigner" ]]; then
     echo "Android build-tools with zipalign/apksigner are required under ${sdk_dir}/build-tools." >&2
     exit 1
 fi
 
-staging_dir=$(mktemp -d "${TMPDIR:-/tmp}/steamdeck-apk.XXXXXX")
-trap 'rm -rf -- "${staging_dir}"' EXIT
 "${build_tools}/zipalign" -p -f 4 "${apk}" "${staging_dir}/app-release.aligned.apk"
 "${build_tools}/apksigner" sign \
     --ks keystore/testkey.p12 --ks-type PKCS12 --ks-pass pass:android \

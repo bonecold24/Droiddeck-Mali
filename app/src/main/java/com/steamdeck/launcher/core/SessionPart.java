@@ -23,4 +23,8 @@ public abstract class SessionPart {
     public abstract void start();
 
     public abstract void stop();
+
+    public int suspendPid() {
+        return -1;
+    }
 }

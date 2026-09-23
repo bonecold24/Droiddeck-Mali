@@ -4,6 +4,10 @@ import android.content.Context
 
 /** The in-session switches: the HUD and how the on-screen controls decide to appear. */
 object SessionPrefs {
+    const val SUSPEND_AUTO = "auto"
+    const val SUSPEND_MANUAL = "manual"
+    const val SUSPEND_NEVER = "never"
+
     const val OSC_AUTO = "auto"
     const val OSC_ALWAYS = "always"
     const val OSC_STEAM_QAM = "steam-qam"
@@ -305,6 +309,17 @@ object SessionPrefs {
      * fullscreen session like Steam's, so it takes Steam's display, driver and HDR choices.
      */
     fun prefMode(mode: String): String = if (mode == SessionService.MODE_RUN) SessionService.MODE_STEAM else mode
+
+    fun suspendPolicy(context: Context, mode: String): String =
+        prefs(context).getString("suspendPolicy.${prefMode(mode)}", SUSPEND_MANUAL)
+            ?.takeIf { it == SUSPEND_AUTO || it == SUSPEND_MANUAL || it == SUSPEND_NEVER }
+            ?: SUSPEND_MANUAL
+
+    fun setSuspendPolicy(context: Context, mode: String, policy: String) {
+        val normalized = policy.takeIf { it == SUSPEND_AUTO || it == SUSPEND_MANUAL || it == SUSPEND_NEVER }
+            ?: SUSPEND_MANUAL
+        prefs(context).edit().putString("suspendPolicy.${prefMode(mode)}", normalized).apply()
+    }
 
     // ── Game storage ────────────────────────────────────────────────────────────────────────
 

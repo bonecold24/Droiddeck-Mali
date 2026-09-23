@@ -1,6 +1,9 @@
 package com.steamdeck.launcher.session
 
 import java.io.File
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 
 /**
  * The little that the activity and the service have to agree on. Process-wide rather than passed
@@ -10,6 +13,7 @@ import java.io.File
 object SessionState {
     @Volatile
     var running = false
+    var suspended by mutableStateOf(false)
     /** MODE_RUN: the program inside the runtime the session was started for. */
     var program: String? = null
     var programArgs: List<String> = emptyList()
