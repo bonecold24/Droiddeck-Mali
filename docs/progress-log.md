@@ -6,6 +6,25 @@ the timeline, then lessons and backlog. Companion to the README (what the app *d
 
 ---
 
+## 2026-09-23 (afternoon) - main `90c7574`: first-run onboarding, Desktop & apps page, 4:3 display
+
+State: **main = `90c7574`** (PR #14 merge), main build run 35895701784. No tag, no release; next version is still open. **Nothing below is device-tested** except the audio default (Kurt, AYN Thor).
+
+- **PR #11 → `f79dc2d`** (`fix/directaudio-default`): the Steam client's audio is back on the 0.1.5 classic sink by default (`module-aaudio-classic-sink.so`, byte-identical to 0.1.5's arm64 module); DirectAudio is a choice in the Steam cog ("Steam client audio", pref `clientDirectAudio`, default off). Games keep DirectAudio on by default; mic on by default, RECORD_AUDIO asked once. Old armhf sink out of the bundle; the bundle re-unpacks when its contents change (stamp = BUNDLE_STAMP + CRC32 of pulseaudio.tzst). Relay logs a heartbeat line; Setup › Session logs › Share latest logs. Kurt on the Thor: classic "works perfectly".
+- **PR #12 → `0ddb0be`** (`feat/play-installs-runtime`):
+  - `586c9c2` Play and Desktop UI are enabled with no runtime; the session's loading screen downloads, checks and unpacks it ("downloading the Linux runtime · 332 of 791 MB"), then starts the session. A failure ends on the loading screen with the reason.
+  - `f437957` Desktop does the same: the runtime if missing, then the `desktop` package from `desktop.json` (426 MB), then LXQt. Play, Desktop UI and Desktop all give the non-Adreno warning before any download (`MainActivity.startSession`).
+  - `cbd3bc9` Desktop & apps is a page in the pane (pageKey `apps`), not a dialog: a rail-style dropdown per tier with an installed/total pill (Native ARM64 open), per-package Install/Remove, and the installing package's step line and bar in its own row. Leaving the page does not stop an install.
+- **PR #14 → `90c7574`** (`fix/exact-panel-shape`), from a user report on a 4:3 handheld (RP Nova) - "the panel's shape" still gave 16:9:
+  - Cause: `SessionActivity` sized the display at `maxOf(panel aspect, 16:9)` (the foldable guard), so on a 4:3 panel both choices were 16:9 with bars.
+  - `9c47095` Shape › **Exactly this panel (4:3, 3:2…)** - the panel's own aspect, no floor. The other two unchanged; foldables still default to 16:9. In the cog and the in-session menu (`SessionPrefs.shapeChoices`).
+  - `ad2f9f8` Resolution › **Custom…** per mode (`customRes.<mode>`, 320×240-3840×2160, evened) with 4:3 / 16:10 / 16:9 presets. It replaces the cap and the shape (Shape greys out); picking a cap clears it; the device report lists it. Not in the in-session menu.
+  - Note: the branch was cut from `cbd3bc9`, not `0ddb0be` - same tree.
+- Staged: `SteamDeck-play-installs-runtime-586c9c2.apk` (`21460acd…`), `…-f437957.apk` (`174e74a6…`), `SteamDeck-apps-page-cbd3bc9.apk` (`c2cfbebe…`), `SteamDeck-custom-res-ad2f9f8.apk` (`d02ee5ce…`, = main's content). HTML preview of the onboarding flow: `/sdcard/Download/SteamDeck-onboarding-preview.html`.
+- CI note: a branch push does not build (`build.yml` = main + PRs); dispatch it with `gh workflow run build.yml --ref <branch>`. A newer dispatch on the same branch cancels the older run.
+- Open: Kurt's PR #13 "Add Steam second-screen controls" (`steamdeck-second-screen`) - not reviewed; now needs to merge onto `90c7574`.
+- **Next:** (1) fresh-install pass: uninstall, install, press Desktop first (runtime + desktop, ~1.2 GB), then Play with no download; (2) the Desktop & apps page on device (dropdowns, in-row bar, Back mid-install); (3) the Nova reporter tests Exactly this panel / Custom 960×720; (4) PR #13.
+
 ## 2026-09-23 - branch `feat/armada-and-lineage`
 
 - Steam Deck mode: `-steamdeck` only; SteamOS helper stubs staged from the apk under `/usr/bin` and `/usr/bin/steamos-polkit-helpers` (the missing `steamos-update` there was the "Update Error" dialog; `jupiter-dock-updater --check` answers 7 so no dock firmware row); Deck mode defaults the `steamdeck_publicbeta` channel (on `publicbeta` every start reinstalled the client and lost the launch URL); client branch row in the Steam cog.
