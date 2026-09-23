@@ -1,6 +1,7 @@
 package com.steamdeck.launcher
 
 import android.hardware.input.InputManager
+import android.content.Intent
 import android.os.Build
 import android.os.Bundle
 import android.os.Environment
@@ -17,6 +18,7 @@ import android.widget.FrameLayout
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.OnBackPressedCallback
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -93,6 +95,12 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
     private var fexPreset by mutableStateOf("")
     private var oscMode by mutableStateOf(SessionPrefs.OSC_AUTO)
     private var shapeMode by mutableStateOf(SessionPrefs.SHAPE_AUTO)
+    private var isHomeApp by mutableStateOf(false)
+    private var defaultHomeLabel by mutableStateOf<String?>(null)
+    private var androidApps by mutableStateOf<List<HomeApp.LaunchableApp>>(emptyList())
+    private val homeRoleRequest = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) {
+        refreshHomeApp()
+    }
 
     /**
      * Shows the on-screen pad when nothing is plugged in and takes it away the moment something
@@ -165,6 +173,9 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
                     if (loading.visible) LoadingOverlay(loading.step, loading.percent, loading.elapsed, loading.hint, loading.ended)
                     SessionDrawer(drawerOpen, DrawerActions(
                         steam = SessionState.mode == SessionService.MODE_STEAM,
+                        isHomeApp = isHomeApp,
+                        defaultHomeLabel = defaultHomeLabel,
+                        androidApps = androidApps,
                         hudOn = hudOn,
                         frameGenEngine = frameGenEngine, frameGenMultiplier = frameGenMultiplier,
                         lsfgReady = LsfgNative.isInstalled(this@SessionActivity),
@@ -178,16 +189,7 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
                             applyFrameGen()
                         },
                         onKeyboard = { drawerOpen = false; keyboard?.toggle() },
-                        onSteamMenu = if (SessionState.mode == SessionService.MODE_STEAM) ({
-                            // The Guide button, the way the on-screen ◉ sends it: a device with no
-                            // Xbox button, or a pad the client hides the controls for, has no other
-                            // way to open the client's menu in a game.
-                            drawerOpen = false
-                            padBridge?.applyTouch { st -> st.press(com.steamdeck.launcher.input.PadState.GUIDE, true) }
-                            Handler(Looper.getMainLooper()).postDelayed({
-                                padBridge?.applyTouch { st -> st.press(com.steamdeck.launcher.input.PadState.GUIDE, false) }
-                            }, 90)
-                        }) else null,
+                        onSteamMenu = if (SessionState.mode == SessionService.MODE_STEAM) ({ sendSteamGuide() }) else null,
                         onQam = if (SessionState.mode == SessionService.MODE_STEAM) ({
                             drawerOpen = false
                             padBridge?.triggerQam()
@@ -197,6 +199,15 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
                         onTouch = { v -> SessionPrefs.setTouchMode(this@SessionActivity, v); readPrefs() },
                         onShape = { v -> SessionPrefs.setShapeMode(this@SessionActivity, v); readPrefs() },
                         onFexPreset = { v -> SessionPrefs.setFexPreset(this@SessionActivity, v); readPrefs() },
+                        onHomeApp = ::manageHomeApp,
+                        onLaunchAndroidApp = { app ->
+                            drawerOpen = false
+                            try {
+                                HomeApp.launch(this@SessionActivity, app)
+                            } catch (_: Exception) {
+                                Toast.makeText(this@SessionActivity, "Could not open ${app.label}", Toast.LENGTH_SHORT).show()
+                            }
+                        },
                         onBackground = { drawerOpen = false; moveTaskToBack(true) },
                         onStop = { drawerOpen = false; SessionService.stop(this@SessionActivity); finish() },
                         onClose = { drawerOpen = false },
@@ -215,6 +226,7 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
             }
         })
         setContentView(root)
+        handleHomeGuideIntent(intent)
 
         updateOnScreenControls()
         WaylandCompositor.setFirstFrameListener {
@@ -243,6 +255,33 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
         protonRows = ProtonExtras.tools.map {
             ProtonRow(it.id, it.name, ProtonExtras.installed(this, it), ProtonExtras.queued(this, it))
         }
+    }
+
+    private fun refreshHomeApp() {
+        isHomeApp = HomeApp.isDefault(this)
+        defaultHomeLabel = HomeApp.defaultLabel(this)
+        androidApps = if (isHomeApp) HomeApp.launchableApps(this) else emptyList()
+    }
+
+    private fun manageHomeApp() {
+        val request = HomeApp.roleRequestIntent(this)
+        if (request != null) homeRoleRequest.launch(request)
+        else HomeApp.openSystemHomeSettings(this)
+    }
+
+    private fun sendSteamGuide() {
+        drawerOpen = false
+        padBridge?.applyTouch { state -> state.press(com.steamdeck.launcher.input.PadState.GUIDE, true) }
+        uiHandler.postDelayed({
+            padBridge?.applyTouch { state -> state.press(com.steamdeck.launcher.input.PadState.GUIDE, false) }
+        }, 90)
+    }
+
+    private fun handleHomeGuideIntent(incoming: Intent?) {
+        if (incoming?.action != SessionService.ACTION_HOME_GUIDE) return
+        incoming.action = null
+        setIntent(incoming)
+        if (SessionState.running && SessionState.mode == SessionService.MODE_STEAM) sendSteamGuide()
     }
 
     private fun readPrefs() {
@@ -767,7 +806,9 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
     override fun onNewIntent(intent: android.content.Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
-        if (intent.action == SessionService.ACTION_RESUME) {
+        if (intent.action == SessionService.ACTION_HOME_GUIDE) {
+            handleHomeGuideIntent(intent)
+        } else if (intent.action == SessionService.ACTION_RESUME) {
             intent.action = null
             SessionService.resume(this)
         }
@@ -775,6 +816,7 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
 
     override fun onResume() {
         super.onResume()
+        refreshHomeApp()
         if (intent?.action == SessionService.ACTION_RESUME) {
             intent.action = null
             SessionService.resume(this)

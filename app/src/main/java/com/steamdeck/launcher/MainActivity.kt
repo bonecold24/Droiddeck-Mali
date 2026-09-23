@@ -173,6 +173,13 @@ class MainActivity : ComponentActivity() {
     private var runningLabel by mutableStateOf<String?>(null)
     private var logsEnabled by mutableStateOf(true)
     private var showRoms by mutableStateOf(false)
+    private var homeAppSelected by mutableStateOf(false)
+    private var defaultHomeLabel by mutableStateOf<String?>(null)
+    private var androidApps by mutableStateOf<List<HomeApp.LaunchableApp>>(emptyList())
+
+    private val homeRoleRequest = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) {
+        refreshHomeAppState()
+    }
 
     /** The session surface rises over the front end instead of cutting to it. */
     override fun startActivity(intent: Intent?) {
@@ -204,6 +211,9 @@ class MainActivity : ComponentActivity() {
                         lsfgReady = LsfgNative.isInstalled(this),
                         pageKey = sm?.let { "settings:$it" } ?: if (showPerformance) "performance" else if (showApps) "apps" else null,
                         theme = theme,
+                        isHomeApp = homeAppSelected,
+                        defaultHomeLabel = defaultHomeLabel,
+                        androidApps = androidApps,
                     ),
                     FrontEndActions(
                         onPlay = { startSession(Intent(this, SessionActivity::class.java)) },
@@ -262,6 +272,8 @@ class MainActivity : ComponentActivity() {
                         onCredits = { showCredits = true },
                         onPageBack = { settingsMode = null; showPerformance = false; showApps = false },
                         onTheme = { id -> SessionPrefs.setTheme(this, id); theme = id },
+                        onHomeApp = { manageHomeApp() },
+                        onAndroidApp = { app -> launchAndroidApp(app) },
                     ),
                     page = page,
                 )
@@ -323,11 +335,35 @@ class MainActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
+        refreshHomeAppState()
         refresh()
         // Added games' art (a store lookup for what the folders lack) starts here, not only when
         // the cog opens.
         refreshAddedGames()
         if (!busy) Thread({ checkCatalog() }, "catalog").start()
+    }
+
+    private fun refreshHomeAppState() {
+        homeAppSelected = HomeApp.isDefault(this)
+        defaultHomeLabel = HomeApp.defaultLabel(this)
+        androidApps = if (homeAppSelected) HomeApp.launchableApps(this) else emptyList()
+    }
+
+    private fun launchAndroidApp(app: HomeApp.LaunchableApp) {
+        try {
+            HomeApp.launch(this, app)
+        } catch (_: Exception) {
+            android.widget.Toast.makeText(this, "Could not open ${app.label}", android.widget.Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private fun manageHomeApp() {
+        val request = HomeApp.roleRequestIntent(this)
+        if (request != null) {
+            homeRoleRequest.launch(request)
+        } else {
+            HomeApp.openSystemHomeSettings(this)
+        }
     }
 
     /** Desktop & apps, in the front end's pane. */
