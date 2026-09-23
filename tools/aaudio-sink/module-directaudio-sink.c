@@ -102,6 +102,7 @@ struct userdata {
     pa_usec_t offline_at;
     pa_usec_t stats_at;
     uint32_t underruns_reported;
+    pa_usec_t settled_at;
 };
 
 static void disconnect_relay(struct userdata *u) {
@@ -189,9 +190,10 @@ static int connect_relay(struct userdata *u) {
     if (u->ring->rate != u->ss.rate)
         pa_log("directaudio-sink: the relay's ring runs at %u Hz, the sink at %u; expect resampling artefacts", u->ring->rate, u->ss.rate);
     u->stats_at = pa_rtclock_now();
+    u->settled_at = u->stats_at + 10 * PA_USEC_PER_SEC;
     u->underruns_reported = u->ring->underruns;
-    pa_log("directaudio-sink: connected to the relay: %d Hz, burst %d, device buffer %d frames, ring %d frames, target %d",
-           ack.rate, ack.burst, ack.buf_frames, ack.out_cap_frames, (int) u->ring->target_frames);
+    pa_log("directaudio-sink: connected to the relay: %d Hz, burst %d, device buffer %d frames (asked %u ms), ring %d frames, target %d",
+           ack.rate, ack.burst, ack.buf_frames, u->buffer_ms, ack.out_cap_frames, (int) u->ring->target_frames);
     return 0;
 
 fail:
@@ -261,6 +263,12 @@ static int service_ring(struct userdata *u) {
         uint32_t want = PA_MIN(target - avail, space);
         if (want > 0)
             produce(u, want);
+    }
+    /* Once, ten seconds in: what the relay's buffer has settled at, so a session log shows it. */
+    if (u->settled_at && pa_rtclock_now() >= u->settled_at) {
+        pa_log("directaudio-sink: after 10 s: device buffer %d frames, ring target %d, relay underruns %u",
+               (int) r->hw_buf_frames, (int) r->target_frames, r->underruns);
+        u->settled_at = 0;
     }
     if (r->underruns != u->underruns_reported && pa_rtclock_now() - u->stats_at >= STATS_EVERY_USEC) {
         pa_log("directaudio-sink: relay reports %u underrun(s), target %d frames, device buffer %d", r->underruns, (int) r->target_frames, (int) r->hw_buf_frames);

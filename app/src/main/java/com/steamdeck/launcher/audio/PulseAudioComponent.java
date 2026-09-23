@@ -63,6 +63,19 @@ public class PulseAudioComponent extends SessionPart {
         this.relaySocketPath = path;
     }
 
+    /** CRC-32 of the bundled pulseaudio.tzst, or "?" if it cannot be read. About 600 KB; cheap. */
+    private String bundleChecksum() {
+        java.util.zip.CRC32 crc = new java.util.zip.CRC32();
+        byte[] buf = new byte[64 * 1024];
+        try (java.io.InputStream in = app().getAssets().open("pulseaudio.tzst")) {
+            int n;
+            while ((n = in.read(buf)) > 0) crc.update(buf, 0, n);
+        } catch (java.io.IOException e) {
+            return "?";
+        }
+        return Long.toHexString(crc.getValue());
+    }
+
     /** Send the daemon's output to this file as well as logcat. Set before {@link #start()}. */
     public void setLogFile(File file) {
         this.logFile = file;
@@ -86,17 +99,19 @@ public class PulseAudioComponent extends SessionPart {
         // once ever: an installed app kept the modules it unpacked on its first run, so a bundle
         // fixed in a later build never reached the device - which is how a 17.0 glibc build of
         // module-pipe-source sat beside the 13.0 daemon, failed to dlopen, and the microphone
-        // never appeared. Bump the stamp whenever pulseaudio.tzst changes.
+        // never appeared. The stamp carries a checksum of the bundle itself, so any change to it -
+        // a rebuilt sink module included - re-unpacks, whether or not BUNDLE_STAMP was bumped.
         File modulesDir = new File(workingDir, "modules");
         File stamp = new File(modulesDir, ".bundle");
         String have = FileUtils.readString(stamp);
+        String want = BUNDLE_STAMP + "-" + bundleChecksum();
         if (!new File(modulesDir, "arm64/module-aaudio-sink.so").isFile()
                 || !new File(workingDir, "pactl").isFile()
-                || have == null || !BUNDLE_STAMP.equals(have.trim())) {
-            Log.i(TAG, "unpacking pulseaudio.tzst (" + BUNDLE_STAMP + "; had " + have + ")");
+                || have == null || !want.equals(have.trim())) {
+            Log.i(TAG, "unpacking pulseaudio.tzst (" + want + "; had " + have + ")");
             FileUtils.delete(modulesDir);
             if (TarZst.extractAsset(app(), "pulseaudio.tzst", workingDir)) {
-                FileUtils.writeString(stamp, BUNDLE_STAMP);
+                FileUtils.writeString(stamp, want);
             } else {
                 Log.e(TAG, "pulseaudio.tzst did not unpack");
             }
