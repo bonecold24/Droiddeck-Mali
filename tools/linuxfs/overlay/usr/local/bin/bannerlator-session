@@ -22,7 +22,7 @@ if [ -n "${BL_LOG:-}" ] && [ -z "${BL_INSIDE:-}" ]; then
   exec >>"$BL_LOG" 2>&1
   echo "== bannerlator-session $(date) mode=$mode $*"
   echo "== uid=$(id -u) size=${BL_WIDTH:-?}x${BL_HEIGHT:-?} fps=${BL_FPS:-0} icd=${VK_ICD_FILENAMES:-none}"
-  echo "== gamescope: $(gamescope --version 2>&1 | head -1)"
+  echo "== gamescope: $(gamescope --version 2>&1 | head -1) at $(command -v gamescope)"
   echo "== rootfs: $(cat /.version 2>/dev/null || echo unversioned)"
 fi
 
@@ -70,6 +70,10 @@ if [ -n "${BL_VK_DRIVER:-}" ]; then
   fi
   unset bl_icd_lib
 fi
+# The app's gamescope build (tools/gamescope) takes realtime-priority Vulkan queues on this
+# switch instead of on CAP_SYS_NICE, which proot never has; it falls back to normal priority
+# where the driver refuses, and the runtime's own build ignores it.
+export GAMESCOPE_FORCE_VULKAN_REALTIME=${BL_GAMESCOPE_REALTIME:-1}
 export XDG_DATA_HOME=${XDG_DATA_HOME:-$HOME/.local/share}
 export XDG_CONFIG_HOME=${XDG_CONFIG_HOME:-$HOME/.config}
 export XDG_CACHE_HOME=${XDG_CACHE_HOME:-$HOME/.cache}
@@ -101,6 +105,11 @@ if [ -z "${BL_INSIDE:-}" ]; then
     args+=(-r "$BL_REFRESH")
   fi
   [ "$mode" = steam ] && args+=(-e)
+  # A game that resizes its own window when it loses focus (the Steam menu opening over it) comes
+  # back smaller, and gamescope draws a window that is not flagged fullscreen at its own size in
+  # the top-left corner. Forcing every window to the output's size keeps it filling the screen.
+  # BL_GAMESCOPE_FORCE_FULLSCREEN=0 turns it off.
+  [ "$mode" = steam ] && [ "${BL_GAMESCOPE_FORCE_FULLSCREEN:-1}" = 1 ] && args+=(--force-windows-fullscreen)
   # HDR10: the app opened its compositor's colour-management gate for this session (BL_HDR=1);
   # gamescope then offers HDR to its clients through the same wp_color_manager_v1 it binds on ours.
   [ "${BL_HDR:-0}" = 1 ] && args+=(--hdr-enabled)
@@ -216,6 +225,12 @@ case $mode in
     bannerlator-steam-library "$steam_root" || true
     step "setting up the ARM64 Proton compatibility tool"
     bannerlator-steam-compat "$steam_root" || true
+    # The user's own games, as non-Steam shortcuts under that tool; the list is written by the app
+    # each session (empty = the app's earlier entries are removed, the client's own are kept).
+    if [ -n "${BL_ADDED_GAMES:-}" ]; then
+      step "adding the app's own games to the client's library"
+      bannerlator-steam-shortcuts "$steam_root" "$BL_ADDED_GAMES" || true
+    fi
     # Steam runs a game's shared redistributables inside its prefix on first launch; marking
     # them as already run keeps those x86 installers from starting under emulation at all.
     bannerlator-seed-redists "$steam_root" || true
@@ -323,24 +338,49 @@ BUSCONF
     # desktop's launchers ask for; gamescope shows one window at a time and the game takes over.
     _bl_ui=(-gamepadui)
     [ "${BL_STEAM_UI:-}" = desktop ] && _bl_ui=()
-    # SteamOS runs its own session as `steam -gamepadui -steamos3 -steamdeck`, which is the shape
-    # Valve tunes Big Picture for. BL_STEAMDECK=1 (the Performance page) tries it. Off by default:
-    # it also makes the client expect Deck hardware (battery, TDP controls, a Deck input device)
-    # that is not here, and that cost is untested.
+    # Deck mode (BL_STEAMDECK=1, the Performance page): -steamdeck is the flag that puts the Quick
+    # Access Menu, the performance overlay and the Deck settings pages on screen. Only -steamdeck,
+    # never -steamos3: that one makes the client manage itself as SteamOS does - it calls
+    # steamos-select-branch and opts the install into the steamdeck_stable client branch, writes
+    # that to package/beta, and from then on the branch on disk loses to the -clientbeta below on
+    # every launch; the updater finds "installed version 0", marks an update pending and exits 42
+    # to apply it, which never happens, so the client restarts for ever - under a running game,
+    # taking Steam Input with it each time. (Bannerlator 38996ea1, on device.) The SteamOS helpers
+    # the client calls in this mode are staged as no-op stubs under /usr/bin.
     if [ "${BL_STEAMDECK:-0}" = 1 ] && [ "${BL_STEAM_UI:-}" != desktop ]; then
-      _bl_ui+=(-steamdeck -steamos3)
-      echo "== steam: Deck mode on (-steamdeck -steamos3)"
+      _bl_ui+=(-steamdeck)
+      echo "== steam: Deck mode on (-steamdeck)"
     fi
-    echo "== steam args: ${_bl_ui[*]} -clientbeta publicbeta -no-cef-sandbox -cef-force-gpu -cef-ozone-platform=x11 -cef-use-gl=angle -cef-use-angle=vulkan $*"
+    # The client branch. publicbeta is what every session has run on; steamdeck_publicbeta is the
+    # channel Armada bootstraps its ARM64 client from. Whatever wrote package/beta, the branch on
+    # disk has to agree with the one forced here - a disagreement is the restart loop above, and
+    # it is silent apart from rc=42 in this log.
+    steam_channel=${BL_STEAM_CHANNEL:-publicbeta}
+    steam_beta=$steam_root/package/beta
+    if [ -f "$steam_beta" ] && [ "$(cat "$steam_beta" 2>/dev/null)" != "$steam_channel" ]; then
+      echo "== steam: client branch on disk was '$(cat "$steam_beta" 2>/dev/null)', set to '$steam_channel' to match -clientbeta"
+      echo "$steam_channel" > "$steam_beta"
+    fi
+    echo "== steam args: ${_bl_ui[*]} -clientbeta $steam_channel -no-cef-sandbox -cef-force-gpu -cef-ozone-platform=x11 -cef-use-gl=angle -cef-use-angle=vulkan $*"
+    # An update that cannot install asks for a restart (rc=42) every time; the count is capped so a
+    # session can never again loop in silence, which reads as a menu opening and closing by itself.
+    steam_updates=0
     while :; do
       step "starting the Steam client${BL_STEAM_UI:+ ($BL_STEAM_UI UI)}"
-      "$steam_root/steamrtarm64/steam" "${_bl_ui[@]}" -clientbeta publicbeta \
+      "$steam_root/steamrtarm64/steam" "${_bl_ui[@]}" -clientbeta "$steam_channel" \
         -no-cef-sandbox -cef-force-gpu -cef-ozone-platform=x11 \
         -cef-use-gl=angle -cef-use-angle=vulkan "$@"
       rc=$?
       echo "== steam exited rc=$rc"
       collect_steam_logs
       [ "$rc" -eq 42 ] || break
+      steam_updates=$((steam_updates + 1))
+      if [ "$steam_updates" -ge 3 ]; then
+        echo "== steam: asked to restart for an update $steam_updates times and it is not installing; the session stops here rather than loop"
+        break
+      fi
+      # The URL arguments were acted on the first time; a restart must not repeat them.
+      set --
     done
     reap_orphans
     exit "$rc"

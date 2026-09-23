@@ -89,7 +89,7 @@ fun PerformancePage(
             )
             ToggleRow(
                 host, "deck", "Steam Deck mode",
-                "Uses SteamOS launch flags. Untested on non-Deck hardware.",
+                "Runs the client with -steamdeck. SteamOS helpers and battery info are provided.",
                 steamDeckMode, onChange = onSteamDeckMode,
             )
         }

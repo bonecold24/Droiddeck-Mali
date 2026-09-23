@@ -33,7 +33,17 @@ class ModeSettings(
     val gameStorage: String? = null,
     val storageOptions: List<Pair<String, String>> = emptyList(),
     val fexPreset: String? = null,
+    /** Steam only: the client branch forced on the command line. */
+    val steamChannel: String? = null,
+    /** Steam only: the user's own games folder and what was found in it. */
+    /** The chosen Games folders (null = not a Steam page). */
+    val addedGamesDirs: List<String>? = null,
+    val addedGames: List<AddedGameRow> = emptyList(),
+    val addedGamesArt: Boolean = true,
 )
+
+/** One added game as the settings page shows it: its folder, the chosen .exe, the other .exe files it could be. */
+class AddedGameRow(val folderPath: String, val folderName: String, val exePath: String, val exeName: String, val candidates: List<Pair<String, String>>)
 
 class ModeSettingsActions(
     val onResolution: (Int) -> Unit,
@@ -53,6 +63,12 @@ class ModeSettingsActions(
     val onGameStorage: (path: String, label: String) -> Unit = { _, _ -> },
     val onPickGameStorageFolder: () -> Unit = {},
     val onFexPreset: (String) -> Unit = {},
+    val onSteamChannel: (String) -> Unit = {},
+    val onPickAddedGamesDir: () -> Unit = {},
+    val onForgetAddedGamesDir: (path: String) -> Unit = {},
+    val onAddedGamesArt: (Boolean) -> Unit = {},
+    val onAddedGameExe: (folderPath: String, path: String) -> Unit = { _, _ -> },
+    val onPickAddedGameExe: (folderPath: String) -> Unit = {},
     val onDismiss: () -> Unit,
 )
 
@@ -119,6 +135,39 @@ fun ModeSettingsPage(s: ModeSettings, a: ModeSettingsActions) {
                 note = "Auto shows all controls without a controller. Steam + QAM shows only those buttons.", onPick = a.onOsc,
             )
         }
+        if (steam && s.steamChannel != null) SettingsGroup("Client") {
+            ChoiceRow(
+                host, "channel", "Client branch", "The Steam client build the session forces. Applies at the next session start; the client may update itself once.",
+                listOf("publicbeta" to "Public beta", "steamdeck_publicbeta" to "Steam Deck public beta"), s.steamChannel,
+                note = "Public beta is what every session ran on before. Steam Deck public beta is the channel Deck mode needs (on public beta it reinstalls the same client at every start) and the one Armada bootstraps from; Deck mode picks it unless you choose here.",
+                onPick = a.onSteamChannel,
+            )
+        }
+        if (steam && s.addedGamesDirs != null) SettingsGroup("Added games") {
+            for (dir in s.addedGamesDirs) {
+                val n = s.addedGames.count { it.folderPath.startsWith("$dir/") }
+                ActionRow(
+                    dir.substringAfterLast('/').ifEmpty { dir }, dir + " · " + (if (n == 0) "no game folders with a .exe found" else "$n game${if (n == 1) "" else "s"}") + ". Forget: the games leave the client's library at the next session start; nothing on disk is touched.",
+                    "Forget", onClick = { a.onForgetAddedGamesDir(dir) },
+                )
+            }
+            ActionRow(
+                if (s.addedGamesDirs.isEmpty()) "Games folder" else "Another games folder",
+                "Your own Windows games, one subfolder each, anywhere: internal storage, the SD card, a USB drive. As many folders as you like. Each game goes into the client's library as a non-Steam game under the ARM64 Proton, at the next session start.",
+                "Add…", onClick = a.onPickAddedGamesDir,
+            )
+            ToggleRow(
+                host, "addedArt", "Artwork from Steam",
+                "A game with no art of its own gets the store's capsule, header, hero and logo for the same title, looked up by folder name. Your own art wins: drop cover.jpg (or poster, boxart, folder, the folder's name), header.jpg, hero.jpg, logo.png or icon.png into the game's folder or its art subfolder.",
+                s.addedGamesArt, onChange = a.onAddedGamesArt,
+            )
+            for (g in s.addedGames) ChoiceRow(
+                host, "added:" + g.folderPath, g.folderName, "Launches ${g.exeName}" + (if (s.addedGamesDirs.size > 1) " · in " + g.folderPath.substringBeforeLast('/').substringAfterLast('/') else ""),
+                g.candidates + ("__pick__" to "Choose another file…"), g.exePath,
+                note = "The .exe files found in the game's folder; the one named after the folder, else the largest, is picked unless you choose.",
+                onPick = { path -> if (path == "__pick__") a.onPickAddedGameExe(g.folderPath) else a.onAddedGameExe(g.folderPath, path) },
+            )
+        }
         if (steam && s.fexPreset != null) SettingsGroup("Games") {
             ChoiceRow(
                 host, "fex", "FEX preset", "Applies on next game launch.",
@@ -127,7 +176,7 @@ fun ModeSettingsPage(s: ModeSettings, a: ModeSettingsActions) {
             )
         }
         if (steam && s.directAudio != null && s.mic != null) SettingsGroup("Audio") {
-            ToggleRow(host, "da", "DirectAudio for games", "Bypasses PulseAudio for lower latency.", s.directAudio, onChange = a.onDirectAudio)
+            ToggleRow(host, "da", "DirectAudio", "Bypasses PulseAudio for lower latency, for games and the Steam client.", s.directAudio, onChange = a.onDirectAudio)
             ToggleRow(host, "mic", "Microphone", "Uses the device microphone for voice chat.", s.mic, onChange = a.onMic)
         }
         if (steam && s.gameStorage != null) SettingsGroup("Game storage") {

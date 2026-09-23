@@ -23,12 +23,12 @@ import com.steamdeck.launcher.audio.DirectAudioRelayComponent
 import com.steamdeck.launcher.audio.PulseAudioComponent
 import com.steamdeck.launcher.core.CpuCores
 import com.steamdeck.launcher.core.DeviceReport
-import com.steamdeck.launcher.core.EnvVars
+import com.steamdeck.launcher.core.HostEnvironment
 import com.steamdeck.launcher.core.SessionLogCapture
 import com.steamdeck.launcher.core.NetworkReport
-import com.steamdeck.launcher.core.EnvironmentComponent
+import com.steamdeck.launcher.core.SessionPart
 import com.steamdeck.launcher.core.FileUtils
-import com.steamdeck.launcher.core.ProcessHelper
+import com.steamdeck.launcher.core.HostProcess
 import com.steamdeck.launcher.input.FakeInputWriter
 import com.steamdeck.launcher.runtime.LinuxNetworkLinkComponent
 import com.steamdeck.launcher.runtime.LinuxRuntime
@@ -52,7 +52,7 @@ import java.util.Locale
  * The activity comes and goes on top of this; see [com.steamdeck.launcher.wayland.CompositorHost].
  */
 class SessionService : Service() {
-    private val components = ArrayList<EnvironmentComponent>()
+    private val components = ArrayList<SessionPart>()
     private var wakeLock: PowerManager.WakeLock? = null
     private var wifiLock: WifiManager.WifiLock? = null
     private var sessionPid = -1
@@ -201,6 +201,7 @@ class SessionService : Service() {
         if (SessionPrefs.glThread(this)) guest.add("mesa_glthread=true")
         if (SessionPrefs.noGlError(this)) guest.add("MESA_NO_ERROR=1")
         if (SessionState.mode == MODE_STEAM) guest.add("BL_STEAMDECK=" + (if (SessionPrefs.steamDeckMode(this)) "1" else "0"))
+        if (SessionState.mode == MODE_STEAM) guest.add("BL_STEAM_CHANNEL=" + SessionPrefs.steamChannel(this))
         // Proton's own gate for its xalia helper (its `proton` script reads this, and sets
         // XALIA_SUPPORTED_ONLY itself otherwise). Off by default: xalia is Valve's, and on a device
         // whose seccomp answers its syscalls normally there is no reason to take it away.
@@ -248,15 +249,18 @@ class SessionService : Service() {
 
         val audioLog = File(sessionDir, "audio.log")
         val pulse = PulseAudioComponent(this, micFifo?.absolutePath)
+        // With DirectAudio on, the client's own sound goes through the relay too: the daemon
+        // fills the relay's ring and the relay, outside proot, drives the device.
+        if (wantsDirectAudio) pulse.setRelaySocket(relaySocket.absolutePath)
         pulse.setLogFile(audioLog)
-        pulse.setContext(this)
+        pulse.attach(this)
         guest.add("PULSE_SERVER=unix:" + pulse.socket().absolutePath)
         components.add(pulse)
         if (wantsDirectAudio || wantsMic) {
             // After the daemon in the list, so it can wait for the pipe the daemon makes.
             val relay = DirectAudioRelayComponent(relaySocket, micFifo)
             relay.setLogFile(audioLog)
-            relay.setContext(this)
+            relay.attach(this)
             components.add(relay)
         }
         if (wantsDirectAudio) {
@@ -315,6 +319,14 @@ class SessionService : Service() {
                 .takeIf { it.isFile }?.let { FileUtils.readString(it)?.trim() }
             guest.add("BL_WLR_RENDERER=" + (override?.takeIf { it.isNotEmpty() } ?: SessionPrefs.desktopRenderer(this)))
         }
+        // The user's own games, for the runtime's shortcuts writer to put in the client's library
+        // before the client starts (see frontend/AddedGames and bannerlator-steam-shortcuts).
+        if (SessionState.mode == MODE_STEAM) {
+            val added = com.steamdeck.launcher.frontend.AddedGames.scan(this)
+            val listing = com.steamdeck.launcher.frontend.AddedGames.writeListing(this, added)
+            guest.add("BL_ADDED_GAMES=" + listing.path)
+            if (added.isNotEmpty()) Log.i(TAG, "added games: " + added.joinToString { "${it.name} (${it.exe.name})" })
+        }
         // Where the guest leaves a request for another session (the desktop's Steam launchers).
         guest.add("BL_LAUNCH_DIR=" + sessionRoot.path)
         // The second library's name, for bannerlator-steam-library; the bind itself is made below.
@@ -349,6 +361,17 @@ class SessionService : Service() {
 
         val binds = ArrayList<String>()
         if (controllersOn) binds.add(fakeInputDir.path + ":/dev/input")
+        // The client's battery readout (the Quick Access Menu, the top bar) reads
+        // /sys/class/power_supply/BAT<n>/..., a laptop's or a Deck's naming; Android's supply is
+        // called "battery" and its files differ, so the client sees no battery at all. A directory
+        // of our own, written from Android's battery API every few seconds, is bound over it.
+        val battery = BatteryComponent(File(filesDir, "session/sys/power_supply"))
+        battery.attach(this)
+        components.add(battery)
+        binds.add(battery.dir.path + ":/sys/class/power_supply")
+        // Rumble for the on-screen pad: the fake evdev layer sends force-feedback effects to this
+        // listener, which drives the phone's vibrator (see RumbleComponent).
+        if (controllersOn) components.add(RumbleComponent().also { it.attach(this) })
         // Where the device's files appear inside the session. Internal storage is bound at its own
         // path already, and every program's file dialog opens at home and lists "Computer" from
         // /proc/mounts, where a proot bind never shows - so a user saw only the runtime's own
@@ -374,6 +397,17 @@ class SessionService : Service() {
         } else {
             Log.i(TAG, "game storage: internal only")
         }
+        // The user's own games folder (the Steam cog's "Added games"), bound at a fixed place so
+        // the shortcuts the app writes point somewhere whatever storage the folder is on.
+        for (root in com.steamdeck.launcher.frontend.AddedGames.roots(this)) {
+            if (root.host.isDirectory && root.host.canRead()) {
+                File(LinuxRuntime.rootDir(this), root.guest.removePrefix("/")).mkdirs()
+                binds.add(root.host.path + ":" + root.guest)
+                Log.i(TAG, "added games: ${root.host} -> ${root.guest}")
+            } else {
+                Log.w(TAG, "added games: ${root.host} is not a readable folder this session")
+            }
+        }
         val roms = SessionPrefs.romsDir(this).takeIf { it.isNotEmpty() }?.let { File(it) }
         if (roms != null && roms.isDirectory && roms.canRead()) {
             File(home, "ROMs").mkdirs()
@@ -387,26 +421,26 @@ class SessionService : Service() {
             this, sessionRoot, runtimeDir, Environment.getExternalStorageDirectory(), binds, guest,
         )
 
-        val hostEnv = EnvVars()
-        hostEnv.put("PROOT_LOADER", LinuxRuntime.prootLoader(this).path)
-        hostEnv.put("PROOT_TMP_DIR", cacheDir.path)
+        val hostEnv = HostEnvironment()
+        hostEnv["PROOT_LOADER"] = LinuxRuntime.prootLoader(this).path
+        hostEnv["PROOT_TMP_DIR"] = cacheDir.path
         // proot links against a libtalloc beside it, and Android's linker does not search an
         // executable's own directory: unnamed, the process dies before it starts and says so only
         // in `logcat -b crash`.
         // proot reads this itself, so it belongs in proot's own environment rather than the guest's.
         if (SessionPrefs.prootNoSeccomp(this)) {
-            hostEnv.put("PROOT_NO_SECCOMP", "1")
+            hostEnv["PROOT_NO_SECCOMP"] = "1"
             Log.i(TAG, "proot: seccomp acceleration off by request")
         }
         val prootLibs = LinuxRuntime.prootLibraryPath(this)
-        if (prootLibs.isNotEmpty()) hostEnv.put("LD_LIBRARY_PATH", prootLibs)
+        if (prootLibs.isNotEmpty()) hostEnv["LD_LIBRARY_PATH"] = prootLibs
 
         // Whether the client signs in to Valve or starts offline: read once, while it starts, and
         // rewritten by the client when it exits, so it is set again here at every session start.
         if (SessionState.mode == MODE_STEAM) OfflineMode.apply(this, root)
 
         val networkLink = LinuxNetworkLinkComponent(this, root)
-        networkLink.setContext(this)
+        networkLink.attach(this)
         networkLink.publish()
         components.add(networkLink)
         components.forEach { it.start() }
@@ -417,10 +451,10 @@ class SessionService : Service() {
         // by the teardown a second after the new one has started, and its exit used to arrive
         // here as "session ended: 137" and end the NEW session. An exit belongs to the session
         // that started it.
-        sessionPid = ProcessHelper.exec(line, hostEnv.toStringArray(), root, { status ->
+        sessionPid = HostProcess.start(line, hostEnv.asArray(), root, { status ->
             if (gen != sessionGen) {
                 Log.i(TAG, "an earlier session's process ended ($status); the current one carries on")
-                return@exec
+                return@start
             }
             Log.i(TAG, "session ended: $status")
             stopSession(status ?: -1)

@@ -5,8 +5,8 @@ import android.os.Process;
 import android.util.Log;
 
 import com.steamdeck.launcher.core.FileUtils;
-import com.steamdeck.launcher.core.EnvironmentComponent;
-import com.steamdeck.launcher.core.ProcessHelper;
+import com.steamdeck.launcher.core.SessionPart;
+import com.steamdeck.launcher.core.HostProcess;
 import com.steamdeck.launcher.core.TarZst;
 
 import java.io.File;
@@ -26,12 +26,12 @@ import java.util.ArrayList;
  * recreate - those need the pasink native client, and a session here is a foreground activity
  * that does not background the way a game container does.
  */
-public class PulseAudioComponent extends EnvironmentComponent {
+public class PulseAudioComponent extends SessionPart {
     private static final String TAG = "PulseAudio";
     /** Where the guest reaches the daemon; the session exports PULSE_SERVER=unix:<this>. */
     public static final String SOCKET_NAME = "PS0";
     /** Identifies the bundled pulseaudio.tzst; a change here re-unpacks it over what a device has. */
-    private static final String BUNDLE_STAMP = "2026-09-21-pa13-pipe-modules";
+    private static final String BUNDLE_STAMP = "2026-09-23-pa13-relay-sink-r3";
 
     private final File workingDir;
     /** Where the daemon's own output is kept for this session, or null for logcat only. */
@@ -43,6 +43,8 @@ public class PulseAudioComponent extends EnvironmentComponent {
      * turns that one stream into a source the client can see, named DirectAudioMic.
      */
     private final String micFifoPath;
+    /** The DirectAudio relay's socket when the client's output should go through it, else null. */
+    private String relaySocketPath;
     private int pid = -1;
 
     public PulseAudioComponent(Context context) {
@@ -53,6 +55,15 @@ public class PulseAudioComponent extends EnvironmentComponent {
     public PulseAudioComponent(Context context, String micFifoPath) {
         this.workingDir = new File(context.getFilesDir(), "pulseaudio");
         this.micFifoPath = micFifoPath;
+    }
+
+    /**
+     * Route the daemon's output through the DirectAudio relay at this socket instead of an AAudio
+     * stream of its own. The relay owns the stream outside proot, with its adaptive buffer; the
+     * daemon only fills a shared ring. Set before {@link #start()}; the relay may start later.
+     */
+    public void setRelaySocket(String path) {
+        this.relaySocketPath = path;
     }
 
     /** Send the daemon's output to this file as well as logcat. Set before {@link #start()}. */
@@ -72,8 +83,8 @@ public class PulseAudioComponent extends EnvironmentComponent {
             workingDir.mkdirs();
             FileUtils.chmod(workingDir, 0771);
         }
-        // The loadable modules (module-aaudio-sink, the native protocol, the pipe modules) ride in
-        // the apk; the daemon and its libraries come from the native library directory, the one
+        // The loadable modules (module-aaudio-sink - the app's own, from tools/aaudio-sink - the
+        // native protocol, the pipe modules) ride in the apk; the daemon and its libraries come from the native library directory, the one
         // place an app may execute a file from. The bundle is unpacked once per BUNDLE_STAMP, not
         // once ever: an installed app kept the modules it unpacked on its first run, so a bundle
         // fixed in a later build never reached the device - which is how a 17.0 glibc build of
@@ -86,7 +97,7 @@ public class PulseAudioComponent extends EnvironmentComponent {
                 || have == null || !BUNDLE_STAMP.equals(have.trim())) {
             Log.i(TAG, "unpacking pulseaudio.tzst (" + BUNDLE_STAMP + "; had " + have + ")");
             FileUtils.delete(modulesDir);
-            if (TarZst.extractAsset(context, "pulseaudio.tzst", workingDir)) {
+            if (TarZst.extractAsset(app(), "pulseaudio.tzst", workingDir)) {
                 FileUtils.writeString(stamp, BUNDLE_STAMP);
             } else {
                 Log.e(TAG, "pulseaudio.tzst did not unpack");
@@ -111,8 +122,15 @@ public class PulseAudioComponent extends EnvironmentComponent {
                 + socket().getAbsolutePath() + "\"");
         // volume=1.0 is not optional: with no volume argument module-aaudio-sink defaults
         // the sink to 0% and the session plays silence.
-        config.add("load-module module-aaudio-sink performance_mode=1 adaptive=1 volume=1.0");
-        config.add("set-default-sink AAudioSink");
+        // The sink's name is what the client's Audio settings show as the output device, so it
+        // says which road the sound takes.
+        if (relaySocketPath != null && !relaySocketPath.isEmpty()) {
+            config.add("load-module module-directaudio-sink sink_name=DirectAudio socket=\"" + relaySocketPath + "\" performance_mode=1 adaptive=1 volume=1.0");
+            config.add("set-default-sink DirectAudio");
+        } else {
+            config.add("load-module module-aaudio-sink sink_name=AAudioSink performance_mode=1 adaptive=1 volume=1.0");
+            config.add("set-default-sink AAudioSink");
+        }
         if (micFifoPath != null && !micFifoPath.isEmpty()) {
             // The format is the helper's, fixed at s16le/48000/mono: it resamples when the device
             // grants another input rate, so the daemon is never told a rate the bytes are not.
@@ -136,7 +154,7 @@ public class PulseAudioComponent extends EnvironmentComponent {
         // startup: all of it used to reach logcat and nothing else, so a user's folder said nothing
         // at all about sound. Four separate faults hid behind "no input device" in one night.
         final java.io.PrintWriter out = openLog();
-        pid = ProcessHelper.exec(command, env.toArray(new String[0]), workingDir, null,
+        pid = HostProcess.start(command, env.toArray(new String[0]), workingDir, null,
                 line -> {
                     Log.i(TAG, line);
                     if (out != null) synchronized (out) { out.println(line); out.flush(); }

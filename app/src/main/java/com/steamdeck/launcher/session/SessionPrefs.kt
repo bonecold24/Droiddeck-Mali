@@ -220,6 +220,49 @@ object SessionPrefs {
         prefs(context).edit().putString("fexPreset", id).apply()
     }
 
+    /** The Steam client branch forced on the command line: "publicbeta" (every session so far) or "steamdeck_publicbeta" (Armada's). */
+    fun steamChannel(context: Context): String =
+        prefs(context).getString("steamChannel", null)
+            // Deck mode on the publicbeta channel reinstalls the same client at every start (the
+            // client reports "installed version 0" against that manifest and exits 42 to apply it,
+            // losing the launch URL each time); on steamdeck_publicbeta the second launch comes up
+            // clean. Seen on device 2026-09-23. So Deck mode takes the Deck channel unless chosen.
+            ?: if (steamDeckMode(context)) "steamdeck_publicbeta" else "publicbeta"
+
+    fun setSteamChannel(context: Context, id: String) {
+        prefs(context).edit().putString("steamChannel", id).apply()
+    }
+
+    /**
+     * The folders of the user's own Windows games (one game per subfolder), any number of them
+     * from anywhere on the device. The single folder an earlier build kept is carried in.
+     */
+    fun addedGamesDirs(context: Context): List<String> {
+        val p = prefs(context)
+        val list = p.getString("addedGamesDirs", null)
+        if (list != null) return list.split('\n').filter { it.isNotEmpty() }
+        val old = p.getString("addedGamesDir", "") ?: ""
+        return if (old.isEmpty()) emptyList() else listOf(old)
+    }
+
+    fun setAddedGamesDirs(context: Context, dirs: List<String>) {
+        prefs(context).edit().putString("addedGamesDirs", dirs.distinct().joinToString("\n")).remove("addedGamesDir").apply()
+    }
+
+    /** Whether added games without art of their own get Steam's store art fetched for them. */
+    fun addedGamesArt(context: Context): Boolean = prefs(context).getBoolean("addedGamesArt", true)
+
+    fun setAddedGamesArt(context: Context, on: Boolean) {
+        prefs(context).edit().putBoolean("addedGamesArt", on).apply()
+    }
+
+    /** The .exe the user chose for one game folder (by its path), "" = the scanner's pick. */
+    fun addedGameExe(context: Context, folderPath: String): String = prefs(context).getString("addedExe:$folderPath", "") ?: ""
+
+    fun setAddedGameExe(context: Context, folderPath: String, path: String) {
+        prefs(context).edit().putString("addedExe:$folderPath", path).apply()
+    }
+
     /** The app's colour theme (ui/Themes ids); Paper on black unless chosen otherwise. */
     fun theme(context: Context): String = prefs(context).getString("theme", "paper") ?: "paper"
 

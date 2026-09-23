@@ -37,6 +37,20 @@ object SessionFiles {
             "usr/local/bin/bannerlator-steam-launch" to "usr/local/bin/bannerlator-steam-launch",
             "usr/local/bin/bannerlator-desktop-games" to "usr/local/bin/bannerlator-desktop-games",
             "usr/local/bin/bannerlator-steam-shim" to "usr/local/bin/bannerlator-steam-shim",
+            "usr/local/bin/bannerlator-steam-shortcuts" to "usr/local/bin/bannerlator-steam-shortcuts",
+            // The SteamOS helpers the client calls in Deck mode: the two Armada found it needs, plus
+            // the three under /usr/bin, all no-ops that answer "nothing to do" (see each file).
+            "usr/bin/steamos-update" to "usr/bin/steamos-update",
+            "usr/bin/steamos-select-branch" to "usr/bin/steamos-select-branch",
+            "usr/bin/jupiter-biosupdate" to "usr/bin/jupiter-biosupdate",
+            "usr/bin/steamos-polkit-helpers/steamos-priv-write" to "usr/bin/steamos-polkit-helpers/steamos-priv-write",
+            "usr/bin/steamos-polkit-helpers/steamos-set-timezone" to "usr/bin/steamos-polkit-helpers/steamos-set-timezone",
+            // On device the client called these four by their polkit-helpers path, not /usr/bin: the
+            // "Update Error" dialog was steamos-update missing there.
+            "usr/bin/steamos-polkit-helpers/steamos-update" to "usr/bin/steamos-polkit-helpers/steamos-update",
+            "usr/bin/steamos-polkit-helpers/steamos-select-branch" to "usr/bin/steamos-polkit-helpers/steamos-select-branch",
+            "usr/bin/steamos-polkit-helpers/jupiter-biosupdate" to "usr/bin/steamos-polkit-helpers/jupiter-biosupdate",
+            "usr/bin/steamos-polkit-helpers/jupiter-dock-updater" to "usr/bin/steamos-polkit-helpers/jupiter-dock-updater",
         )
         // The desktop's launcher and labwc defaults, only where the desktop package is installed:
         // staging them into a runtime without it would make the desktop look present when it is not.
@@ -47,7 +61,16 @@ object SessionFiles {
             "etc/xdg/lxqt/panel.conf" to "etc/xdg/lxqt/panel.conf",
             "usr/lib/firefox/defaults/pref/steamdeck.js" to "usr/lib/firefox/defaults/pref/steamdeck.js",
         )
-        val all = if (File(root, "usr/bin/labwc").isFile) files + desktop else files
+        // The patched gamescope (tools/gamescope): the runtime's own version rebuilt with the ARM64
+        // client fixes, over /usr/local/bin so it comes first in the session's PATH. Only when the
+        // apk carries it - a build without the asset leaves the runtime's copy alone.
+        val optional = arrayOf(
+            "usr/local/bin/gamescope" to "usr/local/bin/gamescope",
+        ).filter { (asset, _) ->
+            val dir = asset.substringBeforeLast('/')
+            runCatching { context.assets.list("linuxfs/$dir")?.contains(asset.substringAfterLast('/')) == true }.getOrDefault(false)
+        }
+        val all = (if (File(root, "usr/bin/labwc").isFile) files + desktop else files) + optional
         for ((asset, relative) in all) {
             val target = File(root, relative)
             val staged = File(target.parentFile, target.name + ".staged")
