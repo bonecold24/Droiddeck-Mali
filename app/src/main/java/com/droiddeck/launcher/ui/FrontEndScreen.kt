@@ -337,9 +337,16 @@ private fun Rail(
             }
         }
 
+        // Outlined when a controller is on it, like every other control; the ripple alone was
+        // a faint box on the dark rail.
+        val creditsSrc = remember { MutableInteractionSource() }
+        val creditsHot = rememberHot(creditsSrc)
         Text(
-            "credits", fontSize = 11.sp, color = colors.onSurfaceVariant,
-            modifier = Modifier.clip(Shape10).clickable(onClick = a.onCredits).padding(horizontal = 10.dp, vertical = 8.dp),
+            "credits", fontSize = 11.sp, color = if (creditsHot) LocalPalette.current.signal else colors.onSurfaceVariant,
+            modifier = Modifier.clip(Shape10)
+                .border(2.dp, if (creditsHot) LocalPalette.current.signal else Color.Transparent, Shape10)
+                .hoverable(creditsSrc).clickable(interactionSource = creditsSrc, indication = null, onClick = a.onCredits)
+                .padding(horizontal = 10.dp, vertical = 8.dp),
         )
     }
 }
@@ -789,6 +796,9 @@ private fun PrimaryButton(text: String, enabled: Boolean = true, onClick: () -> 
             .clip(Shape12)
             .background(if (enabled) Brush.linearGradient(listOf(colors.primary, pal.primary2)) else Brush.linearGradient(listOf(colors.surfaceVariant, colors.surfaceVariant)))
             .shine(hot, 0.45f)
+            // The grow and shine alone barely show on the light fill: outline it when a
+            // controller is on it, as the other controls are.
+            .border(2.dp, if (hot) pal.signal else Color.Transparent, Shape12)
             .hoverable(src).clickable(interactionSource = src, indication = LocalIndication.current, enabled = enabled, onClick = onClick)
             .padding(horizontal = 18.dp, vertical = 11.dp),
     ) {

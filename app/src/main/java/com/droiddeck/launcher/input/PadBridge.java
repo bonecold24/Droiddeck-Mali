@@ -166,6 +166,15 @@ public final class PadBridge {
         else publish();
     }
 
+    /**
+     * Everything released and centred - for when the controller stops feeding the game (the
+     * session drawer opened), so a button or stick held at that moment is not left down in it.
+     */
+    public synchronized void releaseAll() {
+        state.clear();
+        publish();
+    }
+
     /** Starts the same Guide-then-A sequence used by the touch QAM button. */
     public synchronized void triggerQam() {
         startQamChord();

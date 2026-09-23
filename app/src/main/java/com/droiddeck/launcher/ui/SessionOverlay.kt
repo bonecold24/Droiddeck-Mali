@@ -4,6 +4,9 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.interaction.PressInteraction
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -177,6 +180,16 @@ fun SessionDrawer(open: Boolean, a: DrawerActions) {
     val host = rememberMenuHost()
     var androidAppsExpanded by rememberSaveable { mutableStateOf(false) }
     val veil by animateFloatAsState(if (open) 1f else 0f, Motion.tw(260), label = "veil")
+    // A controller starts on the drawer's first control, highlighted, as on the app's main screen:
+    // the STEAM button, or in a desktop session the first setting.
+    val firstFocus = remember { androidx.compose.ui.focus.FocusRequester() }
+    val steamButtons = a.onSteamMenu != null && a.onQam != null
+    LaunchedEffect(open) {
+        if (open) {
+            androidx.compose.runtime.withFrameNanos { }
+            runCatching { firstFocus.requestFocus() }
+        }
+    }
     if (open || veil > 0.01f) Box(
         modifier = Modifier.fillMaxSize().graphicsLayer { alpha = veil }.background(Color(0x8A000000))
             .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { host.open = null; a.onClose() },
@@ -203,6 +216,7 @@ fun SessionDrawer(open: Boolean, a: DrawerActions) {
                 }
                 if (a.onSteamMenu != null && a.onQam != null) {
                     val qamInteraction = remember { MutableInteractionSource() }
+                    val qamHot = qamInteraction.collectIsFocusedAsState().value || qamInteraction.collectIsHoveredAsState().value
                     var qamStartedOnPress by remember { mutableStateOf(false) }
                     LaunchedEffect(qamInteraction) {
                         qamInteraction.interactions.collect { interaction ->
@@ -217,10 +231,15 @@ fun SessionDrawer(open: Boolean, a: DrawerActions) {
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                         modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
                     ) {
+                        val steamSrc = remember { MutableInteractionSource() }
+                        val steamHot = steamSrc.collectIsFocusedAsState().value || steamSrc.collectIsHoveredAsState().value
                         OutlinedButton(
                             onClick = { host.open = null; a.onSteamMenu.invoke() },
-                            modifier = Modifier.weight(1f).height(48.dp),
+                            interactionSource = steamSrc,
+                            modifier = Modifier.weight(1f).height(48.dp).focusRequester(firstFocus),
                             shape = RoundedCornerShape(12.dp),
+                            border = BorderStroke(if (steamHot) 2.dp else 1.dp, if (steamHot) pal.signal else colors.outline),
+                            colors = ButtonDefaults.outlinedButtonColors(containerColor = if (steamHot) pal.signal.copy(alpha = 0.16f) else Color.Transparent),
                         ) {
                             Text("STEAM", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 0.5.sp)
                         }
@@ -233,6 +252,8 @@ fun SessionDrawer(open: Boolean, a: DrawerActions) {
                             interactionSource = qamInteraction,
                             modifier = Modifier.weight(1f).height(48.dp).semantics { contentDescription = "Open Quick Access Menu" },
                             shape = RoundedCornerShape(12.dp),
+                            border = BorderStroke(if (qamHot) 2.dp else 1.dp, if (qamHot) pal.signal else colors.outline),
+                            colors = ButtonDefaults.outlinedButtonColors(containerColor = if (qamHot) pal.signal.copy(alpha = 0.16f) else Color.Transparent),
                         ) {
                             Text("…", fontSize = 22.sp, fontWeight = FontWeight.SemiBold)
                         }
@@ -268,7 +289,10 @@ fun SessionDrawer(open: Boolean, a: DrawerActions) {
                 }
 
                 SettingsGroup("Now") {
-                    ToggleRow(host, "hud", "Performance HUD", null, a.hudOn, onChange = a.onHud)
+                    ToggleRow(
+                        host, "hud", "Performance HUD", null, a.hudOn,
+                        chipModifier = if (steamButtons) Modifier else Modifier.focusRequester(firstFocus), onChange = a.onHud,
+                    )
                     val fgOpen = host.open == "fg"
                     val fgLabel = when (a.frameGenEngine) {
                         FrameGen.ENGINE_WINFG -> "Win-FG ${a.frameGenMultiplier}×"
