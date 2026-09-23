@@ -49,64 +49,64 @@ fun PerformancePage(
     val colors = MaterialTheme.colorScheme
     val coreItems = cores.map { it.core to it.label }
     SettingsPage(
-        host, eyebrow = "Setup · performance", title = "Performance",
-        lede = "Which cores the client and its games may run on, and the fixes for a device the runtime does not sit well on. All apply at the next session start.",
+        host, title = "Performance",
+        lede = "CPU cores and session fixes. Applies next session.",
         onBack = onDismiss,
     ) {
         SettingsGroup("Steam client cores") {
             ToggleRow(
                 host, "override", "Override Steam's own core choice",
-                "Steam pins its interface to a subset of cores it picks - on one device 5 of 8, leaving out the fastest - which suits a running game and makes the menus sluggish when the client is all there is. On: the client, its UI helper and gamescope are pinned to the cores below instead, re-applied every few seconds.",
+                "Pins Steam, its UI helper, and gamescope to the cores below. Reapplied every few seconds.",
                 clientOverride, onChange = onClientOverride,
             )
             MultiRow(
-                host, "clientCores", "Client cores", if (clientOverride) "Every core ticked is the usual fix." else "Turn the override on to choose.",
-                coreItems, clientCores, enabled = clientOverride, note = "Tick or untick as many as you like; the menu stays open.", onToggle = onClientCore,
+                host, "clientCores", "Client cores", if (clientOverride) "Choose cores for Steam." else "Enable the override to choose.",
+                coreItems, clientCores, enabled = clientOverride, onToggle = onClientCore,
             )
         }
         SettingsGroup("Game cores") {
             MultiRow(
                 host, "gameCores", "Game cores",
-                "Applied by exec'ing the game through taskset, so every thread inherits the mask. Every core ticked sends nothing - that is what the scheduler does unaided. Untick the small cores to keep a heavy game off them.",
-                coreItems, gameCores, note = "Tick or untick as many as you like; the menu stays open.", onToggle = onGameCore,
+                "Choose cores for games. All selected lets Android schedule across every core.",
+                coreItems, gameCores, onToggle = onGameCore,
             )
         }
         SettingsGroup("Client interface") {
             ToggleRow(
                 host, "glthread", "Threaded GL",
-                "The client's menus are drawn Chromium → ANGLE → Zink → Turnip, and that chain is what limits them. mesa_glthread marshals GL off the calling thread, the shape of this bottleneck. On by default; none of these four is device-proven yet.",
+                "May improve Steam menu responsiveness. Device impact is unverified.",
                 glThread, onChange = onGlThread,
             )
             ToggleRow(
                 host, "zink", "Zink: lazy descriptors",
-                "Lazy descriptor updates is the mode Zink recommends on drivers without descriptor buffers. On by default.",
+                "Recommended for drivers without descriptor buffers.",
                 zinkLazy, onChange = onZinkLazy,
             )
             ToggleRow(
                 host, "noglerror", "Skip GL error checks",
-                "MESA_NO_ERROR: the driver stops validating every GL call. On by default.",
+                "Disables per-call GL validation.",
                 noGlError, onChange = onNoGlError,
             )
             ToggleRow(
                 host, "deck", "Steam Deck mode",
-                "Runs the client as SteamOS runs its own session (-steamdeck -steamos3), the shape Valve tunes Big Picture for. Off by default: the client then expects Deck hardware that is not here, and that cost is untested.",
+                "Uses SteamOS launch flags. Untested on non-Deck hardware.",
                 steamDeckMode, onChange = onSteamDeckMode,
             )
         }
         SettingsGroup("Session fixes") {
             ToggleRow(
                 host, "sysmem", "Turnip: sysmem rendering",
-                "Renders without the GPU's tile memory (TU_DEBUG=sysmem). A fix for an Adreno 8xx that shows corruption, and required on a 710/720/722 (set on its own there). Not a speed setting: elsewhere it COSTS frames - leave it off unless the picture is wrong.",
+                "Required on Adreno 710/720/722. May fix corruption on other Adreno GPUs, but can reduce performance.",
                 tuSysmem, onChange = onTuSysmem,
             )
             ToggleRow(
                 host, "xalia", "Skip Steam's xalia helper",
-                "xalia is a Windows program Proton starts for gamepad navigation in Windows programs. On some devices its system calls are refused in a way it cannot cope with and the session dies seconds after Big Picture appears. Turn on if a session will not stay up.",
+                "Disables Proton's gamepad navigation helper. Try if sessions crash at startup.",
                 noXalia, onChange = onNoXalia,
             )
             ToggleRow(
                 host, "seccomp", "Run proot without seccomp",
-                "proot normally lets most system calls run untraced, which is most of its speed. Some kernels handle that badly and refuse calls that plainly exist (\"Function not implemented\" in the log). This traces everything: slower, but correct.",
+                "May fix missing syscall errors on some kernels, but can reduce performance.",
                 prootNoSeccomp, onChange = onProotNoSeccomp,
             )
         }

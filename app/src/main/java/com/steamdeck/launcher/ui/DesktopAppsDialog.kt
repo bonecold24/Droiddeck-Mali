@@ -49,11 +49,7 @@ fun DesktopAppsDialog(
                 when {
                     rows == null -> Text("Could not reach the package catalog", color = MaterialTheme.colorScheme.onSurfaceVariant)
                     rows.isEmpty() -> Text("Loading the catalog…", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    else -> Text(
-                        " starts an emulator fullscreen under gamescope, with the GPU - on the desktop, Vulkan programs cannot draw. " +
-                            "ROMs are at /root/ROMs, the phone at /root/Storage.",
-                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
+                    else -> Unit
                 }
                 var lastTier = 0
                 for (row in rows ?: emptyList()) {
@@ -61,9 +57,9 @@ fun DesktopAppsDialog(
                         lastTier = row.tier
                         Text(
                             when (row.tier) {
-                                1 -> "Native for this hardware"
-                                2 -> "Upstream ARM64 builds - experimental on a phone"
-                                else -> "Built from source - experimental"
+                                1 -> "Native ARM64"
+                                2 -> "ARM64 · experimental"
+                                else -> "Source build · experimental"
                             },
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.primary,
@@ -74,8 +70,8 @@ fun DesktopAppsDialog(
                         Column(modifier = Modifier.weight(1f)) {
                             Text(row.name, style = MaterialTheme.typography.bodyMedium)
                             Text(
-                                (if (row.installed != null) "installed ${row.installed}" else "${row.version} · ${row.size}") +
-                                    (if (row.notes.isNotEmpty()) " - ${row.notes}" else ""),
+                                (if (row.installed != null) "Installed ${row.installed}" else "${row.version} · ${row.size}") +
+                                    (if (row.notes.isNotEmpty()) " · ${row.notes}" else ""),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )

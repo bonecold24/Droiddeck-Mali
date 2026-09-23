@@ -266,16 +266,13 @@ private fun Rail(
             Spacer(Modifier.width(10.dp))
             Column {
                 Text("SteamDeck", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = colors.onBackground)
-                Text(
-                    when {
-                        s.busy -> if (s.percent >= 0) "${s.stage} ${s.percent}%" else s.stage
-                        !s.ready -> "runtime not installed"
-                        s.available != null && s.available != s.installed -> "runtime ${s.installed} · ${s.available} available"
-                        s.running != null -> "${s.running} in the background"
-                        else -> "runtime ${s.installed ?: "?"}"
-                    },
-                    fontSize = 11.sp, color = colors.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis,
-                )
+                val status = when {
+                    s.busy -> if (s.percent >= 0) "${s.stage} ${s.percent}%" else s.stage
+                    !s.ready -> "runtime not installed"
+                    s.available != null && s.available != s.installed -> "runtime update available"
+                    else -> null
+                }
+                if (status != null) Text(status, fontSize = 11.sp, color = colors.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
         }
         AnimatedVisibility(s.busy, enter = expandVertically() + fadeIn(), exit = shrinkVertically() + fadeOut()) {
@@ -319,7 +316,7 @@ private fun Rail(
                 NavItem("Steam", "steam", selected == "steam", caret = openSteam, count = s.steamGames.size, register = register, unregister = unregister) { onSelect("steam") }
                 Sub(openSteam) {
                     for ((i, g) in s.steamGames.withIndex()) NavItem(g.name, "app:${g.appId}", selected == "app:${g.appId}", small = true, i = i, register = register, unregister = unregister) { onSelect("app:${g.appId}") }
-                    if (s.steamGames.isEmpty()) NavItem("no games installed", "x", false, small = true, muted = true, register = register, unregister = unregister) {}
+                    if (s.steamGames.isEmpty()) NavItem("No games", "x", false, small = true, muted = true, register = register, unregister = unregister) {}
                     NavItem("Settings", "settings:steam", selected == "settings:steam", small = true, tiny = true, muted = true, i = s.steamGames.size, register = register, unregister = unregister) { a.onSteamSettings() }
                 }
                 NavItem("Desktop", "desktop", selected == "desktop", caret = openDesktop, count = s.emulators.count { it.installed }, register = register, unregister = unregister) { onSelect("desktop") }
@@ -330,12 +327,12 @@ private fun Rail(
                         Sub(openEmu == key) {
                             for ((j, g) in e.games.withIndex()) NavItem(g.name, "rom:${e.id}:$j", selected == "rom:${e.id}:$j", small = true, tiny = true, i = j, register = register, unregister = unregister) { onSelect("rom:${e.id}:$j") }
                             if (e.games.isEmpty()) NavItem(
-                                if (e.id == "retroarch") "browses its own games" else if (s.romsDir == null) "choose a ROMs folder" else "nothing for ${e.system} in ROMs",
+                                if (e.id == "retroarch") "Browse games in RetroArch" else if (s.romsDir == null) "Choose ROMs folder" else "No ${e.system} games",
                                 "x", false, small = true, tiny = true, muted = true, register = register, unregister = unregister,
                             ) { if (e.id != "retroarch") a.onRoms() }
                         }
                     }
-                    if (s.emulators.none { it.installed }) NavItem("install emulators under Desktop & apps", "x", false, small = true, muted = true, register = register, unregister = unregister) { a.onApps() }
+                    if (s.emulators.none { it.installed }) NavItem("Install emulators", "x", false, small = true, muted = true, register = register, unregister = unregister) { a.onApps() }
                     NavItem("Settings", "settings:lxqt", selected == "settings:lxqt", small = true, tiny = true, muted = true, i = s.emulators.count { it.installed }, register = register, unregister = unregister) { a.onDesktopSettings() }
                 }
             Spacer(Modifier.height(6.dp))
@@ -371,9 +368,9 @@ private fun Rail(
                     }
                 }
                 Box {
-                    item("Start offline", when { s.offlineAccount == null -> "sign in first"; s.offline -> "on"; else -> "off" }, 7, null) { if (s.offlineAccount != null) menus.open = "offline" }
+                    item("Offline", when { s.offlineAccount == null -> "sign in first"; s.offline -> "on"; else -> "off" }, 7, null) { if (s.offlineAccount != null) menus.open = "offline" }
                     AnchoredMenu(
-                        menus.open == "offline", onDismiss = { if (menus.open == "offline") menus.open = null }, title = "Start offline",
+                        menus.open == "offline", onDismiss = { if (menus.open == "offline") menus.open = null }, title = "Offline",
                     ) {
                         MenuItem("On", checked = s.offline) { if (!s.offline) a.onOffline(); menus.open = null }
                         MenuItem("Off", checked = !s.offline) { if (s.offline) a.onOffline(); menus.open = null }
@@ -428,7 +425,7 @@ private fun RunningTile(name: String, onResume: () -> Unit) {
         Spacer(Modifier.width(8.dp))
         Column(modifier = Modifier.weight(1f)) {
             Text(name, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = colors.onBackground, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Text("running · tap to go back", fontSize = 11.sp, color = colors.onSurfaceVariant)
+            Text("Resume", fontSize = 11.sp, color = colors.onSurfaceVariant)
         }
     }
 }
@@ -591,17 +588,17 @@ private fun Content(s: FrontEndState, selected: String, a: FrontEndActions, modi
                 Rise(0) { Eyebrow("Desktop") }
                 Rise(3) {
                     Actions {
-                        PrimaryButton(if (s.desktopInstalled) "Desktop" else "Install the desktop first", enabled = s.ready && !s.busy && s.desktopInstalled, onClick = a.onDesktop)
+                        PrimaryButton("Desktop", enabled = s.ready && !s.busy && s.desktopInstalled, onClick = a.onDesktop)
                         SecondaryButton("Desktop & apps", onClick = a.onApps)
                         Cog(a.onDesktopSettings)
                     }
                 }
                 Rise(4) { SectionTitle("Emulators", "${s.emulators.count { it.installed }} installed · ${s.emulators.count { !it.installed }} available") }
                 Rise(5) {
-                    Text("?  Why emulators?", fontSize = 12.sp, color = colors.onSurfaceVariant, modifier = Modifier.padding(bottom = 6.dp).clip(Shape10).clickable(onClick = a.onEmulatorHelp).padding(horizontal = 6.dp, vertical = 4.dp))
+                    Text("Why?", fontSize = 12.sp, color = colors.onSurfaceVariant, modifier = Modifier.padding(bottom = 6.dp).clip(Shape10).clickable(onClick = a.onEmulatorHelp).padding(horizontal = 6.dp, vertical = 4.dp))
                 }
                 Rise(6, Modifier.weight(1f).fillMaxWidth()) {
-                    ArtGrid(s.emulators.map { e -> Tile(e.name, if (e.installed) (if (e.id == "retroarch") "browses its own games" else "${e.games.size} game${if (e.games.size == 1) "" else "s"}") else "not installed", null, "emu:${e.id}", e.iconRes, dim = !e.installed) { if (e.installed) a.onEmulator(e) else a.onApps() } })
+                    ArtGrid(s.emulators.map { e -> Tile(e.name, if (e.installed) (if (e.id == "retroarch") null else "${e.games.size} game${if (e.games.size == 1) "" else "s"}") else "Not installed", null, "emu:${e.id}", e.iconRes, dim = !e.installed) { if (e.installed) a.onEmulator(e) else a.onApps() } })
                 }
             }
             selected.startsWith("emu:") -> {
@@ -619,9 +616,9 @@ private fun Content(s: FrontEndState, selected: String, a: FrontEndActions, modi
                     Rise(4) { SectionTitle("Games", e.games.size.toString()) }
                     if (e.games.isEmpty()) Rise(5) {
                         Note(
-                            if (s.romsDir == null) "Choose a ROMs folder first (left, or the button above)."
-                            else if (e.id == "retroarch") "RetroArch loads its games itself: open it and browse to root › ROMs."
-                            else "Put ${e.system} games in ROMs/${e.system.substringBefore(' ')} (or the ROMs folder itself); the list rebuilds when this screen opens.",
+                            if (s.romsDir == null) "Choose a ROMs folder."
+                            else if (e.id == "retroarch") "Browse to /root/ROMs in RetroArch."
+                            else "Add ${e.system} games to ROMs/${e.system.substringBefore(' ')}.",
                         )
                     }
                     else Rise(5, Modifier.weight(1f).fillMaxWidth()) {
@@ -658,12 +655,12 @@ private fun Content(s: FrontEndState, selected: String, a: FrontEndActions, modi
                     }
                 }
             }
-            else -> Note("Pick something on the left.")
+            else -> Note("Select an item.")
         }
     }
 }
 
-private class Tile(val title: String, val sub: String, val art: File?, val key: String, val iconRes: Int? = null, val dim: Boolean = false, val onClick: () -> Unit)
+private class Tile(val title: String, val sub: String?, val art: File?, val key: String, val iconRes: Int? = null, val dim: Boolean = false, val onClick: () -> Unit)
 
 
 @Composable
@@ -826,7 +823,7 @@ private fun GameTile(t: Tile, wide: Boolean, square: Boolean, src: MutableIntera
         }
         Column(modifier = Modifier.padding(horizontal = 6.dp, vertical = 5.dp)) {
             Text(t.title, fontSize = 10.sp, fontWeight = FontWeight.SemiBold, color = colors.onBackground, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Text(t.sub, fontSize = 8.sp, color = colors.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            if (t.sub != null) Text(t.sub, fontSize = 8.sp, color = colors.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
     }
 }

@@ -251,7 +251,7 @@ class MainActivity : ComponentActivity() {
                 showNonAdreno?.let { release ->
                     ConfirmDialog(
                         title = "Not an Adreno GPU",
-                        text = "The runtime draws with Turnip, an Adreno driver. On ${com.steamdeck.launcher.core.DeviceSupport.gpuName()} the compositor gets no usable Vulkan device and a session comes up as sound over a black screen. The download is ${"%.0f".format(release.size / 1e6)} MB.",
+                        text = "Turnip supports Adreno GPUs. On ${com.steamdeck.launcher.core.DeviceSupport.gpuName()}, Steam may show a black screen. Download: ${"%.0f".format(release.size / 1e6)} MB.",
                         confirm = "Install anyway",
                         onConfirm = { showNonAdreno = null; install(release) },
                         onDismiss = { showNonAdreno = null },

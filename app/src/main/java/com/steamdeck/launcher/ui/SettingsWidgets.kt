@@ -265,7 +265,14 @@ fun ActionRow(label: String, hint: String?, button: String, onClick: () -> Unit)
 }
 
 @Composable
-fun SettingsPage(host: MenuHost, eyebrow: String, title: String, lede: String, onBack: () -> Unit, content: @Composable ColumnScope.() -> Unit) {
+fun SettingsPage(
+    host: MenuHost,
+    title: String,
+    onBack: () -> Unit,
+    eyebrow: String? = null,
+    lede: String? = null,
+    content: @Composable ColumnScope.() -> Unit,
+) {
     val colors = MaterialTheme.colorScheme
     val dim by animateFloatAsState(if (host.open != null) 0.6f else 1f, Motion.tw(220), label = "pageDim")
     Column(modifier = Modifier.fillMaxSize().padding(horizontal = 22.dp, vertical = 18.dp)) {
@@ -275,12 +282,14 @@ fun SettingsPage(host: MenuHost, eyebrow: String, title: String, lede: String, o
                     "‹  Back", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = colors.onSurfaceVariant,
                     modifier = Modifier.clip(RoundedCornerShape(8.dp)).clickable(onClick = onBack).padding(horizontal = 6.dp, vertical = 4.dp),
                 )
-                Spacer(Modifier.width(10.dp))
-                Eyebrow(eyebrow)
+                if (eyebrow != null) {
+                    Spacer(Modifier.width(10.dp))
+                    Eyebrow(eyebrow)
+                }
             }
         }
         Rise(1) { Title(title) }
-        Rise(2) { Lede(lede) }
+        if (lede != null) Rise(2) { Lede(lede) }
         Rise(3, Modifier.weight(1f).fillMaxWidth()) {
             Column(modifier = Modifier.fillMaxSize().graphicsLayer { alpha = dim }.verticalScroll(rememberScrollState()).padding(bottom = 24.dp)) { content() }
         }

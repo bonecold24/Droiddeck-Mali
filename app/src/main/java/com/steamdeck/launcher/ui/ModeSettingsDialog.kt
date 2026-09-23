@@ -1,8 +1,6 @@
 package com.steamdeck.launcher.ui
 
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.MaterialTheme
@@ -62,25 +60,22 @@ class ModeSettingsActions(
 fun ModeSettingsPage(s: ModeSettings, a: ModeSettingsActions) {
     val steam = s.mode == SessionService.MODE_STEAM
     val host = rememberMenuHost()
-    val colors = MaterialTheme.colorScheme
     SettingsPage(
         host,
-        eyebrow = if (steam) "Steam · settings" else "Desktop · settings",
         title = if (steam) "Steam session" else "Desktop session",
-        lede = "Each value opens where it is. Most take effect at the next session start; the ones that need the app closed say so.",
         onBack = a.onDismiss,
     ) {
         SettingsGroup("Display") {
             val default = SessionPrefs.defaultResolutionCap(s.mode)
             ChoiceRow(
-                host, "res", "Resolution", "Takes effect at the next session: gamescope sizes its display once, when it starts.",
+                host, "res", "Resolution", "Applies next session.",
                 listOf(720 to "Up to 720p", 900 to "Up to 900p", 1080 to "Up to 1080p", 0 to "The panel's own")
                     .map { (cap, label) -> cap to (if (cap == default) "$label - the default" else label) },
-                s.resolutionCap, note = "720p keeps the client's menus responsive; above 1080p costs frames for nothing a handheld can show.",
+                s.resolutionCap, note = "720p can improve menu responsiveness.",
                 onPick = a.onResolution,
             )
             ChoiceRow(
-                host, "shape", "Shape", "16:9 is for a foldable: bars on either panel instead of a squashed picture.",
+                host, "shape", "Shape", "Adds bars to preserve 16:9.",
                 listOf("auto" to "The panel's shape", "16:9" to "16:9 with bars"), s.shapeMode, onPick = a.onShape,
             )
         }
@@ -88,52 +83,52 @@ fun ModeSettingsPage(s: ModeSettings, a: ModeSettingsActions) {
             ToggleRow(
                 host, "hdr", "HDR10 output",
                 s.hdrReason?.let { "Not available: $it." }
-                    ?: "Decided once when the compositor starts: a change applies after the app is fully closed and opened again.",
+                    ?: "Restart the app to apply.",
                 checked = s.hdr && s.hdrReason == null, enabled = s.hdrReason == null, onChange = a.onHdr,
             )
         }
         SettingsGroup("Drivers") {
             DriverRowMenu(
                 host, "rt", "Runtime driver",
-                "What " + (if (steam) "the Steam client and its games" else "the desktop's programs") + " render with inside the runtime. Applies at the next session start.",
-                s.linuxRows, s.linuxSelected, importLabel = "Import a \"-Linux\" Turnip zip…",
+                (if (steam) "Used by Steam and games." else "Used by desktop apps.") + " Applies next session.",
+                s.linuxRows, s.linuxSelected, importLabel = "Import Turnip zip…",
                 onSelect = a.onSelectLinux, onRemove = a.onRemoveLinux, onImport = a.onImportLinux,
             )
             DriverRowMenu(
                 host, "panel", "Display driver",
-                "What the app's compositor puts frames on the screen with; shared by both modes. Applies after the app is fully closed and opened again.",
+                "Used by the compositor in both modes. Restart the app to apply.",
                 s.androidRows, s.androidSelected, importLabel = "Import an AdrenoTools zip…",
                 onSelect = a.onSelectAndroid, onRemove = a.onRemoveAndroid, onImport = a.onImportAndroid,
             )
         }
         SettingsGroup(if (steam) "Touch & controls" else "Touch") {
             ChoiceRow(
-                host, "touch", "Touch", "How a finger drives the pointer. Also in the session's drawer.",
+                host, "touch", "Touch", null,
                 listOf("auto" to "Auto", "touchpad" to "Touchpad", "direct" to "Direct"), s.touchMode,
-                note = "Auto: touchpad on the desktop, direct in Steam. Touchpad: drag moves, tap clicks. Direct: the pointer jumps under the finger.",
+                note = "Auto uses touchpad on desktop and direct input in Steam. Touchpad: drag to move, tap to click.",
                 onPick = a.onTouch,
             )
             if (steam && s.oscMode != null) ChoiceRow(
-                host, "osc", "On-screen controls", "The virtual pad drawn over a game.",
+                host, "osc", "On-screen controls", null,
                 listOf(
                     SessionPrefs.OSC_AUTO to "Auto",
                     SessionPrefs.OSC_ALWAYS to "Always",
                     SessionPrefs.OSC_STEAM_QAM to "Steam + QAM",
                     SessionPrefs.OSC_NEVER to "Never",
                 ), s.oscMode,
-                note = "Auto shows the full pad when no controller is attached. Steam + QAM shows only those two buttons.", onPick = a.onOsc,
+                note = "Auto shows all controls without a controller. Steam + QAM shows only those buttons.", onPick = a.onOsc,
             )
         }
         if (steam && s.fexPreset != null) SettingsGroup("Games") {
             ChoiceRow(
-                host, "fex", "FEX preset", "How FEX translates the x86 games the client launches. Applies to the next game launch. Also in the session's drawer.",
+                host, "fex", "FEX preset", "Applies on next game launch.",
                 FexPreset.all.map { it.id to it.label }, s.fexPreset,
                 note = FexPreset.byId(s.fexPreset).detail, onPick = a.onFexPreset,
             )
         }
         if (steam && s.directAudio != null && s.mic != null) SettingsGroup("Audio") {
-            ToggleRow(host, "da", "DirectAudio for games", "Games play straight to the device, bypassing PulseAudio: lower latency. Off = PulseAudio for everything.", s.directAudio, onChange = a.onDirectAudio)
-            ToggleRow(host, "mic", "Microphone", "The device's microphone for voice chat, as the client's input device. Asks for the permission once.", s.mic, onChange = a.onMic)
+            ToggleRow(host, "da", "DirectAudio for games", "Bypasses PulseAudio for lower latency.", s.directAudio, onChange = a.onDirectAudio)
+            ToggleRow(host, "mic", "Microphone", "Uses the device microphone for voice chat.", s.mic, onChange = a.onMic)
         }
         if (steam && s.gameStorage != null) SettingsGroup("Game storage") {
             val custom = s.gameStorage.isNotEmpty() && s.gameStorage != "off" && s.storageOptions.none { it.second == s.gameStorage }
@@ -146,14 +141,14 @@ fun ModeSettingsPage(s: ModeSettings, a: ModeSettingsActions) {
             val open = host.open == "storage"
             SettingsRow(
                 "Second library",
-                "With a second place registered, every Install in Steam asks which drive, Settings › Storage lists both, and Steam moves games between them. Applies at the next session start.",
+                "Adds a library location in Steam. Applies next session.",
                 highlighted = open,
             ) {
                 androidx.compose.foundation.layout.Box {
                     ValueChip(options.firstOrNull { it.first == s.gameStorage }?.second?.substringBefore(" -") ?: "-", open) { host.open = if (open) null else "storage" }
                     AnchoredMenu(
                         open, onDismiss = { if (host.open == "storage") host.open = null }, title = "Second library",
-                        note = "An SD card and shared storage go through Android's file layer: a game that streams big assets from there can stall. Keep such games internal.",
+                        note = "Games that stream assets from SD or shared storage may stutter. Keep them internal.",
                     ) {
                         for ((path, label) in options) MenuItem(label, checked = path == s.gameStorage) {
                             a.onGameStorage(path, if (path.isEmpty() || path == "off") "" else label.substringBefore(" ·"))
@@ -166,13 +161,11 @@ fun ModeSettingsPage(s: ModeSettings, a: ModeSettingsActions) {
         }
         if (!steam && s.renderer != null) SettingsGroup("Renderer") {
             ChoiceRow(
-                host, "renderer", "Desktop renderer", "How labwc composites the desktop. pixman is software and works everywhere.",
+                host, "renderer", "Desktop renderer", "Composites the desktop.",
                 listOf("pixman" to "pixman - software", "gles2" to "gles2", "vulkan" to "vulkan"), s.renderer,
-                note = "gles2 and vulkan need a real DRM render node, which the Adreno stand-in is not on most devices.", onPick = a.onRenderer,
+                note = "GLES2 and Vulkan require a DRM render node, unavailable on most devices.", onPick = a.onRenderer,
             )
         }
-        Spacer(Modifier.height(8.dp))
-        Text("Values are saved as they are picked; there is nothing to confirm.", fontSize = 11.5.sp, color = colors.onSurfaceVariant, modifier = Modifier.padding(top = 10.dp))
     }
 }
 
