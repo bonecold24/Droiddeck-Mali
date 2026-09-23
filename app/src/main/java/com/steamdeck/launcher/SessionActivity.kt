@@ -116,11 +116,9 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
         // PulseAudio are media playback); they are never forwarded to the guest.
         volumeControlStream = android.media.AudioManager.STREAM_MUSIC
 
-        if (!LinuxRuntime.isInstalled(this)) {
-            Log.e(TAG, "the Linux runtime is not installed")
-            finish()
-            return
-        }
+        // No runtime is not a reason to leave: the loading screen installs it (installThenStart,
+        // below) and the session starts when it is in.
+        if (!LinuxRuntime.isInstalled(this)) Log.i(TAG, "the Linux runtime is not installed; the loading screen installs it")
 
         val root = FrameLayout(this)
         surfaceView = SurfaceView(this)
