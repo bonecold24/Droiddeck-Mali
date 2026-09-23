@@ -143,7 +143,8 @@ public class PulseAudioComponent extends SessionPart {
             config.add("load-module module-directaudio-sink sink_name=DirectAudio socket=\"" + relaySocketPath + "\" performance_mode=1 adaptive=1 volume=1.0");
             config.add("set-default-sink DirectAudio");
         } else {
-            config.add("load-module module-aaudio-sink sink_name=AAudioSink performance_mode=1 adaptive=1 volume=1.0");
+            // The classic sink: the adaptive AAudio module 0.1.5 shipped, unchanged.
+            config.add("load-module module-aaudio-classic-sink sink_name=AAudioSink performance_mode=1 adaptive=1 volume=1.0");
             config.add("set-default-sink AAudioSink");
         }
         if (micFifoPath != null && !micFifoPath.isEmpty()) {
@@ -164,7 +165,10 @@ public class PulseAudioComponent extends SessionPart {
 
         String command = workingDir.getAbsolutePath() + "/libpulseaudio.so"
                 + " --system=false --disable-shm=true --fail=false"
-                + " -n --file=default.pa --daemonize=false --use-pid-file=false --exit-idle-time=-1";
+                + " -n --file=default.pa --daemonize=false --use-pid-file=false --exit-idle-time=-1"
+                // Info level: the classic sink reports the stream Android granted (burst, capacity,
+                // starting buffer) only there, and that is what a stutter report needs.
+                + " --log-level=info";
         // A module that refuses to load, a pipe that could not be made, the daemon exiting at
         // startup: all of it used to reach logcat and nothing else, so a user's folder said nothing
         // at all about sound. Four separate faults hid behind "no input device" in one night.

@@ -91,6 +91,9 @@ public class DirectAudioRelayComponent extends SessionPart {
 
         StringBuilder command = new StringBuilder(binary.getAbsolutePath());
         command.append(" --socket ").append(socketPath.getAbsolutePath());
+        // Diagnostics into the session's audio.log: every 1000 callbacks the device buffer,
+        // Android's own xrun count and the ring's fill, plus every buffer change.
+        command.append(" --log");
         if (micFifoPath != null) {
             // The helper creates the pipe if it is not there. PulseAudio is told the same path and
             // reads from the other end of it.

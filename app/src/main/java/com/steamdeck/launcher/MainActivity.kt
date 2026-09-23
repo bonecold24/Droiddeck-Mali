@@ -100,6 +100,7 @@ class MainActivity : ComponentActivity() {
     private var prootNoSeccomp by mutableStateOf(false)
     private var phantomWarning by mutableStateOf<String?>(null)
     private var directAudio by mutableStateOf(false)
+    private var clientDirectAudio by mutableStateOf(false)
     private var mic by mutableStateOf(false)
     private var linuxRows by mutableStateOf<List<DriverRow>>(emptyList())
     private var linuxSteam by mutableStateOf("")
@@ -413,6 +414,7 @@ class MainActivity : ComponentActivity() {
                 suspendPolicy = suspendPolicy,
                 oscMode = if (mode == SessionService.MODE_STEAM) oscMode else null,
                 directAudio = if (mode == SessionService.MODE_STEAM) directAudio else null,
+                clientDirectAudio = clientDirectAudio,
                 mic = if (mode == SessionService.MODE_STEAM) mic else null,
                 renderer = if (mode == SessionService.MODE_DESKTOP) renderer else null,
                 gameStorage = if (mode == SessionService.MODE_STEAM) gameStorage else null,
@@ -437,6 +439,7 @@ class MainActivity : ComponentActivity() {
                 onSuspendPolicy = { policy -> SessionPrefs.setSuspendPolicy(this, mode, policy); suspendPolicy = policy },
                 onOsc = { o -> SessionPrefs.setOscMode(this, o); oscMode = o },
                 onDirectAudio = { on -> SessionPrefs.setDirectAudio(this, on); directAudio = on },
+                onClientDirectAudio = { on -> SessionPrefs.setClientDirectAudio(this, on); clientDirectAudio = on },
                 onMic = { on ->
                     SessionPrefs.setMicEnabled(this, on)
                     mic = on
@@ -528,6 +531,7 @@ class MainActivity : ComponentActivity() {
         suspendPolicy = SessionPrefs.suspendPolicy(this, mode)
         oscMode = SessionPrefs.oscMode(this)
         directAudio = SessionPrefs.directAudio(this)
+        clientDirectAudio = SessionPrefs.clientDirectAudio(this)
         mic = SessionPrefs.micEnabled(this)
         renderer = SessionPrefs.desktopRenderer(this)
         gameStorage = SessionPrefs.gameStorage(this)

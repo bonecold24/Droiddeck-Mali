@@ -69,8 +69,19 @@ object SessionPrefs {
     }
 
     /**
-     * DirectAudio: games' Wine audio driver and the client's own sound both go through the relay
-     * helper on this side. On unless the user turned it off; off, PulseAudio drives the device.
+     * The Steam client's own sound through the DirectAudio relay instead of the classic AAudio
+     * sink. Off by default: on an AYN Thor (Android 13, 20 ms bursts) the relay path stayed choppy
+     * where the classic sink - the one 0.1.5 shipped - was fine.
+     */
+    fun clientDirectAudio(context: Context): Boolean = prefs(context).getBoolean("clientDirectAudio", false)
+
+    fun setClientDirectAudio(context: Context, on: Boolean) {
+        prefs(context).edit().putBoolean("clientDirectAudio", on).apply()
+    }
+
+    /**
+     * DirectAudio for games: their Wine audio driver talks to the relay helper on this side. On
+     * unless the user turned it off.
      */
     fun directAudio(context: Context): Boolean = prefs(context).getBoolean("directAudio", true)
 
