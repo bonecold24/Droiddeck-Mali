@@ -18,4 +18,4 @@ Compatibility and performance vary by device; hardware validation is limited. De
 
 ## Credits and licence
 
-GPL-3.0. Runtime, shim, input, and controller work build on WinNative and Bannerlator (maxjivi05); audio, gamepad, and session foundations build on Winlator (brunodev85). See [LICENSE](LICENSE). Steam and Proton belong to Valve Corporation; this project is not affiliated with Valve.
+GPL-3.0. Runtime, shim, input, and controller work build on WinNative and Bannerlator (maxjivi05). See [LICENSE](LICENSE). Steam and Proton belong to Valve Corporation; this project is not affiliated with Valve.

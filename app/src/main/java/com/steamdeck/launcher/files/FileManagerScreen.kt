@@ -137,21 +137,21 @@ import java.util.Locale
 /**
  * What to do when a pasted item already exists at the destination.
  *
- * OVERWRITE and MERGE resolve to the same call - `copyWithProgress` recurses into an existing
- * directory and truncates existing files - but they mean different things to the user, so both are
+ * OVERWRITE and MERGE resolve to the same call — `copyWithProgress` recurses into an existing
+ * directory and truncates existing files — but they mean different things to the user, so both are
  * offered and the wording is chosen per item type (files overwrite, folders merge).
  */
 enum class ConflictChoice { OVERWRITE, MERGE, KEEP_BOTH, SKIP }
 
 /**
- * Ordering for the file list. Folders always lead regardless of direction - a descending sort that
+ * Ordering for the file list. Folders always lead regardless of direction — a descending sort that
  * buries every folder under the files is never what someone means by "Z to A".
  */
 /**
  * Shortens a path from the LEFT, keeping whole segments.
  *
  * Compose's TextOverflow can only ellipsise the tail, which for a path throws away the part that
- * matters - `/storage/emulated/0/Winlator/Game…` tells you nothing about where you are.
+ * matters — `/storage/emulated/0/Games/…` tells you nothing about where you are.
  */
 private fun elidePathStart(path: String, max: Int): String {
     if (path.length <= max) return path
@@ -196,7 +196,7 @@ private fun isWithin(child: File, ancestor: File): Boolean {
 
 // ── DOS file attributes (Read-only / Hidden) ──
 // The in-container file manager (wfm.exe) exposes these in its Properties dialog; this mirrors the
-// same two toggles for files browsed from the app side. No root - we only touch permission bits the
+// same two toggles for files browsed from the app side. No root — we only touch permission bits the
 // app owns (container files) and the Wine DOS-attribute xattr.
 
 // FILE_ATTRIBUTE_HIDDEN, as Wine encodes it in the user.DOSATTRIB extended attribute.
@@ -204,7 +204,7 @@ private const val FILE_ATTRIBUTE_HIDDEN = 0x2
 private const val DOSATTRIB_XATTR = "user.DOSATTRIB"
 
 // Snapshot of a file's two toggleable attributes. hiddenSupported is false when the underlying
-// filesystem can't store the DOSATTRIB xattr (the FUSE /storage volumes) - the Hidden toggle is then
+// filesystem can't store the DOSATTRIB xattr (the FUSE /storage volumes) — the Hidden toggle is then
 // disabled while Read-only keeps working.
 private data class FileAttrState(
     val readOnly: Boolean,
@@ -226,7 +226,7 @@ private fun parseDosAttrib(raw: ByteArray): Int {
 // comes back hiddenSupported=false (Hidden toggle disabled), Read-only always resolves.
 private fun readFileAttrs(file: File): FileAttrState {
     val path = file.absolutePath
-    // Read-only reflects the OWNER write bit - that's what Wine maps to FILE_ATTRIBUTE_READONLY.
+    // Read-only reflects the OWNER write bit — that's what Wine maps to FILE_ATTRIBUTE_READONLY.
     val readOnly = runCatching {
         (android.system.Os.stat(path).st_mode and android.system.OsConstants.S_IWUSR) == 0
     }.getOrDefault(!file.canWrite())
@@ -309,7 +309,7 @@ fun describeLocation(file: File): FavLocation {
 }
 
 // Semantic identity colours for the favourite-card drive badge. Intentionally NOT theme
-// accent colours - they identify the storage source at a glance. Returns (background, foreground).
+// accent colours — they identify the storage source at a glance. Returns (background, foreground).
 private fun badgeColors(loc: FavLocation): Pair<Color, Color> {
     val white = Color(0xFFFFFFFF)
     return when {
@@ -350,13 +350,13 @@ fun FileManagerScreen(
     val rootDir = remember {
         // Both modes: honour an explicit caller-supplied start dir (e.g. Log Manager's game-log
         // folder), else open at the INTERNAL STORAGE ROOT. Selection screens (drive-folder pick,
-        // local component pick, imports) previously defaulted to Download which - combined with the
-        // currentRoot floor below - trapped users in Download with no way up (reported bug).
+        // local component pick, imports) previously defaulted to Download which — combined with the
+        // currentRoot floor below — trapped users in Download with no way up (reported bug).
         initialDir?.takeIf { it.isDirectory } ?: File("/storage/emulated/0")
     }
 
     var currentDir by remember { mutableStateOf(rootDir) }
-    // The up/back FLOOR - back + the up-arrow are disabled while currentDir == currentRoot. It MUST be
+    // The up/back FLOOR — back + the up-arrow are disabled while currentDir == currentRoot. It MUST be
     // the VOLUME ROOT of the start dir (internal /storage/emulated/0, or an SD card /storage/XXXX-XXXX),
     // NOT the start dir itself: otherwise opening at any subfolder disables up/back and traps the user
     // there. (Mirrors the volume-root logic in favLocationOf above.)
@@ -377,7 +377,7 @@ fun FileManagerScreen(
     var selectedEntry by remember { mutableStateOf<File?>(null) }
     var showMenuFor by remember { mutableStateOf<File?>(null) }
     // Clipboard holds a LIST so one paste can carry a whole selection. Cut/copy semantics are a
-    // flag on the batch rather than per item - mixing the two in one clipboard has no sane meaning.
+    // flag on the batch rather than per item — mixing the two in one clipboard has no sane meaning.
     var clipboardFiles by remember { mutableStateOf<List<File>>(emptyList()) }
     var isCutOperation by remember { mutableStateOf(false) }
     // Multi-select. Keyed by absolute path rather than File so a directory reload (which builds
@@ -398,10 +398,10 @@ fun FileManagerScreen(
     var sortDesc by remember { mutableStateOf(browsePrefs.getBoolean("fmSortDesc", false)) }
     var showHidden by remember { mutableStateOf(browsePrefs.getBoolean("fmShowHidden", true)) }
     var showSortMenu by remember { mutableStateOf(false) }
-    // View mode: list of cards (default) or a thumbnail grid. Density applies to the list only -
+    // View mode: list of cards (default) or a thumbnail grid. Density applies to the list only —
     // a grid tile has no second line to compact.
     // The grid/list toggle is the SOURCE OF TRUTH in BOTH orientations (it drives the view and its
-    // choice persists across rotation). Grid is the default - most useful in landscape, and in
+    // choice persists across rotation). Grid is the default — most useful in landscape, and in
     // portrait GridCells.Adaptive naturally renders fewer columns (~2). Do NOT force portrait to list:
     // that broke the toggle on-device (tapping it did nothing in portrait).
     var gridView by remember { mutableStateOf(browsePrefs.getBoolean("fmGridView", true)) }
@@ -502,7 +502,7 @@ fun FileManagerScreen(
     suspend fun askConflict(file: File): ConflictChoice? {
         pendingConflict = file
         conflictChoice = null
-        // Poll rather than plumb a CompletableDeferred through Compose state - the dialog answers
+        // Poll rather than plumb a CompletableDeferred through Compose state — the dialog answers
         // by setting conflictChoice, and this coroutine is already off the critical path.
         while (pendingConflict != null && conflictChoice == null) kotlinx.coroutines.delay(50)
         return conflictChoice
@@ -556,7 +556,7 @@ fun FileManagerScreen(
                 operationLabel = buildString {
                     append(if (cut) "Moving" else "Copying")
                     if (sources.size > 1) append(" ${done + 1}/${sources.size}")
-                    append(" - ").append(src.name)
+                    append(" — ").append(src.name)
                 }
                 var lastPct = -1
                 val onProgress = FileOps.ProgressCallback { copied, total ->
@@ -745,7 +745,7 @@ fun FileManagerScreen(
                         isOperationRunning = true
                         var failed = 0
                         victims.forEachIndexed { i, f ->
-                            operationLabel = "Deleting ${i + 1}/${victims.size} - ${f.name}"
+                            operationLabel = "Deleting ${i + 1}/${victims.size} — ${f.name}"
                             if (!withContext(Dispatchers.IO) { FileOps.delete(f) }) failed++
                         }
                         isOperationRunning = false
@@ -761,7 +761,7 @@ fun FileManagerScreen(
         )
     }
 
-    // Paste conflict - one per colliding item, with "apply to all" for a long batch.
+    // Paste conflict — one per colliding item, with "apply to all" for a long batch.
     pendingConflict?.let { conflict ->
         val isDir = conflict.isDirectory
         OutlinedAlertDialog(
@@ -856,7 +856,7 @@ fun FileManagerScreen(
             val driveChipAlpha = if (showFavorites) 0.45f else 1f
             Box {
                 // The drive/location selector opens the drive dropdown, so give it the same outlined
-                // look as the "New Folder" button + the rail location items - it reads as a button, not
+                // look as the "New Folder" button + the rail location items — it reads as a button, not
                 // plain text. Border uses the theme accent token; behaviour unchanged.
                 val driveChipShape = RoundedCornerShape(8.dp)
                 Text(
@@ -909,7 +909,7 @@ fun FileManagerScreen(
 
             if (showFavorites) {
                 Text(
-                    text = "Favorites",
+                    text = "★ Favorites",
                     color = MaterialTheme.colorScheme.primary,
                     fontSize = 13.sp,
                     fontWeight = FontWeight.SemiBold,
@@ -918,12 +918,12 @@ fun FileManagerScreen(
                     modifier = Modifier.weight(1f),
                 )
             } else if (LocalConfiguration.current.orientation == Configuration.ORIENTATION_PORTRAIT) {
-                // PORTRAIT: hide the current-folder name - it's redundant with the path bar directly
+                // PORTRAIT: hide the current-folder name — it's redundant with the path bar directly
                 // below (which shows the full path). The spacer keeps the action icons right-aligned.
                 Spacer(Modifier.weight(1f))
             } else {
                 // LANDSCAPE: the CURRENT FOLDER, not the full path. A path ellipsised on the right
-                // hides its tail - the only part that says where you are ("…/Winlator/Game…"). The
+                // hides its tail — the only part that says where you are ("…/Games/…"). The
                 // full path moves to the line below, where it has room.
                 Text(
                     text = currentDir.name.ifBlank { currentDir.absolutePath },
@@ -1029,7 +1029,7 @@ fun FileManagerScreen(
             )
         }
 
-        // Free space on the volume being browsed - worth knowing before starting a 60 GB copy.
+        // Free space on the volume being browsed — worth knowing before starting a 60 GB copy.
         val freeSpace = remember(currentDir.absolutePath, entries) {
             runCatching { currentDir.usableSpace }.getOrDefault(0L)
         }
@@ -1225,7 +1225,7 @@ fun FileManagerScreen(
         val locationSections = buildList {
             add(RailSection("STORAGE", storageItems))
             if (quickItems.isNotEmpty()) add(RailSection("QUICK", quickItems))
-            if (favItems.isNotEmpty()) add(RailSection("FAVORITES", favItems))
+            if (favItems.isNotEmpty()) add(RailSection("★ FAVORITES", favItems))
         }
 
         Row(modifier = Modifier.weight(1f).fillMaxWidth()) {
@@ -1431,7 +1431,7 @@ fun FileManagerScreen(
 
 // The context-menu item list shared by the list rows (FileItemRow) and the grid tiles
 // (FileGridTile), so both open the identical menu. Gating (isDir/canRun/isInno/looksLikeArchive) is
-// recomputed from [file] here - one source of truth for what each item shows. Every item dismisses
+// recomputed from [file] here — one source of truth for what each item shows. Every item dismisses
 // the menu first, then runs its action.
 @Composable
 private fun FileContextMenuItems(
@@ -1462,7 +1462,7 @@ private fun FileContextMenuItems(
         onClick = { onDismissMenu(); onProperties() },
     )
     MenuItemDivider()
-    // Favorites are directories - only folders get the pin toggle.
+    // Favorites are directories — only folders get the pin toggle.
     if (isDir) {
         DropdownMenuItem(
             text = { Text(if (isFavorite) "Remove from Favorites" else "Add to Favorites") },
@@ -1708,7 +1708,7 @@ private fun FavoritesList(
                     contentAlignment = Alignment.Center,
                 ) {
                     Text(
-                        text = "No favorites yet - pin a folder with its ⋮ menu to jump back here fast.",
+                        text = "No favorites yet — pin a folder with its ⋮ menu to jump back here fast.",
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         fontSize = 13.sp,
                         modifier = Modifier.padding(horizontal = 32.dp),
@@ -1729,7 +1729,7 @@ private fun FavoritesList(
     }
 }
 
-// A single favourite - matches the FileItemRow card style (surfaceContainer + outline +
+// A single favourite — matches the FileItemRow card style (surfaceContainer + outline +
 // RoundedCornerShape(10.dp)). Shows the folder name, a coloured drive badge + origin text,
 // and the full display path; tapping jumps into it, the filled star unpins.
 @Composable
@@ -1818,7 +1818,7 @@ private fun FavoriteCard(
 /**
  * One entry in the File Manager's grid view: a big thumbnail with the name under it.
  *
- * Deliberately drops size and date - at this width they truncate to noise. The grid is for
+ * Deliberately drops size and date — at this width they truncate to noise. The grid is for
  * recognising things by sight (screenshots, covers, game folders); the list stays the view for
  * reading details.
  */
@@ -1852,7 +1852,7 @@ private fun FileGridTile(
             if (bmp != null) exeIcon = bmp.asImageBitmap()
         }
     }
-    // The tile has no ⋮ button - long-press opens this menu, anchored to the Box around the Card.
+    // The tile has no ⋮ button — long-press opens this menu, anchored to the Box around the Card.
     Box {
         Card(
             modifier = Modifier
@@ -1942,7 +1942,7 @@ private fun FileGridTile(
 
 /**
  * Properties sheet for a single file or folder: basic info plus the two Windows/Wine file attributes
- * the in-container file manager (wfm.exe) also exposes - Read-only and Hidden. Each toggle applies
+ * the in-container file manager (wfm.exe) also exposes — Read-only and Hidden. Each toggle applies
  * immediately (off the main thread) and refreshes the listing via [onChanged].
  *
  * State is keyed on the file so it always reflects the entry it was opened for. On a filesystem that
@@ -1980,7 +1980,7 @@ private fun FilePropertiesDialog(
                     overflow = TextOverflow.Ellipsis,
                 )
                 Spacer(Modifier.height(6.dp))
-                PropertyLine("Location", file.parent ?: "-")
+                PropertyLine("Location", file.parent ?: "—")
                 PropertyLine(
                     "Type",
                     if (file.isDirectory) "Folder"
@@ -2033,7 +2033,7 @@ private fun FilePropertiesDialog(
                                 attrs = attrs?.copy(hidden = want)
                                 onChanged()
                             } else {
-                                // The write failed after all - disable the toggle rather than lie.
+                                // The write failed after all — disable the toggle rather than lie.
                                 attrs = attrs?.copy(hiddenSupported = false)
                                 Toast.makeText(context, "Couldn't change Hidden on this storage", Toast.LENGTH_SHORT).show()
                             }
