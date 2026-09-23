@@ -4,6 +4,7 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.PressInteraction
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -24,6 +25,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -50,7 +52,9 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.graphicsLayer
@@ -60,6 +64,7 @@ import androidx.compose.ui.text.font.FontWeight
 import com.steamdeck.launcher.core.FexPreset
 import com.steamdeck.launcher.gpu.FrameGen
 import com.steamdeck.launcher.session.SessionPrefs
+import kotlinx.coroutines.flow.collect
 
 /** A line of numbers in the top-right corner. It takes no touches: everything goes to the game. */
 @Composable
@@ -183,6 +188,17 @@ fun SessionDrawer(open: Boolean, a: DrawerActions) {
                     }
                 }
                 if (a.onSteamMenu != null && a.onQam != null) {
+                    val qamInteraction = remember { MutableInteractionSource() }
+                    var qamStartedOnPress by remember { mutableStateOf(false) }
+                    LaunchedEffect(qamInteraction) {
+                        qamInteraction.interactions.collect { interaction ->
+                            if (interaction is PressInteraction.Press) {
+                                qamStartedOnPress = true
+                                host.open = null
+                                a.onQam.invoke()
+                            }
+                        }
+                    }
                     Row(
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                         modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
@@ -195,7 +211,12 @@ fun SessionDrawer(open: Boolean, a: DrawerActions) {
                             Text("STEAM", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 0.5.sp)
                         }
                         OutlinedButton(
-                            onClick = { host.open = null; a.onQam.invoke() },
+                            onClick = {
+                                host.open = null
+                                if (!qamStartedOnPress) a.onQam.invoke()
+                                qamStartedOnPress = false
+                            },
+                            interactionSource = qamInteraction,
                             modifier = Modifier.weight(1f).height(48.dp).semantics { contentDescription = "Open Quick Access Menu" },
                             shape = RoundedCornerShape(12.dp),
                         ) {
