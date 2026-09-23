@@ -9,7 +9,7 @@ android {
     compileSdk 34
     // The NDK is pinned by property so CI can hand in whatever the runner already has rather than
     // downloading a second copy; see gradle.properties.
-    ndkVersion project.findProperty('ndkVersion') ?: '27.0.12077973'
+    ndkVersion project.findProperty('ndkVersion') ?: '27.3.13750724'
 
     defaultConfig {
         applicationId "com.steamdeck.launcher"

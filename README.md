@@ -140,10 +140,27 @@ first use.
 
 ## Building
 
-Nothing is built locally. Push, and the `Build APK` workflow produces `steamdeck-apk`, a
-debug-signed arm64 apk. It cross-compiles the two glibc preloads the session needs
-(`libfakeinput.so`, `libblsession.so`) from the sources in this repo before the app build, so
-those can never drift from what ships.
+The repeatable local build is `tools/build_local.sh`. It uses Docker's Ubuntu cross-toolchain for
+the two glibc ARM64 preloads (`libfakeinput.so`, `libblsession.so`), the Android SDK/NDK already
+installed on the machine, and the same release signing and native dependency checks as CI. The
+APK is written to `app/build/outputs/apk/release/app-release.apk`.
+
+```sh
+tools/build_local.sh
+```
+
+CI remains available through the `Build APK` workflow. Both paths cross-compile the preloads from
+the sources in this repo before the app build, so those cannot drift from what ships.
+
+With an authorized Android device attached over USB or ADB, install the locally built APK with:
+
+```sh
+tools/deploy_local.sh
+```
+
+Set `ADB_SERIAL` when more than one device is attached. The deploy helper installs over the
+existing `com.steamdeck.launcher` package using the repository's stable test key and verifies the
+package path afterward; it does not launch a session automatically.
 
 ## If Bannerlator is already installed
 
