@@ -211,11 +211,11 @@ jobs:
           rm -rf mango-pkgs
           ls -l "$M"
           # And the desktop's launcher and labwc defaults, staged over the desktop package's copies.
-          install -Dm644 tools/linuxfs/desktop/steamdeck-desktop "$D/usr/local/bin/steamdeck-desktop"
+          install -Dm644 tools/linuxfs/desktop/droiddeck-desktop "$D/usr/local/bin/droiddeck-desktop"
           install -Dm644 tools/linuxfs/desktop/autostart "$D/etc/xdg/labwc/autostart"
           install -Dm644 tools/linuxfs/desktop/rc.xml "$D/etc/xdg/labwc/rc.xml"
           install -Dm644 tools/linuxfs/desktop/panel.conf "$D/etc/xdg/lxqt/panel.conf"
-          install -Dm644 tools/linuxfs/desktop/firefox-steamdeck.js "$D/usr/lib/firefox/defaults/pref/steamdeck.js"
+          install -Dm644 tools/linuxfs/desktop/firefox-droiddeck.js "$D/usr/lib/firefox/defaults/pref/droiddeck.js"
           ls -lR "$D"
 
       # The daemon's AAudio sink (tools/aaudio-sink), compiled here against upstream PulseAudio 13
@@ -388,7 +388,7 @@ jobs:
           BUILD_OUTCOME: ${{ steps.build.outcome }}
         run: |
           set -uo pipefail
-          MARK="<!-- steamdeck-pr-build -->"
+          MARK="<!-- droiddeck-pr-build -->"
           {
             echo "$MARK"
             echo "## Build of this pull request"
@@ -399,7 +399,7 @@ jobs:
               success)
                 echo "###  Build passed"
                 echo
-                echo "The apk is the \`steamdeck-apk\` artifact on [this run]($RUN_URL) (signed with the same test key as every build, so it installs over any other)."
+                echo "The apk is the \`droiddeck-apk\` artifact on [this run]($RUN_URL) (signed with the same test key as every build, so it installs over any other)."
                 ;;
               failure)
                 echo "### ERROR: Build failed"
@@ -438,7 +438,7 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: steamdeck-apk
+          name: droiddeck-apk
           path: app/build/outputs/apk/release/*.apk
           if-no-files-found: error
           retention-days: 30

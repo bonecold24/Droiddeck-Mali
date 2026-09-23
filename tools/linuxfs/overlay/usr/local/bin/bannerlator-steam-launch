@@ -20,7 +20,7 @@ case $target in
 esac
 dir=${BL_LAUNCH_DIR:-}
 if [ -z "$dir" ] || [ ! -d "$dir" ]; then
-  echo "bannerlator-steam-launch: not inside a SteamDeck session (BL_LAUNCH_DIR unset)" >&2
+  echo "bannerlator-steam-launch: not inside a DroidDeck session (BL_LAUNCH_DIR unset)" >&2
   exit 69
 fi
 # Written whole, then renamed: the app reads it on close, never half-written.
