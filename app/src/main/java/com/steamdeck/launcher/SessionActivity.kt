@@ -284,7 +284,7 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
             performBackAction(double = false)
         }
         pendingBackAction = pending
-        uiHandler.postDelayed(pending, android.view.ViewConfiguration.getDoubleTapTimeout().toLong())
+        uiHandler.postDelayed(pending, BACK_DOUBLE_PRESS_TIMEOUT_MS)
     }
 
     private fun performBackAction(double: Boolean) {
@@ -1005,6 +1005,7 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
 
     companion object {
         private const val TAG = "SessionActivity"
+        private const val BACK_DOUBLE_PRESS_TIMEOUT_MS = 500L
         /** Compositor scale modes (Container.FULLSCREEN_* values): 1 = fit with bars, centred. */
         private const val SCALE_FIT = 1
         private const val ALIGN_CENTER = 0

@@ -211,6 +211,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         theme = SessionPrefs.theme(this)
+        backActionsInverted = SessionPrefs.backActionsInverted(this)
         setContent {
             SteamDeckTheme(theme) {
                 val sm = settingsMode
@@ -241,6 +242,7 @@ class MainActivity : ComponentActivity() {
                         packageStage = pkgStage,
                         packagePercent = pkgPercent,
                         sessionRunning = SessionState.running,
+                        backActionsInverted = backActionsInverted,
                     ),
                     FrontEndActions(
                         onPlay = { startSession(Intent(this, SessionActivity::class.java)) },
@@ -301,6 +303,10 @@ class MainActivity : ComponentActivity() {
                         onTheme = { id -> SessionPrefs.setTheme(this, id); theme = id },
                         onHomeApp = { manageHomeApp() },
                         onAndroidApp = { app -> launchAndroidApp(app) },
+                        onBackActionsInverted = { inverted ->
+                            SessionPrefs.setBackActionsInverted(this, inverted)
+                            backActionsInverted = inverted
+                        },
                     ),
                     page = page,
                 )

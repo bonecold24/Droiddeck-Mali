@@ -141,6 +141,7 @@ class FrontEndState(
     val packageStage: String? = null,
     val packagePercent: Int = -1,
     val sessionRunning: Boolean = false,
+    val backActionsInverted: Boolean = false,
 )
 
 class FrontEndActions(
@@ -169,6 +170,7 @@ class FrontEndActions(
     val onTheme: (String) -> Unit = {},
     val onHomeApp: () -> Unit = {},
     val onAndroidApp: (com.steamdeck.launcher.HomeApp.LaunchableApp) -> Unit = {},
+    val onBackActionsInverted: (Boolean) -> Unit = {},
 )
 
 
@@ -692,6 +694,12 @@ private fun SetupPanel(s: FrontEndState, a: FrontEndActions) {
                     ActionRow("ROMs folder", s.romsDir ?: "Choose where emulator games are stored", "Choose", a.onRoms)
                 }
                 SettingsGroup("Session") {
+                    ToggleRow(
+                        host, "back-actions", "Invert Back actions",
+                        if (s.backActionsInverted) "Back once opens Steam QAM; twice opens the in-session menu."
+                        else "Back once opens the in-session menu; twice opens Steam QAM.",
+                        s.backActionsInverted, onChange = a.onBackActionsInverted,
+                    )
                     SettingsRow("Frame generation", "Select the frame generation mode") {
                         Box {
                             ValueChip(s.frameGenLabel, host.open == "fg") { host.open = if (host.open == "fg") null else "fg" }
