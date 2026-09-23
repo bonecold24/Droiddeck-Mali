@@ -8,8 +8,8 @@ import java.io.File
 /**
  * Starting the Steam client signed out of Valve's servers.
  *
- * The client can run without a connection — installed games launch, Proton and the frame-gen are
- * all local — but only if it has credentials from an earlier successful sign-in. Two keys in
+ * The client can run without a connection - installed games launch, Proton and the frame-gen are
+ * all local - but only if it has credentials from an earlier successful sign-in. Two keys in
  * loginusers.vdf decide what it does when it cannot reach a CM: WantsOfflineMode makes it go
  * offline on its own, SkipOfflineModeWarning stops it asking first. Both are read once, while the
  * client starts, which is why this belongs to the main screen and not to the in-session drawer:

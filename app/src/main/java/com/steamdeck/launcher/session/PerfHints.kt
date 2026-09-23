@@ -14,7 +14,7 @@ import java.util.concurrent.Executors
  * ADPF (Android 12+): a PerformanceHintManager session over the compositor thread, told the
  * panel's frame period as its target and each presented frame's interval as the actual. When a
  * frame runs long the power HAL raises CPU clocks for the next one at once, instead of the
- * governor waiting for the load average to climb — the difference between a menu that stutters
+ * governor waiting for the load average to climb - the difference between a menu that stutters
  * on the first scroll and one that does not.
  *
  * The session may only carry this process's threads, so the guest (gamescope, the Steam client

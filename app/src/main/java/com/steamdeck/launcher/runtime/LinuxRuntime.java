@@ -18,7 +18,7 @@ import java.util.List;
  * The glibc arm64 rootfs at {@code files/linuxfs} and the proot invocation that runs a program in
  * it as this app's own uid. It is a second runtime beside the Wine imagefs, not a container: no
  * Wine, no box64, no FEX. proot is packaged as {@code libproot.so} so the installer places it, with
- * its loader, in the native library directory — the only place an app on targetSdk 28 may execute
+ * its loader, in the native library directory - the only place an app on targetSdk 28 may execute
  * a file from.
  *
  * <p>Ported from WinNative's gamescope runtime (GPL-3.0).
@@ -61,7 +61,7 @@ public final class LinuxRuntime {
     /**
      * proot, preferred from the installed runtime and falling back to the copy in the apk.
      *
-     * <p>It is an Android binary rather than part of the rootfs — it is what creates the rootfs —
+     * <p>It is an Android binary rather than part of the rootfs - it is what creates the rootfs -
      * but it travels in the runtime tarball so that reinstalling the app cannot replace the one
      * binary everything else depends on, and so a device with no working packaged proot can still
      * run the runtime.
@@ -106,8 +106,8 @@ public final class LinuxRuntime {
 
     /**
      * The proot command line running {@code guestCommand} inside the rootfs. Host paths the session
-     * needs — the app's files directory for the compositor and audio sockets, external storage for
-     * the user's games — are bound at their own paths, so nothing on either side needs translating
+     * needs - the app's files directory for the compositor and audio sockets, external storage for
+     * the user's games - are bound at their own paths, so nothing on either side needs translating
      * and proot never touches the fds a dma-buf travels in. Android has no /dev/shm; a directory
      * under the cache stands in, which glibc's shm_open and Chromium's shared memory accept.
      */
@@ -116,7 +116,7 @@ public final class LinuxRuntime {
         return command(context, sessionRoot, runtimeDir, externalStorage, null, guestCommand);
     }
 
-    /** As above, plus {@code host:guest} bind specs — the installed games handed to Steam. */
+    /** As above, plus {@code host:guest} bind specs - the installed games handed to Steam. */
     public static List<String> command(Context context, File sessionRoot, File runtimeDir,
                                        File externalStorage, List<String> extraBinds,
                                        List<String> guestCommand) {
@@ -205,8 +205,8 @@ public final class LinuxRuntime {
     }
 
     /**
-     * An app process may not open {@code /dev/dri} — the nodes exist but are labelled
-     * {@code graphics_device}, which stock policy grants surfaceflinger and not us — yet libdrm and
+     * An app process may not open {@code /dev/dri} - the nodes exist but are labelled
+     * {@code graphics_device}, which stock policy grants surfaceflinger and not us - yet libdrm and
      * everything built on it identify a GPU by its render node, and gamescope refuses to offer
      * linux-dmabuf without one. The KGSL device Turnip actually drives ({@code gpu_device}, which we
      * may open) stands in: it appears as a render node with the sysfs entries libdrm reads, and our

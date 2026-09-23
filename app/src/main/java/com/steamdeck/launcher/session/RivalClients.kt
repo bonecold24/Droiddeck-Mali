@@ -7,14 +7,14 @@ import android.widget.Toast
 
 /**
  * Other apps on the device that sign into the user's Steam account with their own client. Steam
- * allows one session per account: the moment one of them signs in, ours is signed out — which
+ * allows one session per account: the moment one of them signs in, ours is signed out - which
  * shows up as "Session Replaced" in the client's log 2-3 seconds after every login, and looks
  * like a bug in this app.
  *
  * Installed is the most a normal app can know (since Android 7 `getRunningAppProcesses()` returns
  * only the caller's own), so the list is checked for presence and then asked to stop.
  * `killBackgroundProcesses` is a normal permission: it ends an app's background processes and
- * leaves anything in the foreground alone — and background is exactly the case that keeps
+ * leaves anything in the foreground alone - and background is exactly the case that keeps
  * happening, because GameHub declares boot receivers and is running from the moment the phone
  * starts without ever having been opened. Telling someone to close an app they never opened is
  * not much help. Ported from Bannerlator's Linux session (GPL-3.0).
@@ -56,8 +56,8 @@ object RivalClients {
         }
         Toast.makeText(
             context,
-            if (asked) "Closed $who in the background — it signs into your Steam account."
-            else "If $who is open, close it first — it signs into your Steam account and will sign this client out.",
+            if (asked) "Closed $who in the background - it signs into your Steam account."
+            else "If $who is open, close it first - it signs into your Steam account and will sign this client out.",
             Toast.LENGTH_LONG,
         ).show()
     }

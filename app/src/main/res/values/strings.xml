@@ -15,14 +15,14 @@
     <string name="runtime_update">Runtime %1$s installed · %2$s available</string>
     <string name="runtime_download_size">%1$s · %2$s download, one time</string>
     <string name="catalog_unreachable">Could not reach the runtime catalog</string>
-    <string name="install_failed">Install failed — nothing was changed</string>
+    <string name="install_failed">Install failed - nothing was changed</string>
     <string name="session_starting">Starting the session…</string>
     <string name="loading_title">Steam is loading</string>
     <string name="loading_elapsed">%1$s elapsed · still working</string>
     <string name="loading_download">Downloading the Steam client update · %1$d%%</string>
     <string name="loading_client_download">Downloading the Steam client · %1$s</string>
     <string-array name="loading_hints">
-        <item>The first run downloads the Steam client from Valve and then its update — a few minutes on a good connection.</item>
+        <item>The first run downloads the Steam client from Valve and then its update - a few minutes on a good connection.</item>
         <item>The screen stays black until the client draws its first frame; nothing is stuck while this clock is moving.</item>
         <item>You can leave. Steam keeps running in the background and the notification brings you back.</item>
         <item>A controller shows up in Steam as an Xbox 360 pad. Without one, the on-screen pad appears.</item>
@@ -31,11 +31,11 @@
     <string name="session_ended">The session ended (%1$d)\n%2$s</string>
     <string name="session_channel">Session</string>
     <string name="session_channel_description">Keeps Steam running while the app is in the background</string>
-    <string name="session_notification">Steam is running — leave this notification alone</string>
+    <string name="session_notification">Steam is running - leave this notification alone</string>
     <string name="stop_session">Stop session</string>
     <string name="frame_gen">Frame generation: %1$s</string>
     <string name="frame_gen_title">Frame generation</string>
-    <string name="frame_gen_help">Extra frames are generated between the real ones on the way to the screen, so a game running at 30 fps looks like 60. Win-FG is built in. LSFG uses the shaders from your own copy of Lossless Scaling — install it from the Steam client in this app first. Takes effect immediately, even mid-game.</string>
+    <string name="frame_gen_help">Extra frames are generated between the real ones on the way to the screen, so a game running at 30 fps looks like 60. Win-FG is built in. LSFG uses the shaders from your own copy of Lossless Scaling - install it from the Steam client in this app first. Takes effect immediately, even mid-game.</string>
     <string name="drawer_hud">Performance HUD</string>
     <string name="drawer_osc">On-screen controls: %1$s</string>
     <string name="drawer_shape">Display shape: %1$s · next session</string>
@@ -47,5 +47,5 @@
     <string name="osc_never">never</string>
     <string name="credits_line">by The412Banner and maxjivi05 · credits</string>
     <string name="credits_title">Credits</string>
-    <string name="credits_body">SteamDeck\n\nThe412Banner — the app, the Wayland compositor, the runtime and the Steam session.\n\nmaxjivi05 (Max) — the gamescope runtime this is built on: the proot session, the session shim, the fake-evdev interposer and the controller work, from WinNative.\n\nGPL-3.0. Valve, Steam, Steam Deck and Proton are trademarks of Valve Corporation; this project is not affiliated with Valve. gamescope, Mesa, Turnip, Xwayland, PulseAudio, proot and Arch Linux ARM are their authors\' own.</string>
+    <string name="credits_body">SteamDeck\n\nThe412Banner - the app, the Wayland compositor, the runtime and the Steam session.\n\nmaxjivi05 (Max) - the gamescope runtime this is built on: the proot session, the session shim, the fake-evdev interposer and the controller work, from WinNative.\n\nGPL-3.0. Valve, Steam, Steam Deck and Proton are trademarks of Valve Corporation; this project is not affiliated with Valve. gamescope, Mesa, Turnip, Xwayland, PulseAudio, proot and Arch Linux ARM are their authors\' own.</string>
 </resources>

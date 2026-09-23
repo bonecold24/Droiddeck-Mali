@@ -15,32 +15,25 @@ import com.steamdeck.launcher.core.FexPreset
 import com.steamdeck.launcher.session.SessionPrefs
 import com.steamdeck.launcher.session.SessionService
 
-/** One driver as the page shows it. [removable] is false for the runtime's own and the bundled builds. */
 class DriverRow(val id: String, val name: String, val detail: String, val removable: Boolean)
 
-/** Everything one mode's settings page shows; the activity owns the values. */
 class ModeSettings(
     val mode: String,
     val resolutionCap: Int,
     val shapeMode: String,
     val hdr: Boolean,
-    /** Why HDR cannot be offered on this display, or null when it can. */
     val hdrReason: String?,
     val linuxRows: List<DriverRow>,
     val linuxSelected: String,
     val androidRows: List<DriverRow>,
     val androidSelected: String,
     val touchMode: String,
-    /** Steam only. */
     val oscMode: String?,
     val directAudio: Boolean?,
     val mic: Boolean?,
-    /** Desktop only. */
     val renderer: String?,
-    /** Steam only: the second library's root ("" = internal only) and what this device offers. */
     val gameStorage: String? = null,
     val storageOptions: List<Pair<String, String>> = emptyList(),
-    /** Steam only: the FEXCore preset for the games the client launches. */
     val fexPreset: String? = null,
 )
 
@@ -65,12 +58,6 @@ class ModeSettingsActions(
     val onDismiss: () -> Unit,
 )
 
-/**
- * The cog beside Play / Desktop: a page in the front end's pane, one row per setting with its
- * value in a chip, and a small menu under the chip to change it. What only matters for that one
- * mode lives here - the display the session is sized to, HDR, the driver inside the runtime,
- * the display driver, and the input and audio choices - so the rail keeps what applies to both.
- */
 @Composable
 fun ModeSettingsPage(s: ModeSettings, a: ModeSettingsActions) {
     val steam = s.mode == SessionService.MODE_STEAM
@@ -88,7 +75,7 @@ fun ModeSettingsPage(s: ModeSettings, a: ModeSettingsActions) {
             ChoiceRow(
                 host, "res", "Resolution", "Takes effect at the next session: gamescope sizes its display once, when it starts.",
                 listOf(720 to "Up to 720p", 900 to "Up to 900p", 1080 to "Up to 1080p", 0 to "The panel's own")
-                    .map { (cap, label) -> cap to (if (cap == default) "$label — the default" else label) },
+                    .map { (cap, label) -> cap to (if (cap == default) "$label - the default" else label) },
                 s.resolutionCap, note = "720p keeps the client's menus responsive; above 1080p costs frames for nothing a handheld can show.",
                 onPick = a.onResolution,
             )
@@ -151,7 +138,7 @@ fun ModeSettingsPage(s: ModeSettings, a: ModeSettingsActions) {
         if (steam && s.gameStorage != null) SettingsGroup("Game storage") {
             val custom = s.gameStorage.isNotEmpty() && s.gameStorage != "off" && s.storageOptions.none { it.second == s.gameStorage }
             val options = buildList {
-                add("" to ("Automatic — the SD card when one is in" + (if (s.storageOptions.isEmpty()) " (none right now)" else "")))
+                add("" to ("Automatic - the SD card when one is in" + (if (s.storageOptions.isEmpty()) " (none right now)" else "")))
                 add("off" to "Internal only")
                 for ((label, path) in s.storageOptions) add(path to label)
                 if (custom) add(s.gameStorage to "Folder: ${s.gameStorage}")
@@ -163,7 +150,7 @@ fun ModeSettingsPage(s: ModeSettings, a: ModeSettingsActions) {
                 highlighted = open,
             ) {
                 androidx.compose.foundation.layout.Box {
-                    ValueChip(options.firstOrNull { it.first == s.gameStorage }?.second?.substringBefore(" —") ?: "—", open) { host.open = if (open) null else "storage" }
+                    ValueChip(options.firstOrNull { it.first == s.gameStorage }?.second?.substringBefore(" -") ?: "-", open) { host.open = if (open) null else "storage" }
                     AnchoredMenu(
                         open, onDismiss = { if (host.open == "storage") host.open = null }, title = "Second library",
                         note = "An SD card and shared storage go through Android's file layer: a game that streams big assets from there can stall. Keep such games internal.",
@@ -180,7 +167,7 @@ fun ModeSettingsPage(s: ModeSettings, a: ModeSettingsActions) {
         if (!steam && s.renderer != null) SettingsGroup("Renderer") {
             ChoiceRow(
                 host, "renderer", "Desktop renderer", "How labwc composites the desktop. pixman is software and works everywhere.",
-                listOf("pixman" to "pixman — software", "gles2" to "gles2", "vulkan" to "vulkan"), s.renderer,
+                listOf("pixman" to "pixman - software", "gles2" to "gles2", "vulkan" to "vulkan"), s.renderer,
                 note = "gles2 and vulkan need a real DRM render node, which the Adreno stand-in is not on most devices.", onPick = a.onRenderer,
             )
         }
@@ -189,7 +176,6 @@ fun ModeSettingsPage(s: ModeSettings, a: ModeSettingsActions) {
     }
 }
 
-/** A driver list as a menu: each build a line, imported ones with a remove control, an import at the end. */
 @Composable
 private fun DriverRowMenu(
     host: MenuHost, key: String, label: String, hint: String, rows: List<DriverRow>, selected: String, importLabel: String,
@@ -199,7 +185,7 @@ private fun DriverRowMenu(
     val colors = MaterialTheme.colorScheme
     SettingsRow(label, hint, highlighted = open) {
         androidx.compose.foundation.layout.Box {
-            ValueChip(rows.firstOrNull { it.id == selected }?.name ?: rows.firstOrNull()?.name ?: "—", open) { host.open = if (open) null else key }
+            ValueChip(rows.firstOrNull { it.id == selected }?.name ?: rows.firstOrNull()?.name ?: "-", open) { host.open = if (open) null else key }
             AnchoredMenu(open, onDismiss = { if (host.open == key) host.open = null }, title = label) {
                 for (row in rows) MenuItem(
                     row.name, checked = row.id == selected, detail = row.detail.ifEmpty { null },

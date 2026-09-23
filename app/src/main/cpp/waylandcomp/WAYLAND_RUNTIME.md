@@ -3,23 +3,23 @@
 Experimental **parallel** display runtime: run/launch games through Wine's
 `winewayland.drv` talking to our own embedded Wayland compositor, instead of the
 X11 path (pure-Java X11 server + `libwinlator.so`). The X11 runtime stays the
-default and is untouched — this is a separate flavor/branch.
+default and is untouched - this is a separate flavor/branch.
 
 ## What's already proven (spike repo `bannerlator-wayland`, device-tested on Adreno 750)
 - Minimal libwayland-server compositor: globals + xdg-shell handshake + buffer commit.
 - **Turnip's Vulkan WSI exports real zero-copy dmabufs to our external compositor**
-  (same Mesa path winewayland.drv uses for DXVK/VKD3D) — risk #1 retired.
+  (same Mesa path winewayland.drv uses for DXVK/VKD3D) - risk #1 retired.
 - Compositor imports that dmabuf into its own Turnip VkImage (`vk_import.c`).
 The staged `src/` here is that proven code, to grow into the app-embedded compositor.
 
 ## Dependencies
-1. **A Proton 11 arm64ec wcp that ships `winewayland.drv`** — built on branch
+1. **A Proton 11 arm64ec wcp that ships `winewayland.drv`** - built on branch
    `The412Banner/proton-wine:feat/winewayland` (task #1). Nothing runs end-to-end
    without it.
 2. **Wayland runtime libs in the imagefs** so `winewayland.so` (unixlib) loads:
    `libwayland-client.so`, `libwayland-egl.so`, `libxkbcommon.so`, `libxkbregistry.so`
    (bionic aarch64). The wcp bundles them in its `lib/` as a fallback; the clean home
-   is the imagefs — add via `ImageFsInstaller` (new `installWaylandLibs()`), same
+   is the imagefs - add via `ImageFsInstaller` (new `installWaylandLibs()`), same
    pattern as `installFFmpeg8()`.
 
 ## Integration plan (M4)
@@ -36,13 +36,13 @@ The staged `src/` here is that proven code, to grow into the app-embedded compos
   and point the container at the winewayland wcp.
 
 ## Status
-- ✅ **Native lib foundation done + compile-verified.** Compositor + vk_import + pre-generated
+-  **Native lib foundation done + compile-verified.** Compositor + vk_import + pre-generated
   protocol glue build as `libbannerwayland.so` (CMake target added), linking the vendored
   bionic `libwayland-server`. Verified: compiles/links clean as an aarch64 bionic `.so`,
   exports `banner_wayland_run`, NEEDED = libwayland-server + libvulkan. JNI entry
   (`waylandcomp_jni.c`) + `WaylandCompositor.java` bring it up on a thread. Compositor-process
   runtime deps (libwayland-server/libffi/libandroid-support) staged in `jniLibs/arm64-v8a`.
-- ⏭️ **Next phase (gated on the winewayland wcp landing green):** `WaylandDisplayActivity`
+-  **Next phase (gated on the winewayland wcp landing green):** `WaylandDisplayActivity`
   (SurfaceView) + JNI `ANativeWindow`→Vulkan swapchain + blit the imported game VkImage to the
   window (last un-proven render step) + input + launch wiring (start compositor, `WAYLAND_DISPLAY`,
   per-prefix `Drivers\Graphics=winewayland`) + `ImageFsInstaller.installWaylandLibs()` (client/egl/xkb
@@ -126,7 +126,7 @@ small interface in `src/banner_ext.h` (compositor.c only gained hook calls + acc
   control calls `ImmSetCompositionWindow`; the app (`WaylandTextInput`) shows the soft keyboard only
   then (and with no hardware keyboard), hides it on disable unless the user's own toggle opened it.
   Typed text: `SurfaceInputView`'s `InputConnection` → `commit_string` / `preedit_string` + `done`.
-  Deletions become Backspace/Delete key presses — winewayland's `delete_surrounding_text` handler is
+  Deletions become Backspace/Delete key presses - winewayland's `delete_surrounding_text` handler is
   empty. Log tag `text-input`.
 - **Window icons** (`src/wl_toplevel_icon.c`): `xdg_toplevel_icon_manager_v1` **v1**, accepts and
   drops icons (`done` at bind, no sizes).
@@ -166,15 +166,15 @@ small interface in `src/banner_ext.h` (compositor.c only gained hook calls + acc
 - Caveat: both sides must agree on the UBWC encoding for the GPU. The game runs the wcp's Wayland
   Turnip, the compositor the user's adrenotools Turnip; the layout code (`fdl6`) is the same, but a
   very different Mesa version on one side is the first suspect if a compressed frame imports fine
-  yet looks scrambled — `=0` is the workaround, and the `gpu` line names both the GPU and the
+  yet looks scrambled - `=0` is the workaround, and the `gpu` line names both the GPU and the
   compositor's driver.
 
-## Phones with no DRM node (OpenGL) — `BANNER_WAYLAND_NO_RENDER_NODE=1`
+## Phones with no DRM node (OpenGL) - `BANNER_WAYLAND_NO_RENDER_NODE=1`
 - The feedback's `main_device` is the first of `/dev/dri/renderD128`, `renderD129`, `card0` the app
   can `stat`; retail phones (Adreno 830/840 reports, 2026-09-14) expose none, so it is `0:0`.
   Vulkan games do not care. Mesa's EGL did: its Wayland DRM initialiser failed the display in
   `dri2_setup_device()` without a render node and fell back to a software path that has no
-  rasteriser in these layers — native OpenGL black, sound playing. Wayland layer versionCode 9
+  rasteriser in these layers - native OpenGL black, sound playing. Wayland layer versionCode 9
   (Banners-Turnip `patches/wayland/egl_wayland_no_drm_node.py`) runs zink + kopper on the Vulkan
   device without a node instead; nothing app-side is needed for that.
 - `BANNER_WAYLAND_NO_RENDER_NODE=1` (container or shortcut env) makes the compositor advertise
@@ -240,7 +240,7 @@ again on every flip. The compositor owns the state:
   early-outs), which DXVK, vkd3d-proton and Zink all answer by rebuilding the swapchain. The mode
   event is read with a non-blocking dispatch of the display queue on each acquire/present, because
   in MAILBOX that queue is otherwise only dispatched when the acquire loop runs out of images.
-- **Compatibility, both directions.** The registry bind clamps to `MIN(advertised, 2)` — binding
+- **Compatibility, both directions.** The registry bind clamps to `MIN(advertised, 2)` - binding
   above the advertised version is a fatal `wl_display` error, and a Bannerlator from before the live
   switch advertises version 1. On version 1, and on version 2 before the first `mode` event arrives,
   the driver keeps the original contract exactly: gralloc images iff `BANNER_WSI_AHB=1`, decided per
@@ -248,8 +248,8 @@ again on every flip. The compositor owns the state:
   forces it on (the app exports that on every zero-copy launch, which would freeze the switch);
   `BANNER_WSI_AHB=0` still forces the whole feature off.
 - **No black frame, either way.** Switching OFF does not tear down anything: the old gralloc chain's
-  frames keep being shown — on the layer when this renderer could not import them, through the copy
-  path when it could — until the game has rebuilt, and only then does `sc_layer_hide()` run. Buffers
+  frames keep being shown - on the layer when this renderer could not import them, through the copy
+  path when it could - until the game has rebuilt, and only then does `sc_layer_hide()` run. Buffers
   already on the layer keep their deferred release (`ahb_swapchain_defer_release` is no longer gated
   on `g_zero_copy`, or the display would be handed a buffer it is still scanning out). Switching ON,
   the layer path resumes as soon as the first `attach` of the new chain lands.
@@ -289,7 +289,7 @@ app window ....... Compose UI, the in-game drawer, the perf HUD, the on-screen c
   runtime). The SurfaceControls are children of the SurfaceView's surface, created on first use and
   retired together when the output window changes or goes away.
 - **What can be on the game layer**, cheapest first: the game's own gralloc buffer (zero-copy, no
-  copy anywhere — `ahb_swapchain.c`); one blit of the game's frame into a compositor buffer
+  copy anywhere - `ahb_swapchain.c`); one blit of the game's frame into a compositor buffer
   (`sc_layer_present`); or, with screen effects on, the compositor pass's **result** blitted into
   such a buffer (`sc_layer_present_pass` → `vkp_pass_begin` / `vkp_pass_copy_to`). The last one is
   what keeps a Look from dropping the session back to the app's swapchain: the scene → output
@@ -298,29 +298,29 @@ app window ....... Compose UI, the in-game drawer, the perf HUD, the on-screen c
 - **Present order matters, and it was measured.** The layers go up first; the base surface's black
   frame is presented *after* the layer transaction, and the effects chain runs in its own submit
   with **no swapchain image acquired**. A present holds an acquired image and the acquire semaphore
-  is a vblank gate: folding the chain into that submit (one command buffer, one present — the
+  is a vblank gate: folding the chain into that submit (one command buffer, one present - the
   shape that looks cheaper) put the whole 13-pass chain behind a vblank and measured **72 fps**
   against **111 fps** for the split shape, on HL2 + Retro CRT at 1920x1080 on the Pocket FIT (the
   copy path is 129 fps on the same scene). Anyone tempted to "optimise" this into one submit should
   read this paragraph first.
-- **What goes on the overlay layer**: exactly one draw above the game — a second Wayland toplevel
+- **What goes on the overlay layer**: exactly one draw above the game - a second Wayland toplevel
   (a launcher or settings window, a message box), copied 1:1 into the overlay pool and then
   *cropped and placed* by the display through the same `vkp_map_draw` mapping the copy path uses.
   The point is what does **not** happen: the game's frames are no longer copied through the
   compositor's swapchain just because something small sits on top of them.
-- **Transparency.** The compositor composes with blits, which overwrite — it never alpha-blends,
-  on either path — so every layer is marked `ASC_TRANSPARENCY_OPAQUE` and the overlay layer is
+- **Transparency.** The compositor composes with blits, which overwrite - it never alpha-blends,
+  on either path - so every layer is marked `ASC_TRANSPARENCY_OPAQUE` and the overlay layer is
   cropped to the window it carries. There is no blending to get wrong: no black box over the game,
   no double-darkening, and the picture is the copy path's, pixel for pixel.
 - **Input is untouched.** An `ASurfaceControl` has no input channel, so neither layer can take a
   touch: everything still reaches the app's `SurfaceView` (and the views above it) exactly as
   before, and the scene mapping touch goes through (`vkp_output_to_scene` / `ViewTransformation`)
   is the same one the layers are placed with, so the cursor still lands where it is pointing. The
-  SurfaceView is not Z-on-top, so its whole subtree — both layers included — stays under the
+  SurfaceView is not Z-on-top, so its whole subtree - both layers included - stays under the
   activity's own window: the drawer, the HUD and every Compose dialog draw above them.
 - **What cannot be layered, and why.**
   - *Frame generation*: each generated frame needs a present of its own on consecutive vblanks, and
-    a display layer latches one buffer per refresh — pacing that is the swapchain's job. While an
+    a display layer latches one buffer per refresh - pacing that is the swapchain's job. While an
     engine is armed the whole scene takes the copy path (unchanged).
   - *Effects with a window above the game*: the chain has to see the whole scene to look the way it
     does on the copy path (and on X11), and the game layer only carries the game. Copy path.
@@ -332,37 +332,37 @@ app window ....... Compose UI, the in-game drawer, the perf HUD, the on-screen c
   every layer down (scene no longer a fullscreen game, zero-copy switched off live, session end),
   `sc_layer_hide_overlay()` is used when only the window above the game closed, and
   `sc_layer_window_gone()` retires both SurfaceControls and drains both pools on a surface loss /
-  HOME / resume. **The overlay layer is always RETIRED, never merely hidden** (both paths) — see
+  HOME / resume. **The overlay layer is always RETIRED, never merely hidden** (both paths) - see
   the HWC note below: a live second SurfaceControl keeps SurfaceFlinger composing on the GPU even
   when it is invisible. The game layer keeps its SurfaceControl through a hide, because it goes up
   and down with every effects / frame-generation toggle.
 - **The display frame-rate vote belongs to one layer.** The refresh-rate stream's
   `sc_layer_set_frame_rate()` (the game's cadence, the same value the app votes on its own surface)
-  is carried **only** by the layer the game presents on — the game layer. The overlay layer is
+  is carried **only** by the layer the game presents on - the game layer. The overlay layer is
   explicitly voted `0`, so a window that redraws once a second can never hold the panel at the
   game's cadence, nor drag the game's cadence down to its own. Each layer remembers what its live
   SurfaceControl carries (`fps_applied`) and re-applies on the next transaction, and a retired
   SurfaceControl resets it so a re-created layer is re-voted from scratch. Log: `display frame-rate
   vote on banner_wayland_game: 60.00 Hz`.
 - **Stats.** The 10 s `stats` line now ends with `| N zero-copy frames` (the game's own buffers) and
-  `| N layer frames` (frames the compositor put on a layer through one of its own buffers — the
+  `| N layer frames` (frames the compositor put on a layer through one of its own buffers - the
   plain layer blit or the effects result). Both are hardware-composed; only the first is copy-free.
 - **Measured on the Pocket FIT (Adreno 750, portrait panel, landscape session → every layer is
   ROT_90 + scaled), `dumpsys android.hardware.graphics.composer3.IComposer/default`:** one layer is
   `composition: DEVICE/DEVICE` (game's own gralloc buffer scanned out by the DPU), with effects on
-  the layer it stays `DEVICE/DEVICE`, but **two** layers flip the whole frame to `DEVICE/CLIENT` —
-  SurfaceFlinger composes it on the GPU — **and it does not come back when the overlay goes away**:
+  the layer it stays `DEVICE/DEVICE`, but **two** layers flip the whole frame to `DEVICE/CLIENT` -
+  SurfaceFlinger composes it on the GPU - **and it does not come back when the overlay goes away**:
   retiring the overlay's SurfaceControl (which the compositor now does rather than merely hiding
   it) leaves the frame in client composition; only re-creating the *game* layer's SurfaceControl
-  clears it (HOME + resume does, reproduced twice). Retiring is still right — one fewer live layer,
-  and it leaves the HWC list — it is just not the whole cure; the open follow-up is to retire and
+  clears it (HOME + resume does, reproduced twice). Retiring is still right - one fewer live layer,
+  and it leaves the HWC list - it is just not the whole cure; the open follow-up is to retire and
   immediately re-create the game layer when the overlay goes, which would cost one black frame
   unless the new SurfaceControl is shown before the old one is dropped. The likely mechanism is the
   DPU's rotator budget (one rotated+scaled layer), not the layer count as such, so a device or
   orientation that needs no rotation may well take both on the DPU. Even in client composition the
   overlay layer is not a loss (SurfaceFlinger does the one blit the compositor would have done), but
   the hardware-composition win is only real for the single-layer cases. Note `VRI[ScreenDecorHwcOverlay]`
-  is always `DISPLAY_DECORATION/CLIENT` (the system's rounded corners) — that is why SurfaceFlinger's
+  is always `DISPLAY_DECORATION/CLIENT` (the system's rounded corners) - that is why SurfaceFlinger's
   `clientCompositionFrames` counter reads 100 % on this device in every state and is useless here.
 - **Not done yet:** a second toplevel that is itself rendering into gralloc buffers could go on the
   overlay layer zero-copy too (the token machinery in `ahb_swapchain.c` is already per-buffer, not
@@ -371,7 +371,7 @@ app window ....... Compose UI, the in-game drawer, the perf HUD, the on-screen c
 ## Screen effects (feat/wayland-effects, `src/effects_chain.c`)
 The X11 renderer's screen-effect chain, run by the compositor between the composited scene and the
 output. Same SPIR-V as the X11 Vulkan renderer (`winlator/*_frag.h`, made by `winlator/gen_shaders.sh`
-and committed — the NDK build compiles no GLSL, so there is no build-time shader tooling), same
+and committed - the NDK build compiles no GLSL, so there is no build-time shader tooling), same
 push-constant layouts, uniform ranges and pass order, so a saved preset looks the same on both backends.
 
 **Present-pass hook order (`vk_present.c`, `vkp_render`):**
@@ -384,7 +384,7 @@ scene  (every draw blitted 1:1 into a scene-sized R8G8B8A8 image; compositor pas
   -> present               generated frames first, the real frame last, FIFO
 ```
 The compositor pass runs when either stage needs it (`vkp_effects_active() || vkp_framegen_active()`).
-Effects operate on the scene; the mapping operates on the output — the chain's result stands for
+Effects operate on the scene; the mapping operates on the output - the chain's result stands for
 the whole scene and goes through the same `draw_to_blit` as a plain frame. With everything off the
 frame takes the old path unchanged (draws blitted straight through the mapping); only the blit filter
 follows the scaling mode (Nearest = `VK_FILTER_NEAREST`).
@@ -409,12 +409,12 @@ them logs an `error` and effects stay off for the session). The app wires the dr
 post-chain block (`XServerDialogState.on*Apply`) to these in `XServerDisplayActivity.initWaylandEffects`
 and remembers the same per-game keys as the Vulkan path (#382).
 
-**Zero-copy interplay:** the chain's result no longer has to land in the app's swapchain — with a
+**Zero-copy interplay:** the chain's result no longer has to land in the app's swapchain - with a
 fullscreen game alone on screen it is copied into the game layer's own gralloc buffer and the game
 **stays on its display layer** while a Look is applied (see "Multi-layer presentation" below). It
 still takes the copy path when a window is drawn above the game (the chain has to see the whole
-scene to look as it does on X11) — `effects  zero-copy paused: a window above the game needs the
-compositor pass for the whole scene` — and always while frame generation is armed
+scene to look as it does on X11) - `effects  zero-copy paused: a window above the game needs the
+compositor pass for the whole scene` - and always while frame generation is armed
 (`framegen  zero-copy paused: frame generation needs the compositor pass`); the layer comes back with
 `effects  zero-copy resumed: the game is back on its own display layer`. A frame this renderer could
 not import (layer-only candidate) still goes on the layer, effects/frame generation skipped, said once.

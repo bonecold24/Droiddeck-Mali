@@ -1,4 +1,4 @@
-// win-fg — logging. On Android goes to logcat (tag "win-fg") so device bring-up
+// win-fg - logging. On Android goes to logcat (tag "win-fg") so device bring-up
 // can trace the layer; elsewhere falls back to stderr.
 #pragma once
 #if defined(__ANDROID__)
@@ -12,7 +12,7 @@
 #endif
 
 // Runtime-gated granular debug trace. The gate is a RUNTIME bool (Config::debug),
-// not a compile-time switch — a shipping .so carries the full trail but pays only
+// not a compile-time switch - a shipping .so carries the full trail but pays only
 // a predicted-not-taken bool test per step when debug is off (no logcat write, no
 // arg evaluation of the message). Same "win-fg" tag so the app captures it under
 // its own UID. Used to step the present path so a freeze leaves an obvious last

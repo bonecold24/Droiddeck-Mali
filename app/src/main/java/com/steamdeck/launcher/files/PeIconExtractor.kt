@@ -11,8 +11,8 @@ import kotlin.math.max
  *
  * Walks the PE resource directory to the first RT_GROUP_ICON, picks the largest /
  * deepest-colour entry it references, then decodes that RT_ICON image. Icon images
- * are either PNG (Vista+) — decoded directly — or a classic DIB (BITMAPINFOHEADER +
- * XOR pixels + 1-bpp AND mask) — decoded by hand here.
+ * are either PNG (Vista+) - decoded directly - or a classic DIB (BITMAPINFOHEADER +
+ * XOR pixels + 1-bpp AND mask) - decoded by hand here.
  *
  * Everything is best-effort: any malformed/oversized/unsupported input returns null.
  */

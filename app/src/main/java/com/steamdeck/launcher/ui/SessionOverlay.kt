@@ -66,7 +66,6 @@ import com.steamdeck.launcher.gpu.FrameGen
 import com.steamdeck.launcher.session.SessionPrefs
 import kotlinx.coroutines.flow.collect
 
-/** A line of numbers in the top-right corner. It takes no touches: everything goes to the game. */
 @Composable
 fun HudText(text: String) {
     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.TopEnd) {
@@ -83,11 +82,6 @@ fun HudText(text: String) {
     }
 }
 
-/**
- * What the user sees until the client draws its first frame: the runtime's milestone, the
- * client's download progress lifted out of its log, a clock, and a hint. Opaque, so a stale
- * frame from an earlier session never shows through, and it swallows touches.
- */
 @Composable
 fun LoadingOverlay(step: String, percent: Int, elapsed: String, hint: String, ended: Boolean) {
     Column(
@@ -116,7 +110,6 @@ fun LoadingOverlay(step: String, percent: Int, elapsed: String, hint: String, en
     }
 }
 
-/** Everything the drawer shows and does. */
 class DrawerActions(
     val steam: Boolean,
     val hudOn: Boolean,
@@ -125,16 +118,13 @@ class DrawerActions(
     val lsfgReady: Boolean,
     val oscMode: String,
     val touchMode: String,
-    /** What "auto" resolves to right now: "touchpad" or "direct". */
     val touchAuto: String,
     val shapeMode: String,
     val fexPreset: String,
     val onHud: (Boolean) -> Unit,
     val onFrameGenPick: (engine: String, multiplier: Int) -> Unit,
     val onKeyboard: () -> Unit,
-    /** Sends the Guide button (the client's menu); null on the desktop, where there is none. */
     val onSteamMenu: (() -> Unit)?,
-    /** Sends Guide + A to open Steam's Quick Access Menu; null on the desktop. */
     val onQam: (() -> Unit)?,
     val onProtons: () -> Unit,
     val onOsc: (String) -> Unit,
@@ -146,13 +136,6 @@ class DrawerActions(
     val onClose: () -> Unit,
 )
 
-/**
- * The drawer Back opens over a running session, in the front end's own dress: a panel that
- * slides in from the right with the switches a player reaches for mid-game as rows whose values
- * open in place, what only applies at the next session under its own heading, and the two ways
- * out at the end. Steam and the desktop share the rows that mean the same on both; the client's
- * own (its menu, the virtual pad, the FEX preset, the compatibility tools) show only there.
- */
 @Composable
 fun SessionDrawer(open: Boolean, a: DrawerActions) {
     val colors = MaterialTheme.colorScheme
@@ -174,7 +157,6 @@ fun SessionDrawer(open: Boolean, a: DrawerActions) {
                     .fillMaxHeight()
                     .width(340.dp)
                     .background(pal.background.copy(alpha = 0.97f))
-                    // The panel swallows its own touches so they do not close it.
                     .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) {}
                     .verticalScroll(rememberScrollState())
                     .padding(horizontal = 14.dp, vertical = 16.dp),
@@ -182,10 +164,7 @@ fun SessionDrawer(open: Boolean, a: DrawerActions) {
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(start = 4.dp, bottom = 6.dp)) {
                     Box(modifier = Modifier.size(10.dp).clip(CircleShape).background(Brush.linearGradient(listOf(colors.primary, pal.primary2))))
                     Spacer(Modifier.width(10.dp))
-                    Column {
-                        Text("SteamDeck", fontSize = 17.sp, fontWeight = FontWeight.Bold, color = colors.onBackground)
-                        Text(if (a.steam) "Steam session" else "Desktop session", fontSize = 11.sp, color = colors.onSurfaceVariant)
-                    }
+                    Text(if (a.steam) "Steam" else "Desktop", fontSize = 17.sp, fontWeight = FontWeight.Bold, color = colors.onBackground)
                 }
                 if (a.onSteamMenu != null && a.onQam != null) {
                     val qamInteraction = remember { MutableInteractionSource() }
@@ -226,14 +205,14 @@ fun SessionDrawer(open: Boolean, a: DrawerActions) {
                 }
 
                 SettingsGroup("Now") {
-                    ToggleRow(host, "hud", "Performance HUD", "The frame counter in the corner.", a.hudOn, onChange = a.onHud)
+                    ToggleRow(host, "hud", "Performance HUD", null, a.hudOn, onChange = a.onHud)
                     val fgOpen = host.open == "fg"
                     val fgLabel = when (a.frameGenEngine) {
                         FrameGen.ENGINE_WINFG -> "Win-FG ${a.frameGenMultiplier}×"
                         FrameGen.ENGINE_LSFG -> "LSFG ${a.frameGenMultiplier}×"
                         else -> "Off"
                     }
-                    SettingsRow("Frame generation", "Extra frames between the real ones; takes effect at once, mid-game included.", highlighted = fgOpen) {
+                    SettingsRow("Frame generation", null, highlighted = fgOpen) {
                         Box {
                             ValueChip(fgLabel, fgOpen) { host.open = if (fgOpen) null else "fg" }
                             AnchoredMenu(fgOpen, onDismiss = { if (host.open == "fg") host.open = null }, title = "Frame generation") {
@@ -245,28 +224,28 @@ fun SessionDrawer(open: Boolean, a: DrawerActions) {
                         }
                     }
                     ChoiceRow(
-                        host, "touch", "Touch", "How a finger drives the pointer.",
+                        host, "touch", "Touch", null,
                         listOf(SessionPrefs.TOUCH_AUTO to "Auto (${a.touchAuto})", SessionPrefs.TOUCH_PAD to "Touchpad", SessionPrefs.TOUCH_DIRECT to "Direct"), a.touchMode,
-                        note = "Touchpad: drag moves, tap clicks. Direct: the pointer jumps under the finger.", onPick = a.onTouch,
+                        onPick = a.onTouch,
                     )
                     if (a.steam) ChoiceRow(
-                        host, "osc", "On-screen controls", "The virtual pad drawn over a game.",
+                        host, "osc", "On-screen controls", null,
                         listOf(SessionPrefs.OSC_AUTO to "Auto", SessionPrefs.OSC_ALWAYS to "Always", SessionPrefs.OSC_STEAM_QAM to "Steam + QAM", SessionPrefs.OSC_NEVER to "Never"), a.oscMode,
-                        note = "Auto shows the full pad when no controller is attached. Steam + QAM shows only those two buttons.", onPick = a.onOsc,
+                        onPick = a.onOsc,
                     )
-                    ActionRow("Keyboard", "The on-screen keyboard, for a field the client or a program is waiting on.", "Show") { host.open = null; a.onKeyboard() }
+                    ActionRow("Keyboard", null, "Show") { host.open = null; a.onKeyboard() }
                 }
 
                 SettingsGroup("Next session") {
                     ChoiceRow(
-                        host, "shape", "Display shape", "gamescope sizes its display once, when a session starts.",
+                        host, "shape", "Display shape", null,
                         listOf(SessionPrefs.SHAPE_AUTO to "The panel's shape", SessionPrefs.SHAPE_WIDE to "16:9 with bars"), a.shapeMode, onPick = a.onShape,
                     )
                     if (a.steam) ChoiceRow(
-                        host, "fex", "FEX preset", "How FEX translates the x86 games the client launches. Applies to the next game launch.",
+                        host, "fex", "FEX preset", null,
                         FexPreset.all.map { it.id to it.label }, a.fexPreset, note = FexPreset.byId(a.fexPreset).detail, onPick = a.onFexPreset,
                     )
-                    if (a.steam) ActionRow("Compatibility tools", "The Proton builds the client can run games with.", "Manage") { host.open = null; a.onProtons() }
+                    if (a.steam) ActionRow("Compatibility tools", null, "Manage") { host.open = null; a.onProtons() }
                 }
 
                 Spacer(Modifier.height(18.dp))
@@ -280,7 +259,6 @@ fun SessionDrawer(open: Boolean, a: DrawerActions) {
     }
 }
 
-/** The one button that ends things: outlined in the error colour, filled on focus. */
 @Composable
 private fun DangerButton(text: String, onClick: () -> Unit) {
     val colors = MaterialTheme.colorScheme

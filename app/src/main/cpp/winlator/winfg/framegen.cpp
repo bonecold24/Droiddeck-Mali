@@ -1,4 +1,4 @@
-// win-fg — compute frame-generation engine implementation.
+// win-fg - compute frame-generation engine implementation.
 #include "framegen.hpp"
 #include "embedded_shaders.hpp"
 #include "log.hpp"
@@ -51,7 +51,7 @@ void FrameGen::destroyImage(Img& i) {
 
 // C1: allocate the per-slot host-visible SSBOs the LK reduce writes partials into.
 // Host-visible + coherent so the CPU can read them back after the owning frame's
-// fence signals (no staging copy needed; the buffers are tiny — kGmThreads*kGmStride
+// fence signals (no staging copy needed; the buffers are tiny - kGmThreads*kGmStride
 // floats each, ~64 KB). Persistently mapped.
 bool FrameGen::makeGmBuffers() {
     const VkDeviceSize sz = (VkDeviceSize)kGmThreads * kGmStride * sizeof(float);
@@ -167,7 +167,7 @@ bool FrameGen::init(const DeviceDispatch* dd, const InstanceDispatch* id,
     if (!makePipe(pGmPrewarp_, embedded::OF3_GM_PREWARP, unused)) return false;
     if (!makePipe(pFlowReg_,  embedded::OF3_FLOWREG, unused)) return false;
     if (!makePipe(pSynth_,    embedded::WFG_SYNTH, unused)) return false;
-    if (!makeGmBuffers()) { WFG_LOGE("framegen: GM SSBO alloc failed — C1 disabled"); }
+    if (!makeGmBuffers()) { WFG_LOGE("framegen: GM SSBO alloc failed - C1 disabled"); }
     WFG_LOGI("framegen init ok (queueFamily=%u, 10 pipelines, model=%d, C1 gm=%d, C2 flow_reg=%d iters=%d)",
              queueFamily_, cfg_.model, cfg_.gmMode, cfg_.frMode, cfg_.frIters);
     return true;
@@ -192,7 +192,7 @@ bool FrameGen::onResize(VkExtent2D extent, VkFormat /*colorFormat*/, bool force)
 
     const VkImageUsageFlags lumaUsage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_STORAGE_BIT;
     // flowLvl_ is cleared every frame (per-frame reset) and C2 copies the cleaned
-    // finest level back into it — both need TRANSFER_DST. The C2 ping-pong images
+    // finest level back into it - both need TRANSFER_DST. The C2 ping-pong images
     // are the copy SOURCE (TRANSFER_SRC).
     const VkImageUsageFlags flowUsage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
     const VkImageUsageFlags regUsage  = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
@@ -203,7 +203,7 @@ bool FrameGen::onResize(VkExtent2D extent, VkFormat /*colorFormat*/, bool force)
         if (!makeImage(pyrB_[l], e, VK_FORMAT_R32_SFLOAT, lumaUsage)) return false;
         if (!makeImage(flowLvl_[l], e, VK_FORMAT_R16G16B16A16_SFLOAT, flowUsage)) return false;
     }
-    // C1: stabilized curr luma — only the levels the dense flow reads (finest..coarsest).
+    // C1: stabilized curr luma - only the levels the dense flow reads (finest..coarsest).
     pyrAs_.resize(kLevels);
     for (int l = flowFinest_; l < kLevels; ++l)
         if (!makeImage(pyrAs_[l], levelExtent(extent, l), VK_FORMAT_R32_SFLOAT, lumaUsage)) return false;

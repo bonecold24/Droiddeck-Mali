@@ -1,4 +1,4 @@
-// win-fg — FrameGen::record() and its lazy per-size descriptor/UBO setup.
+// win-fg - FrameGen::record() and its lazy per-size descriptor/UBO setup.
 // Included from framegen.cpp (has access to FrameGen privates). Written for
 // win-fg; standard Vulkan compute wiring, no third-party code.
 //
@@ -12,12 +12,12 @@
 // the global affine back so wfg_synth is unchanged and the final warp is correct.
 //
 // DECOUPLED (stall-free) SCHEDULING: a true in-frame CPU solve would need a
-// mid-frame GPU submit+readback stall — unacceptable on a GPU-bound title. So we
+// mid-frame GPU submit+readback stall - unacceptable on a GPU-bound title. So we
 // read back the reduce SSBO the caller ALREADY fence-waited (its ring slot from a
 // couple of presents ago) and run ONE Gauss-Newton step per frame, warm-started
 // from the running estimate. Camera motion is temporally smooth, so a ~1-2 frame
 // old affine is an excellent predictor; and because the SAME affine is removed
-// (prewarp) and added back (expand), the result is EXACT for any affine we pick —
+// (prewarp) and added back (expand), the result is EXACT for any affine we pick -
 // an approximate/stale one only changes how much residual the search must absorb,
 // never correctness. Identity affine ⇒ byte-identical to the pre-C1 pipeline, so
 // the bail-to-identity safety path can never be worse than "no pre-warp".
@@ -31,7 +31,7 @@ struct ScratchState {
     // C2: flow-regularization UBO (shared by all iterations; refreshed per frame).
     VkBuffer flowRegUbo = VK_NULL_HANDLE; VkDeviceMemory flowRegUboMem = VK_NULL_HANDLE; void* flowRegUboPtr = nullptr;
     // C1: per-slot global-motion UBO (double-buffered by ring slot so a live GPU
-    // read is never overwritten by the next frame — see the header note).
+    // read is never overwritten by the next frame - see the header note).
     VkBuffer gmUbo[winfg::FrameGen::kGmSlots]{};
     VkDeviceMemory gmUboMem[winfg::FrameGen::kGmSlots]{};
     void* gmUboPtr[winfg::FrameGen::kGmSlots]{};
@@ -170,7 +170,7 @@ static bool ensureScratch(FrameGen* fg, const DeviceDispatch* dd, VkDevice dev,
 
 // Tear down the lazily-built scratch (all UBO buffers + every descriptor set) so a
 // live perf_preset rebuild neither leaks them nor exhausts the descriptor pool.
-// The CALLER must have made the device idle first — no in-flight command buffer may
+// The CALLER must have made the device idle first - no in-flight command buffer may
 // still reference these. Resetting the pool frees every set FrameGen allocated (all
 // sets come from this pool); the mapped UBO memory is unmapped + freed explicitly.
 static void destroyScratch(const DeviceDispatch* dd, VkDevice dev, VkDescriptorPool pool) {
@@ -191,8 +191,8 @@ static void destroyScratch(const DeviceDispatch* dd, VkDevice dev, VkDescriptorP
 }
 
 // ── perf_preset apply / live rebuild ─────────────────────────────────────────
-// Sets the config, resolves the perf_preset -> finest-solved-level, and — when
-// that level changed while resources are already live — safely rebuilds the
+// Sets the config, resolves the perf_preset -> finest-solved-level, and - when
+// that level changed while resources are already live - safely rebuilds the
 // affected per-size flow images (a resize) + scratch descriptor sets and resets
 // the flow predictor. This makes a perf_preset change FULLY LIVE per-present (the
 // conf.toml hot-reload path calls this), so no FG toggle / bg-fg cycle is needed.
@@ -205,7 +205,7 @@ void FrameGen::configure(const Config& c) {
     const int maxFinest = kLevels - 2;   // keep >= 2 solved levels
     if (want > maxFinest) {
         WFG_LOGE("perf-preset=%d wants kFlowFinest=%d but only %d pyramid levels exist "
-                 "(need >=2 solved) — clamping to %d", cfg_.perfPreset, want, kLevels, maxFinest);
+                 "(need >=2 solved) - clamping to %d", cfg_.perfPreset, want, kLevels, maxFinest);
         want = maxFinest;
     }
     if (want < 1) want = 1;              // never solve full-res (level 0)
@@ -224,13 +224,13 @@ void FrameGen::configure(const Config& c) {
     dd_->DeviceWaitIdle(device_);            // no in-flight cmd buf may touch these
     destroyScratch(dd_, device_, descPool_); // free old scratch (UBOs + all sets)
     if (!onResize(extent_, VK_FORMAT_UNDEFINED, /*force=*/true))
-        WFG_LOGE("perf-preset live rebuild: onResize FAILED at %ux%u — FG disabled until next resize",
+        WFG_LOGE("perf-preset live rebuild: onResize FAILED at %ux%u - FG disabled until next resize",
                  extent_.width, extent_.height);
     // Reset the persistent flow predictor so stale, differently-scaled state never
     // feeds the new resolution (avoids a melt/garbage frame on switch). The per-frame
     // flow field (flowLvl_) is already cleared every frame; the cross-frame state is
     // the C1 global-motion estimate + its per-slot reduce partials (dispatched against
-    // the old pyramid) — drop both back to identity.
+    // the old pyramid) - drop both back to identity.
     for (int i = 0; i < 6; ++i) gmRun_[i] = 0.0;
     for (int s = 0; s < kGmSlots; ++s) { gmSlotValid_[s] = false; for (int i = 0; i < 6; ++i) gmLinAt_[s][i] = 0.0; }
     gmHaveEst_ = false; gmEngaged_ = false; gmStableCount_ = 0; gmLastTransPx_ = 0.0f;
@@ -387,7 +387,7 @@ void FrameGen::record(VkCommandBuffer cmd, VkImageView prevView, VkImageView cur
     // Reset the flow field to zero every frame. The coarsest level uses it as its
     // search predictor; carrying it across frames lets a spurious vector feed
     // forward until it diverges and melts the image (the bg/fg pause was resetting
-    // it — that's why artifacts vanished on resume). Fresh zero every frame =
+    // it - that's why artifacts vanished on resume). Fresh zero every frame =
     // stable, standard pyramid flow, no feedback loop.
     {
         VkClearColorValue zero{};
@@ -436,7 +436,7 @@ void FrameGen::record(VkCommandBuffer cmd, VkImageView prevView, VkImageView cur
         disp(pGmPrewarp_, g_scratch.sGmPrewarp[gmSlot][l], levelExtent(extent_, l));
         bar(pyrAs_[l]);
     }
-    // 3) coarse->fine flow (only down to flowFinest_ — reduced res for perf; the
+    // 3) coarse->fine flow (only down to flowFinest_ - reduced res for perf; the
     //    finest level is perf_preset-selectable). Curr input is now the STABILIZED
     //    pyramid (pyrAs), wired in ensureScratch.
     for (int l = kLevels - 1; l >= flowFinest_; --l) {
@@ -575,7 +575,7 @@ static bool ensureScratch(FrameGen* fg, const DeviceDispatch* dd, VkDevice dev,
         wImg(dd, dev, S.sFlow[l], 48, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, flowLvl[l].view, VK_NULL_HANDLE, GEN);
     }
 
-    // C1: reduce sets (one per slot) — prev/curr raw luma at kGmLevel + SSBO + GMUBO.
+    // C1: reduce sets (one per slot) - prev/curr raw luma at kGmLevel + SSBO + GMUBO.
     if (gmSsbo) {
         for (int s = 0; s < FrameGen::kGmSlots; ++s) {
             if (!gmSsbo[s]) continue;
@@ -587,7 +587,7 @@ static bool ensureScratch(FrameGen* fg, const DeviceDispatch* dd, VkDevice dev,
         }
     }
 
-    // C1: prewarp sets (one per slot, per solved flow level) — raw curr in, stabilized out.
+    // C1: prewarp sets (one per slot, per solved flow level) - raw curr in, stabilized out.
     for (int s = 0; s < FrameGen::kGmSlots; ++s) {
         S.sGmPrewarp[s].assign(kLevels, VK_NULL_HANDLE);
         for (int l = fg->flowFinest(); l < kLevels; ++l) {
@@ -637,7 +637,7 @@ static bool ensureScratch(FrameGen* fg, const DeviceDispatch* dd, VkDevice dev,
     S.sSynth = allocSet(dd, dev, pool, pSynth.setLayout);
     wUbo(dd, dev, S.sSynth, 0, S.synthUbo, sizeof(SynthUBO));
     // GENERAL (not SR): these internal flow images stay in GENERAL across the whole
-    // record() (written as storage by expand, sampled here) — see the discard
+    // record() (written as storage by expand, sampled here) - see the discard
     // transition at the top of record().
     wImg(dd, dev, S.sSynth, 34, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, expA.view, samp, GEN);
     wImg(dd, dev, S.sSynth, 35, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, expB.view, samp, GEN);

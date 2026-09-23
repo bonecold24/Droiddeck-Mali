@@ -13,11 +13,11 @@ import java.util.List;
  * choice per mode covers all of it.
  *
  * <p>Distinct from the Android driver the app's compositor loads to put the finished frame on the
- * screen ({@link TurnipDriver}), which every session ends in — and NOT interchangeable with it:
+ * screen ({@link TurnipDriver}), which every session ends in - and NOT interchangeable with it:
  * these are glibc processes, that one is bionic.
  *
  * <p>"" (the default) means the driver the runtime was built with, at
- * {@code usr/lib/libvulkan_freedreno.so} inside it — nothing is set and nothing is touched.
+ * {@code usr/lib/libvulkan_freedreno.so} inside it - nothing is set and nothing is touched.
  * Otherwise the value is an imported driver's id ({@link LinuxVulkanDriverManager}), and the
  * session is handed that driver's ICD manifest in {@code BL_VK_DRIVER}: the session script points
  * the Vulkan loader at it with {@code VK_DRIVER_FILES} after checking both the manifest and the
@@ -47,13 +47,13 @@ public final class LinuxVulkanDriver {
     }
 
     /**
-     * Label for a stored value. An id that is no longer installed says so — the launch path falls
+     * Label for a stored value. An id that is no longer installed says so - the launch path falls
      * back to the runtime's own driver for it.
      */
     public static String optionLabel(Context context, String value) {
         if (value == null || value.isEmpty()) return "Runtime default (built into the runtime)";
         LinuxVulkanDriverManager m = new LinuxVulkanDriverManager(context);
-        if (!m.isInstalled(value)) return value + " (imported, missing — uses the runtime default)";
+        if (!m.isInstalled(value)) return value + " (imported, missing - uses the runtime default)";
         String ver = m.getDriverVersion(value);
         return m.getDriverName(value) + (ver.isEmpty() ? "" : " " + ver) + " (imported)";
     }

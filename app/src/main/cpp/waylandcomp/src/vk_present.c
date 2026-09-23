@@ -1,4 +1,4 @@
-/* Android-surface render backend — see vk_present.h. Uses Turnip via vk_loader
+/* Android-surface render backend - see vk_present.h. Uses Turnip via vk_loader
  * (g_vk.*), not the process-default system Adreno driver. */
 #define _POSIX_C_SOURCE 200809L
 #include "vk_present.h"
@@ -118,7 +118,7 @@ static VkResult timed_wait(VkFence fence, uint64_t timeout) {
 }
 
 /* The scene image (effects path only): every draw composited 1:1 at scene size, the input of the
- * screen-effect chain (effects_chain.c) — and of frame generation once that lands. Recreated on a
+ * screen-effect chain (effects_chain.c) - and of frame generation once that lands. Recreated on a
  * scene size change; frames are fenced, so never while the GPU reads it. */
 static struct { VkImage img; VkDeviceMemory mem; int w, h; } g_scene;
 
@@ -175,7 +175,7 @@ static struct {
 static int64_t g_swap_retry_at_ns;
 static int g_swap_fail_logged;
 
-/* Implemented in waylandcomp_jni.c — notifies Java (dismiss launch overlay). */
+/* Implemented in waylandcomp_jni.c - notifies Java (dismiss launch overlay). */
 extern void banner_on_first_frame(void);
 
 static char g_gpu_name[VK_MAX_PHYSICAL_DEVICE_NAME_SIZE];
@@ -311,7 +311,7 @@ static const char *align_name(int a) {
     }
 }
 
-/* Mirror of ViewTransformation.update(outer = output, inner = scene, mode, alignment) — keep the
+/* Mirror of ViewTransformation.update(outer = output, inner = scene, mode, alignment) - keep the
  * arithmetic identical: the app maps touch input through that class with the same inputs, so any
  * difference here puts the pointer beside what it is pointing at. OFF and FIT are both an
  * aspect-preserving letterbox (OFF only differs in the app's fullscreen gates); TOP/BOTTOM confine
@@ -379,7 +379,7 @@ static int has_ext(VkExtensionProperties *e, uint32_t n, const char *name) {
 static int dev_init(void) {
     if (g_dev_state != 0) return g_dev_state == 1 ? 0 : -1;
 
-    /* Load Turnip (adrenotools) and its entry points — NOT the system driver. */
+    /* Load Turnip (adrenotools) and its entry points - NOT the system driver. */
     if (vk_loader_open(g_driver_path, g_library_name, g_native_lib_dir) != 0) {
         LOGE("present: vk_loader_open failed"); g_dev_state = -1; return -1;
     }
@@ -656,7 +656,7 @@ static int swap_init_locked(void) {
     /* Remembered for the layer path: currentTransform is the rotation the presentation engine (and
      * therefore SurfaceFlinger and the DPU) applies to everything we put on this display. Anything
      * but IDENTITY means every display layer we hand over is a ROTATED layer. sc_layer.c needs that
-     * to decide whether a second layer is affordable — see sc_layer_present_overlay(). */
+     * to decide whether a second layer is affordable - see sc_layer_present_overlay(). */
     g_surface_transform = caps.currentTransform;
     g_surface_transform_known = 1;
     g_caps_extent = caps.currentExtent; /* check_surface_changed() compares against this */
@@ -724,7 +724,7 @@ static int swap_init_locked(void) {
 
     /* Use IDENTITY preTransform when the surface supports it. Setting preTransform =
      * currentTransform tells the presentation engine our content is ALREADY pre-rotated by
-     * that amount — but our blit doesn't rotate, so on a device whose surface reports a 90°
+     * that amount - but our blit doesn't rotate, so on a device whose surface reports a 90°
      * currentTransform the display then rotates our upright frame 90° (game shows sideways).
      * IDENTITY = "don't rotate what I present", which is what we want. */
     VkSurfaceTransformFlagBitsKHR pretrans =
@@ -874,7 +874,7 @@ const char *vkp_modifier_name(uint64_t modifier) {
 }
 
 /* Can the driver create the image vkp_image_import_dmabuf() creates for this format+modifier
- * (2D, DRM_FORMAT_MODIFIER tiling, TRANSFER_SRC, dma-buf memory) — and import it? */
+ * (2D, DRM_FORMAT_MODIFIER tiling, TRANSFER_SRC, dma-buf memory) - and import it? */
 static int modifier_importable(VkFormat fmt, uint64_t modifier) {
     if (!g_vk.GetPhysicalDeviceImageFormatProperties2) return 1; /* can't ask; the create will tell */
     VkPhysicalDeviceExternalImageFormatInfo ext = {

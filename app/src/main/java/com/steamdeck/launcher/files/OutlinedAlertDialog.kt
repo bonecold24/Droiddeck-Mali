@@ -13,7 +13,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.DialogProperties
 
 // Single source of truth for the app's AlertDialogs: a drop-in wrapper around the Material3
-// slot-based AlertDialog that adds a 1dp outline around the whole popup box — matching the
+// slot-based AlertDialog that adds a 1dp outline around the whole popup box - matching the
 // outline that Modifier.outlinedMenuCard() (MenuStyle.kt) puts on the app's menus. Signature
 // mirrors androidx.compose.material3.AlertDialog exactly (compose-bom 2024.02.00 → material3
 // 1.2.0), so every call site can swap AlertDialog( → OutlinedAlertDialog( unchanged. The

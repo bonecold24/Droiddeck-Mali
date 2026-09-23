@@ -8,8 +8,8 @@ import org.json.JSONObject
 import java.io.File
 
 /**
- * The hosted packages that go into the runtime on request — the desktop, the emulators, and the
- * builds we mirror or make ourselves — described by desktop.json beside the runtime's own catalog.
+ * The hosted packages that go into the runtime on request - the desktop, the emulators, and the
+ * builds we mirror or make ourselves - described by desktop.json beside the runtime's own catalog.
  *
  * Two kinds. A `tar` extracts over the rootfs like the runtime itself (the same extractor, links
  * and modes preserved). An `appimage` is one file dropped in /opt/appimages with a .desktop entry
@@ -68,7 +68,7 @@ object DesktopCatalog {
             if (entry.sha256.isNotEmpty()) {
                 listener?.onProgress("Verifying", -1)
                 val actual = LinuxRuntimeInstaller.sha256(download)
-                if (!entry.sha256.equals(actual, ignoreCase = true)) return "Checksum mismatch — nothing was changed"
+                if (!entry.sha256.equals(actual, ignoreCase = true)) return "Checksum mismatch - nothing was changed"
             }
             listener?.onProgress("Installing ${entry.name}", -1)
             when (entry.kind) {

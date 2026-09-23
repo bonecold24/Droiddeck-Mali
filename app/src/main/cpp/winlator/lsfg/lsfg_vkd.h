@@ -1,6 +1,6 @@
 #pragma once
 // ============================================================================
-// lsfg_vkd — the Vulkan entry points the LSFG chain calls, as a single global.
+// lsfg_vkd - the Vulkan entry points the LSFG chain calls, as a single global.
 //
 // Two dispatch styles meet here. Bannerlator's compositor resolves Vulkan
 // through a per-context VkTable (`vk_`), because an adrenotools-loaded driver
@@ -64,7 +64,7 @@ struct LsfgVkDispatch {
 extern LsfgVkDispatch vkd;
 
 // Fill `vkd` from the renderer's table. Returns false (and leaves the chain
-// unusable) if any entry point failed to resolve — better to report the engine
+// unusable) if any entry point failed to resolve - better to report the engine
 // unsupported than to call through a null pointer mid-frame.
 bool lsfgVkdInit(const VkTable& table);
 bool lsfgVkdReady();

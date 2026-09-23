@@ -8,7 +8,7 @@ import org.json.JSONArray
  *
  * Stores an ordered (insertion-order) list of absolute path strings as a JSON array
  * under "file_manager_favorites" in SharedPreferences "file_manager_prefs". Only the
- * absolute path is kept — everything shown on a favourite card (drive label, container
+ * absolute path is kept - everything shown on a favourite card (drive label, container
  * name, display path) is derived live, so a renamed or deleted container resolves
  * correctly for free.
  */

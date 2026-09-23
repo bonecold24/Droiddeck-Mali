@@ -9,12 +9,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import com.steamdeck.launcher.session.SessionPrefs
 
-/**
- * The app's colours, in the icon's three: black, white and its blue. Three ways to deal them
- * out, chosen under Setup › Theme. [primary] is what the selection pill and the Play button are
- * made of; [signal] is the small accent for rules, rings, dots and the eyebrow - the same colour
- * as [primary] in the blue themes, the blue itself in Paper, where the primary is white.
- */
 class Palette(
     val id: String, val label: String, val detail: String,
     val background: Color, val surface: Color, val surfaceVariant: Color, val line: Color, val line2: Color,
@@ -57,7 +51,6 @@ object Themes {
 
 val LocalPalette = staticCompositionLocalOf { Themes.byId(Themes.PAPER) }
 
-/** The app's theme; with no [theme] given, the one saved in the preferences. The app is never light. */
 @Composable
 fun SteamDeckTheme(theme: String? = null, content: @Composable () -> Unit) {
     val id = theme ?: SessionPrefs.theme(LocalContext.current)

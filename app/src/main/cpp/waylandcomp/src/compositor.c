@@ -1,5 +1,5 @@
 /*
- * bannerlator-wayland — the embedded compositor of the Wayland display path.
+ * bannerlator-wayland - the embedded compositor of the Wayland display path.
  *
  * Clients are the Wine processes of a container (winewayland.drv) and, through them,
  * Mesa's Vulkan WSI. Each process is its own client, so a Windows virtual desktop is
@@ -65,7 +65,7 @@
 static FILE *g_log;
 
 /* Lines logged before the session file exists are kept here and written into it, in order, the
- * moment it opens — the compositor runs on its own thread, so anything the app reports as that
+ * moment it opens - the compositor runs on its own thread, so anything the app reports as that
  * thread starts (the display's HDR capability, for one) would otherwise only reach logcat. The
  * lock also serialises the file writes, which now come from the app's threads too. */
 #define PRELOG_MAX 32
@@ -432,7 +432,7 @@ static int on_release_timer(int fd, uint32_t mask, void *data) {
  * Each release takes the next slot of a per-surface cadence (one slot per interval), so a game
  * gets one buffer back per interval however fast it commits. The schedule is kept honest at both
  * ends: a slot in the past is brought to now (the game was slower than the cap, no catch-up burst
- * is owed), and it never runs further ahead than the releases actually queued — with p releases
+ * is owed), and it never runs further ahead than the releases actually queued - with p releases
  * still pending the new one lands at most (p + 1) intervals out, nothing pending means at most
  * one interval. Without that bound the schedule kept slots that were consumed but never
  * delivered (a swapchain rebuild destroys buffers with queued releases) or that a coarser earlier

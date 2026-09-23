@@ -3,7 +3,7 @@
  * bridge winewayland.drv uses for IME text (our soft keyboard).
  *
  * Focus model. winewayland enables its text input as soon as our `enter` names a surface and
- * routes every IME update to that surface's window — inside that window's process (the update
+ * routes every IME update to that surface's window - inside that window's process (the update
  * list is per process). Keyboard focus in this compositor sits on the desktop surface (the
  * desktop owner's process), so text input can't follow it; it follows banner_ime_target():
  * the program window last clicked, else the topmost program window. Clicking into notepad

@@ -1,7 +1,7 @@
 name: Build APK
 
 # One job: the two glibc preload libraries the session needs, then the app around them.
-# Nothing is built on a developer machine — this workflow is the only thing that produces an apk.
+# Nothing is built on a developer machine - this workflow is the only thing that produces an apk.
 #
 # This repo is private, so every minute here is billed. Three caches carry the cost of a rebuild
 # down to what actually changed:
@@ -76,7 +76,7 @@ jobs:
           HEAD=$(git rev-parse --short HEAD)
           if git merge --no-ff --no-edit origin/main >/tmp/merge.out 2>&1; then
             {
-              echo "### ✅ Mergeable"
+              echo "###  Mergeable"
               echo
               echo "\`$HEAD\` merges cleanly onto main (\`$BASE\`). What follows was built from the merged result."
             } > /tmp/pr-merge.md
@@ -87,7 +87,7 @@ jobs:
           if [ -z "$FILES" ]; then
             # The merge did not even start (git said why): quote it rather than list nothing.
             {
-              echo "### ❌ Could not merge onto main (\`$BASE\`)"
+              echo "### ERROR: Could not merge onto main (\`$BASE\`)"
               echo
               echo '```'
               cat /tmp/merge.out
@@ -98,7 +98,7 @@ jobs:
             exit 1
           fi
           {
-            echo "### ❌ Not mergeable — conflicts with main (\`$BASE\`)"
+            echo "### ERROR: Not mergeable - conflicts with main (\`$BASE\`)"
             echo
             echo "Files that conflict:"
             echo
@@ -192,7 +192,7 @@ jobs:
           echo "libfakeinput NEEDED: $NEED"
           for bad in libstdc++.so.6 libgcc_s.so.1; do
             if printf '%s\n' "$NEED" | grep -qx "$bad"; then
-              echo "::error::libfakeinput.so links $bad — the C++ runtime must stay static"; exit 1
+              echo "::error::libfakeinput.so links $bad - the C++ runtime must stay static"; exit 1
             fi
           done
           syms() { readelf -Ws "$1" | awk '$4 == "FUNC" && $5 == "GLOBAL" {sub(/@.*/, "", $8); print $8}'; }
@@ -243,7 +243,7 @@ jobs:
 
       # Every NEEDED of every library we ship must resolve inside the apk or on the device. The
       # first build shipped libwayland-server.so without libffi.so, and the app died on
-      # System.loadLibrary the moment a session started — a check this step would have caught.
+      # System.loadLibrary the moment a session started - a check this step would have caught.
       - name: Check the native dependency closure
         run: |
           set -euo pipefail
@@ -329,12 +329,12 @@ jobs:
             echo
             case "$BUILD_OUTCOME" in
               success)
-                echo "### ✅ Build passed"
+                echo "###  Build passed"
                 echo
                 echo "The apk is the \`steamdeck-apk\` artifact on [this run]($RUN_URL) (signed with the same test key as every build, so it installs over any other)."
                 ;;
               failure)
-                echo "### ❌ Build failed"
+                echo "### ERROR: Build failed"
                 echo
                 echo "The compiler's errors ([full log]($RUN_URL)):"
                 echo
@@ -352,7 +352,7 @@ jobs:
                 echo "</details>"
                 ;;
               skipped|cancelled)
-                echo "### ⏭ Not built"
+                echo "###  Not built"
                 echo
                 echo "The build did not run (see above, or [the run]($RUN_URL))."
                 ;;

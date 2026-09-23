@@ -11,7 +11,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Starts the session's host processes — proot and the audio daemon — and reports the exit status.
+ * Starts the session's host processes - proot and the audio daemon - and reports the exit status.
  * The pid is read out of the hidden field on {@code java.lang.Process} because stopping a session
  * means killing that exact process: proot runs with {@code --kill-on-exit}, so the whole guest
  * tree goes with it.
@@ -89,7 +89,7 @@ public final class ProcessHelper {
         thread.start();
     }
 
-    /** Splits on spaces, honouring backslash-escaped spaces — paths under /data are full of them. */
+    /** Splits on spaces, honouring backslash-escaped spaces - paths under /data are full of them. */
     public static String[] splitCommand(String command) {
         List<String> parts = new ArrayList<>();
         StringBuilder current = new StringBuilder();

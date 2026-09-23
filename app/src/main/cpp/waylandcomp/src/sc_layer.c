@@ -1,4 +1,4 @@
-/* Layer mode: the scene on a small set of ASurfaceControl layers — see sc_layer.h and
+/* Layer mode: the scene on a small set of ASurfaceControl layers - see sc_layer.h and
  * ZERO_COPY_SPIKE.md. The ASurfaceControl/ASurfaceTransaction API is dlsym'd from libandroid.so
  * (API 29+), the same way the X11 renderers' scanout code does it, so the library still loads on
  * older devices and the prototype stays off every other path. */
@@ -572,7 +572,7 @@ static int layer_geometry(int w, int h, int scene_w, int scene_h, int r[8]) {
 
 /* The GAME layer's last placement, kept across SurfaceControl retires and swaps (l->geo_valid is
  * per-SurfaceControl and is cleared by both). This is the src -> dst the display actually works
- * with, and it is what decides whether a second layer is affordable — see overlay_affordable(). */
+ * with, and it is what decides whether a second layer is affordable - see overlay_affordable(). */
 static ARect g_game_src, g_game_dst;
 static int g_game_geo_known;
 
@@ -610,8 +610,8 @@ static void apply_frame_rate(ASurfaceTransaction *tx, struct layer *l) {
 }
 
 /* ---- colour (HDR, banner_color.h) -------------------------------------------------------------
- * The layer is told what its buffer's pixels MEAN — the dataspace (BT2020_PQ for an HDR10 frame) and
- * the game's mastering / content-light metadata — in the same transaction as the buffer, so the
+ * The layer is told what its buffer's pixels MEAN - the dataspace (BT2020_PQ for an HDR10 frame) and
+ * the game's mastering / content-light metadata - in the same transaction as the buffer, so the
  * display never shows an HDR frame decoded as sRGB or the other way round. A layer that has never been
  * tagged is never touched: sessions without an HDR description make no colour call at all. */
 /* How much of the screen the layer's picture covers ("covers 80% of the screen (1920x1080 of 2400x1080)"):
@@ -722,19 +722,19 @@ static void log_layer_count(void) {
  * marked for a swap and the swap rides the NEXT frame: a fresh SurfaceControl is created here, the
  * frame is put on it, and the old one is hidden and unparented IN THE SAME TRANSACTION. Because
  * SurfaceFlinger applies a transaction atomically there is never a composited frame with neither
- * layer on it — no black frame, and no dropped frame beyond the one layer creation. The outgoing
+ * layer on it - no black frame, and no dropped frame beyond the one layer creation. The outgoing
  * buffer is released through the OLD SurfaceControl's callback, which also releases it.
  *
- * ⚠️ MEASURED 2026-09-14, and the news is bad: on the Pocket FIT this does NOT bring hardware
+ *  MEASURED 2026-09-14, and the news is bad: on the Pocket FIT this does NOT bring hardware
  * composition back. The swap fires 6 ms after the overlay goes, SurfaceFlinger really does hand out
- * a new layer (its id changes), the game never drops a frame — and the composer still reports
+ * a new layer (its id changes), the game never drops a frame - and the composer still reports
  * `DEVICE/CLIENT` 24 s later. Neither does dropping the layer path entirely and re-creating the
  * SurfaceControl after a gap. The ONE thing that clears it is HOME + resume, which re-creates the
- * app's whole window and SurfaceView (`VRI[XServerDisplayActivity]#0` becomes `#4`) — so the sticky
+ * app's whole window and SurfaceView (`VRI[XServerDisplayActivity]#0` becomes `#4`) - so the sticky
  * client-composition state belongs to the PARENT surface (or the display), not to this child layer.
  * The phase-4 note that "only re-creating the GAME layer's SurfaceControl clears it" was inferred
  * from HOME + resume and is wrong; see sc_layer.h. The swap is kept because it is free and correct
- * and the mechanism may differ on hardware that does not rotate every layer — but do not claim it
+ * and the mechanism may differ on hardware that does not rotate every layer - but do not claim it
  * restores DEVICE composition, and do not log as if it did.
  *
  * Returns the old SurfaceControl (the caller must add retire_ops for it to the same transaction and
@@ -753,7 +753,7 @@ static ASurfaceControl *swap_sc_begin(struct layer *l) {
     ASurfaceControl *old = l->sc;
     l->sc = fresh;
     /* These describe the SurfaceControl, not the layer: the new one carries none of them yet.
-     * cur_slot / cur_token are deliberately NOT cleared — they name the buffer still on the OLD
+     * cur_slot / cur_token are deliberately NOT cleared - they name the buffer still on the OLD
      * SurfaceControl, which is what the caller passes to add_complete_on as the one being replaced. */
     l->shown = 0;
     l->geo_valid = 0;
@@ -848,7 +848,7 @@ int sc_layer_present_ahb(AHardwareBuffer *ahb, int w, int h, int acquire_fd, voi
     apply_colour(tx, l, color);
     if (!l->shown) api.setVisibility(tx, l->sc, ASC_VISIBILITY_SHOW);
     if (old) retire_ops(tx, old);
-    /* Same buffer, new SurfaceControl: it is NOT free, so no release is reported for it — the swap
+    /* Same buffer, new SurfaceControl: it is NOT free, so no release is reported for it - the swap
      * moved it rather than taking it off screen. */
     if (add_complete_on(tx, l, old ? old : l->sc, l->cur_slot,
                         l->cur_token == token ? NULL : l->cur_token, old ? 1 : 0) != 0) {
@@ -977,19 +977,19 @@ int sc_layer_present_hdr_scene(const struct vkp_draw *draws, int n, const struct
 /* ---- is a SECOND display layer affordable on this display? -----------------------------------
  * MEASURED on the Pocket FIT (2026-09-14, three times): while a second layer is up, this hardware
  * composer hands the WHOLE frame back to the GPU (`DEVICE/CLIENT`), and nothing short of re-creating
- * the app's window brings it back — so on this display the overlay layer costs more than it saves,
+ * the app's window brings it back - so on this display the overlay layer costs more than it saves,
  * every time, for the rest of the session. Where it costs nothing it is still the better path (the
  * game keeps copy-free frames with a window on top), so this is a GATE, not a removal.
  *
  * The gate is read from what the layer path actually knows, never from a device or panel list:
- *   - rotation: vkp_surface_rotation_degrees(), i.e. VkSurfaceCapabilitiesKHR::currentTransform —
+ *   - rotation: vkp_surface_rotation_degrees(), i.e. VkSurfaceCapabilitiesKHR::currentTransform -
  *     what the presentation engine says it does to every layer we hand it;
  *   - scale: the GAME layer's own src -> dst rectangles, the ones passed to setGeometry.
  * Rotated AND scaled is the combination that was measured to cost composition (the DPU's rotator
  * has to take a scaled source); either alone, or neither, is left as it was.
  *
  * Why not just measure the composition type after raising the layer and back out if it comes back
- * CLIENT — which would beat predicting? Because no app can read it. The composition type lives in
+ * CLIENT - which would beat predicting? Because no app can read it. The composition type lives in
  * the Composer HAL; ASurfaceTransactionStats exposes latch time and fences and nothing else, and
  * the only place the value is published is `dumpsys android.hardware.graphics.composer3.IComposer`,
  * which needs android.permission.DUMP and string-parsing. It would also arrive at least a frame
@@ -1006,7 +1006,7 @@ static int overlay_affordable(int *deg, int sw[2], int dw[2]) {
 }
 
 /* -1 = not decided yet, 0 = raising the overlay, 1 = declining it. Logged on every change, so a
- * tester's log says why they are seeing the copy path instead of two layers — and says it again if
+ * tester's log says why they are seeing the copy path instead of two layers - and says it again if
  * the placement changes the answer (e.g. a fullscreen mode that stops scaling the game). */
 static int g_overlay_declined = -1;
 

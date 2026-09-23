@@ -22,7 +22,7 @@ public final class WaylandCompositor {
 
     /** Register a callback fired once, when the compositor presents the first client
      *  frame to the output Surface. Used to dismiss the launch overlay in wayland mode
-     *  (there is no XServer window-content hook). Runs on the compositor thread — the
+     *  (there is no XServer window-content hook). Runs on the compositor thread - the
      *  listener must marshal to the UI thread itself. */
     public static void setFirstFrameListener(Runnable r) { firstFrameListener = r; }
 
@@ -39,12 +39,12 @@ public final class WaylandCompositor {
         /** A window started presenting GPU frames ({@code window} describes it; {@code gpuName} is the
          *  compositor's GPU), or {@code window == null} when that window closed. Compositor thread. */
         void onGameSurface(String window, String gpuName);
-        /** One GPU frame from that window. Compositor thread — keep it cheap. */
+        /** One GPU frame from that window. Compositor thread - keep it cheap. */
         void onGameFrame();
         /** The program behind that window, right after {@link #onGameSurface}: its Linux pid (the
          *  Wayland client's credentials) and executable name ({@code ""} when unknown). The app arms its
-         *  launch-time CPU affinity on it — on X11 that comes from window events, which a Wayland session
-         *  has none of. Compositor thread — marshal to the UI thread. */
+         *  launch-time CPU affinity on it - on X11 that comes from window events, which a Wayland session
+         *  has none of. Compositor thread - marshal to the UI thread. */
         default void onGameProgram(int pid, String program) {}
     }
 
@@ -151,7 +151,7 @@ public final class WaylandCompositor {
     private static native void nativeTextInputPreedit(byte[] utf8, int cursorBegin, int cursorEnd);
     private static native void nativeTextInputDelete(int before, int after);
 
-    /** Start the compositor headless (no output window) — bring-up tests only. */
+    /** Start the compositor headless (no output window) - bring-up tests only. */
     public static native void nativeStart(String xdgRuntimeDir);
 
     /** Start the compositor rendering to {@code surface}. XDG_RUNTIME_DIR = an
@@ -201,7 +201,7 @@ public final class WaylandCompositor {
 
     /** Zero-copy frames the compositor presented in its LAST completed 10 s stats window (the
      *  "| N zero-copy frames" figure of its session-log stats line); 0 while zero-copy is off or
-     *  before the first window closes. Read-only, any thread — the in-game drawer polls it. */
+     *  before the first window closes. Read-only, any thread - the in-game drawer polls it. */
     public static native int nativeZeroCopyFrames();
 
     /** Milliseconds since the compositor last put a game frame on the display layer without a copy;
@@ -244,7 +244,7 @@ public final class WaylandCompositor {
     }
 
     /** Write one line into the compositor's session log (Download/Wayland-logs) under the "display"
-     *  area, from Java. Used for facts the platform knows and the native side does not — the panel's
+     *  area, from Java. Used for facts the platform knows and the native side does not - the panel's
      *  HDR capability, which lives behind android.view.Display. Safe before the compositor thread is
      *  up (the line then only reaches logcat) and safe after it has gone. */
     public static native void nativeLogDisplay(String message);
@@ -382,7 +382,7 @@ public final class WaylandCompositor {
 
     /** Colour grade in the drawer's slider units (brightness/contrast -100..100, gamma 0.5..3.0,
      *  saturation 0..200 percent; 0/0/1/100 = neutral, pass off) plus the FXAA / Toon / CRT / NTSC
-     *  toggles — the same signature as {@code VulkanRenderer.setScreenEffects}. */
+     *  toggles - the same signature as {@code VulkanRenderer.setScreenEffects}. */
     public static native void nativeSetScreenEffects(float brightness, float contrast, float gamma, float saturation,
                                                      boolean fxaa, boolean toon, boolean crt, boolean ntsc);
 

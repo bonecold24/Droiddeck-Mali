@@ -30,9 +30,9 @@ data class StorageRoot(
  * sandbox) even though it is mounted and healthy. The framework knows about it regardless, so the
  * volume set is built from several independent sources:
  *
- *  1. [StorageManager.getStorageVolumes] — the authoritative list, read over Binder.
- *  2. [Context.getExternalFilesDirs] — per-app directories, granted separately from shared storage.
- *  3. `/storage` and `/mnt/media_rw` directory listings — the filesystem view, as a backstop.
+ *  1. [StorageManager.getStorageVolumes] - the authoritative list, read over Binder.
+ *  2. [Context.getExternalFilesDirs] - per-app directories, granted separately from shared storage.
+ *  3. `/storage` and `/mnt/media_rw` directory listings - the filesystem view, as a backstop.
  *
  * Those sources overlap heavily: one SD card is reachable as `/storage/<uuid>`, as
  * `/mnt/media_rw/<uuid>`, and via its app-specific directory, and typically only some of them are
@@ -71,7 +71,7 @@ object StorageRoots {
         val appDirs = appSpecificDirs(context)
         val storageManager = context.getSystemService(StorageManager::class.java)
 
-        // 1 + 2 — framework-reported volumes. Authoritative, and unaffected by our mount view.
+        // 1 + 2 - framework-reported volumes. Authoritative, and unaffected by our mount view.
         storageManager?.storageVolumes.orEmpty()
             .filter { isMounted(it.state) }
             .forEach { volume ->
@@ -92,7 +92,7 @@ object StorageRoots {
                 appDirs.filter { belongsTo(storageManager!!, it, volume) }.forEach { entry.seeds += it }
             }
 
-        // 3 — filesystem backstop, for any volume the framework did not report.
+        // 3 - filesystem backstop, for any volume the framework did not report.
         File("/storage").listFiles().orEmpty().forEach { child ->
             if (!child.isDirectory || child.name == "self" || child.name == "emulated") return@forEach
             volumeOf(child.name).candidates += child
@@ -179,7 +179,7 @@ object StorageRoots {
 
     /**
      * Names a volume the way the rest of the file manager does. The framework description is only
-     * used when it says something more useful than "SD card" — on some devices it is a bare disk
+     * used when it says something more useful than "SD card" - on some devices it is a bare disk
      * name like "android", which tells the user nothing about which card they are looking at.
      */
     private fun labelFor(context: Context, volume: StorageVolume, uuid: String?): String {

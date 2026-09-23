@@ -1,6 +1,6 @@
 #pragma once
 // ============================================================================
-// lsfg_probe — capability gate for native (compositor-side) LSFG frame
+// lsfg_probe - capability gate for native (compositor-side) LSFG frame
 // generation.
 //
 // The Lossless Scaling chain is 25 compute shaders that DXVK's DXBC translator
@@ -18,7 +18,7 @@
 //     shaderStorageImageExtendedFormats must be ENABLED at device creation.
 //     Today the renderer enables no features at all, so all three are off.
 //   * `generate` writes into a storage image, and Android swapchain formats
-//     are frequently not storage-capable — so the format is probed separately
+//     are frequently not storage-capable - so the format is probed separately
 //     once the swapchain has picked one.
 //
 // A device failing any gate reports unsupported UP FRONT, with a reason, so
@@ -85,7 +85,7 @@ struct Caps {
 // Ask the physical device which of the required features it offers.
 // Safe on any driver: if vkGetPhysicalDeviceFeatures2 cannot be resolved, or
 // the device reports below Vulkan 1.2 and `allowVk11` is false, nothing is
-// chained and `queried` is left false — the caller then creates the device
+// chained and `queried` is left false - the caller then creates the device
 // exactly as it always has. With `allowVk11`, a 1.1 device is accepted when
 // `deviceExtensions` lists VK_KHR_spirv_1_4, VK_KHR_shader_float_controls and
 // VK_KHR_vulkan_memory_model, and the memory-model features are queried

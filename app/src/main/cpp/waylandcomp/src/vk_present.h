@@ -7,12 +7,12 @@
  * Owns a Turnip VkDevice + a swapchain on the SurfaceView's ANativeWindow. Each
  * client buffer becomes an image (a dmabuf from winewayland's Vulkan WSI is
  * imported zero-copy; a wl_shm buffer is copied into a host-visible image), and
- * every frame blits the whole scene — desktop, windows, subsurfaces — in order.
+ * every frame blits the whole scene - desktop, windows, subsurfaces - in order.
  */
 
 // Set the Turnip driver to load (adrenotools). Call before the first frame.
 // NULL args -> the backend falls back to the system libvulkan (dmabuf import will
-// likely fail — Adreno lacks drm_format_modifier). driver_path ends with '/'.
+// likely fail - Adreno lacks drm_format_modifier). driver_path ends with '/'.
 void vk_present_set_driver(const char *driver_path, const char *library_name,
                            const char *native_lib_dir);
 
@@ -157,7 +157,7 @@ int vkp_map_rect(int img_w, int img_h, int scene_w, int scene_h, int out[8]);
 /* The output window frames go to (NULL = none); compositor thread. */
 /* Degrees the display rotates every layer we present by (0/90/180/270), -1 before the swapchain
  * exists. From VkSurfaceCapabilitiesKHR::currentTransform, i.e. what the presentation engine says
- * it does — never a device allowlist. The layer path uses it to decide whether a SECOND display
+ * it does - never a device allowlist. The layer path uses it to decide whether a SECOND display
  * layer is affordable on this display (sc_layer_present_overlay). */
 int vkp_surface_rotation_degrees(void);
 

@@ -27,19 +27,19 @@ import java.util.zip.ZipInputStream;
  * The Vulkan driver the in-app compositor runs on. It has to be Turnip: the system Adreno driver
  * does not implement VK_EXT_image_drm_format_modifier, so importing the dma-bufs gamescope hands
  * over fails and the session renders nothing. Two builds ship in the apk, one per Adreno
- * generation, and the GPU decides which is unpacked — unless the user has imported an AdrenoTools
+ * generation, and the GPU decides which is unpacked - unless the user has imported an AdrenoTools
  * zip of their own and chosen it, which then wins.
  *
- * <p>The guest's own Turnip is a different copy entirely — a glibc build inside the rootfs, or an
+ * <p>The guest's own Turnip is a different copy entirely - a glibc build inside the rootfs, or an
  * imported one ({@link LinuxVulkanDriverManager}). This one is the bionic build the app process
  * loads through adrenotools, and it is what every session ends in: whatever draws inside the
  * runtime, this is the driver that puts the frame on the panel.
  *
  * <p>Every driver, bundled or imported, lives under {@code files/graphics_driver/<id>/} with a
- * {@code meta.json} whose {@code libraryName} names the .so beside it — the AdrenoTools layout.
+ * {@code meta.json} whose {@code libraryName} names the .so beside it - the AdrenoTools layout.
  * The import path is ported from Bannerlator's {@code AdrenotoolsManager} (GPL-3.0), including
  * the refusal of zips that belong in the Linux runtime list: a "-Linux" (glibc) Turnip names no
- * library on purpose, and installed here it would put the compositor on the system Vulkan — a
+ * library on purpose, and installed here it would put the compositor on the system Vulkan - a
  * black screen wearing a driver's name.
  */
 public final class TurnipDriver {
@@ -52,11 +52,11 @@ public final class TurnipDriver {
     public static final List<String> BUNDLED = Collections.unmodifiableList(Arrays.asList(DRIVER_A7XX, DRIVER_A8XX));
     /** Overrides the pick, for a device we cannot reach: a7xx, a8xx or system. */
     private static final String OVERRIDE_FILE = "Download/steamdeck-driver";
-    /** Stored choice meaning "pick by GPU" — the default, and what a removed import falls back to. */
+    /** Stored choice meaning "pick by GPU" - the default, and what a removed import falls back to. */
     public static final String AUTO = "";
 
     public static final String HELP_TEXT =
-            "The driver the app's compositor puts frames on the screen with — the last step of every "
+            "The driver the app's compositor puts frames on the screen with - the last step of every "
             + "session, Steam or desktop. AdrenoTools zips only (vulkan.adXXXX.so): a \"-Linux\" Turnip "
             + "belongs in the Linux runtime list above and is refused here. The compositor loads its "
             + "driver once per app process, so a change takes effect after the app is fully closed and "
@@ -70,7 +70,7 @@ public final class TurnipDriver {
         this.contentDir = new File(context.getFilesDir(), "graphics_driver");
     }
 
-    /** Absolute directory holding the driver, with a trailing slash — adrenotools wants both. */
+    /** Absolute directory holding the driver, with a trailing slash - adrenotools wants both. */
     public String driverPath(String driverId) {
         return new File(contentDir, driverId).getAbsolutePath() + "/";
     }
@@ -111,7 +111,7 @@ public final class TurnipDriver {
         return library != null && !library.isEmpty() && new File(new File(contentDir, driverId), library).isFile();
     }
 
-    /** Imported drivers only — the bundled two are listed by {@link #BUNDLED}. */
+    /** Imported drivers only - the bundled two are listed by {@link #BUNDLED}. */
     public List<String> enumerateImported() {
         ArrayList<String> ids = new ArrayList<>();
         File[] dirs = contentDir.listFiles();
@@ -141,7 +141,7 @@ public final class TurnipDriver {
     /**
      * Import an AdrenoTools zip. Returns the new driver id.
      * @throws IllegalArgumentException with a user-facing reason when the zip is not an AdrenoTools
-     *         driver — including when it is a Linux runtime driver, which says which list it belongs in;
+     *         driver - including when it is a Linux runtime driver, which says which list it belongs in;
      *         {@link IOException} on read/extract failures.
      */
     public String installFromZip(Uri zipUri, String displayName) throws IOException {
@@ -220,7 +220,7 @@ public final class TurnipDriver {
             return libraryName + " is not a 64-bit AArch64 ELF shared library";
         // A glibc build that happens to carry a libraryName would load nothing in this process.
         if (LinuxVulkanDriverManager.containsAscii(library, "libc.so.6"))
-            return libraryName + " links glibc — a \"-Linux\" Turnip, which belongs under \"Linux runtime driver\"";
+            return libraryName + " links glibc - a \"-Linux\" Turnip, which belongs under \"Linux runtime driver\"";
         return null;
     }
 
@@ -258,7 +258,7 @@ public final class TurnipDriver {
     }
 
     /**
-     * The user's choice first — an imported driver, or one of the bundled two pinned by hand —
+     * The user's choice first - an imported driver, or one of the bundled two pinned by hand -
      * then the Downloads override, then the GPU. A chosen import that has since been removed logs
      * and falls through, so a stale preference never blocks a session.
      */
@@ -291,7 +291,7 @@ public final class TurnipDriver {
         String model = gpuModel();
         Log.i(TAG, "gpu model: " + (model == null ? "unknown" : model));
         if (model != null) {
-            // "Adreno750", "adreno_830" — the generation is the first digit of the three.
+            // "Adreno750", "adreno_830" - the generation is the first digit of the three.
             java.util.regex.Matcher m = java.util.regex.Pattern.compile("(\\d)\\d\\d").matcher(model);
             if (m.find()) {
                 char generation = m.group(1).charAt(0);

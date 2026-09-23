@@ -129,7 +129,7 @@ struct VkTable {
 // Included after SCANOUT_LOG is defined above; its own definition is guarded.
 #include "../scanout/ScanoutContext.h"
 
-// Native (compositor-side) LSFG frame generation — capability gate.
+// Native (compositor-side) LSFG frame generation - capability gate.
 #include "lsfg/lsfg_probe.h"
 #include <memory>
 #include <string>
@@ -493,8 +493,8 @@ private:
     // storage support on a swapchain format is not something a driver owes us.
     //
     // So when frame gen is armed the whole existing recording is redirected at
-    // a composite image we own — format-identical to the swapchain, so every
-    // existing pipeline stays render-pass compatible — and a copy moves it into
+    // a composite image we own - format-identical to the swapchain, so every
+    // existing pipeline stays render-pass compatible - and a copy moves it into
     // the acquired swapchain image at the end. With frame gen off, not one of
     // these objects is created and the direct-to-swapchain path is untouched.
     struct CompositeTarget {

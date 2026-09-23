@@ -111,7 +111,6 @@ import com.steamdeck.launcher.gpu.FrameGen
 import java.io.File
 import kotlin.math.roundToInt
 
-/** Everything the front end shows; the activity owns the values and the work behind them. */
 class FrontEndState(
     val installed: String?,
     val ready: Boolean,
@@ -127,14 +126,11 @@ class FrontEndState(
     val logsEnabled: Boolean,
     val steamGames: List<Library.SteamGame>,
     val emulators: List<Library.Emulator>,
-    /** A session alive in the background: what it is, or null. */
     val running: String?,
     val frameGenEngine: String = FrameGen.ENGINE_OFF,
     val frameGenMultiplier: Int = 2,
     val lsfgReady: Boolean = false,
-    /** A page shown in the pane instead of the selection ("settings:steam", "settings:lxqt", "performance"), or null. */
     val pageKey: String? = null,
-    /** The colour theme in use (ui/Themes ids). */
     val theme: String = Themes.PAPER,
 )
 
@@ -159,18 +155,11 @@ class FrontEndActions(
     val onOffline: () -> Unit,
     val onEmulatorHelp: () -> Unit,
     val onCredits: () -> Unit,
-    /** Leaves the page in the pane (back key, the rail, or the page's own Back). */
     val onPageBack: () -> Unit = {},
     val onTheme: (String) -> Unit = {},
 )
 
-// ───────────────────────────── Motion ─────────────────────────────
 
-/**
- * One place for every duration and spring on this screen. The durations honour the system
- * animator scale, so a device set to "no animations" in developer options collapses them to
- * an instant snap instead of ignoring the user's choice.
- */
 internal object Motion {
     var scale = 1f
     val Ease = CubicBezierEasing(0.2f, 0.8f, 0.2f, 1f)
@@ -183,15 +172,10 @@ internal object Motion {
 private val Shape10 = RoundedCornerShape(10.dp)
 private val Shape12 = RoundedCornerShape(12.dp)
 
-/** A colour for a thing that has no art: stable per name, so it does not change between visits. */
 private fun hueOf(name: String) = (name.hashCode().toUInt() % 360u).toFloat()
 private fun tint(h: Float, s: Float = 0.7f, v: Float = 0.58f) = Color.hsv(h, s, v)
 private fun artBrush(h: Float) = Brush.linearGradient(listOf(tint(h), tint((h + 32f) % 360f, 0.65f, 0.30f), tint((h + 64f) % 360f, 0.6f, 0.14f)))
 
-/**
- * A row that rises into place: the i-th row of a page starts 60 ms after the one before it, so
- * a page change reads as one cascade rather than a cut.
- */
 @Composable
 internal fun Rise(i: Int, modifier: Modifier = Modifier, content: @Composable () -> Unit) {
     val state = remember { MutableTransitionState(false) }.apply { targetState = true }
@@ -203,7 +187,6 @@ internal fun Rise(i: Int, modifier: Modifier = Modifier, content: @Composable ()
     ) { content() }
 }
 
-/** Alpha + lift on first composition, delayed by the item's index: sub-list children stagger in. */
 @Composable
 private fun Modifier.staggerIn(i: Int): Modifier {
     val t = remember { Animatable(0f) }
@@ -211,7 +194,6 @@ private fun Modifier.staggerIn(i: Int): Modifier {
     return graphicsLayer { alpha = t.value; translationY = (1f - t.value) * 10.dp.toPx() }
 }
 
-/** A diagonal band of light that sweeps across the content once, whenever [trigger] turns on. */
 @Composable
 private fun Modifier.shine(trigger: Boolean, strength: Float = 0.22f): Modifier {
     val x = remember { Animatable(-1f) }
@@ -232,20 +214,10 @@ private fun Modifier.shine(trigger: Boolean, strength: Float = 0.22f): Modifier 
     }
 }
 
-// ───────────────────────────── Screen ─────────────────────────────
 
-/**
- * The front end: a rail of what can be launched - Steam and its games, the desktop and its
- * emulators and their games - and the chosen thing on the right with its launch button. A
- * session running in the background is the first thing on the rail, and tapping it goes back
- * to it. Landscape puts the rail beside the content; a narrow screen puts it above.
- */
 @Composable
 fun FrontEndScreen(s: FrontEndState, a: FrontEndActions, page: (@Composable () -> Unit)? = null) {
     var selected by rememberSaveable { mutableStateOf("steam") }
-    // Every category starts folded when the app opens: three headers and their counts, and the
-    // rail unfolds only what the user reaches for. (rememberSaveable keeps a fold across a
-    // rotation, not across launches, which is the point.)
     var openDesktop by rememberSaveable { mutableStateOf(false) }
     var openSteam by rememberSaveable { mutableStateOf(false) }
     var openEmu by rememberSaveable { mutableStateOf("") }
@@ -278,7 +250,6 @@ fun FrontEndScreen(s: FrontEndState, a: FrontEndActions, page: (@Composable () -
     }
 }
 
-// ───────────────────────────── Rail ─────────────────────────────
 
 @Composable
 private fun Rail(
@@ -311,7 +282,6 @@ private fun Rail(
             LinearProgressIndicator(modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp))
         }
 
-        // A session in the background: the way back to it, first.
         var lastRunning by remember { mutableStateOf("") }
         if (s.running != null) lastRunning = s.running
         AnimatedVisibility(
@@ -320,7 +290,6 @@ private fun Rail(
             exit = shrinkVertically(Motion.tw(220)) + fadeOut(Motion.tw(180)),
         ) { RunningTile(lastRunning, a.onResume) }
 
-        // The rail's selection is one pill that glides between rows; the rows only recolour.
         val pal = LocalPalette.current
         var navOrigin by remember { mutableStateOf(Offset.Zero) }
         val positions = remember { mutableStateMapOf<String, Rect>() }
@@ -370,8 +339,6 @@ private fun Rail(
                     NavItem("Settings", "settings:lxqt", selected == "settings:lxqt", small = true, tiny = true, muted = true, i = s.emulators.count { it.installed }, register = register, unregister = unregister) { a.onDesktopSettings() }
                 }
             Spacer(Modifier.height(6.dp))
-            // Setup: the same fold as Steam and Desktop. A row that holds a value opens a small menu
-            // in place; a row that opens a page lights up while the page is shown.
             val menus = remember { MenuHost() }
             val item: @Composable (String, String?, Int, String?, () -> Unit) -> Unit = { label, value, i, key, act ->
                 NavItem(label, key ?: "x", key != null && selected == key, small = true, tiny = true, muted = true, value = value, i = i, register = register, unregister = unregister) { act() }
@@ -385,7 +352,6 @@ private fun Rail(
                     item("Frame generation", s.frameGenLabel, 3, null) { menus.open = "fg" }
                     AnchoredMenu(
                         menus.open == "fg", onDismiss = { if (menus.open == "fg") menus.open = null }, title = "Frame generation",
-                        note = "Extra frames between the real ones on the way to the screen, so 30 fps looks like 60. Takes effect at once, mid-game included.",
                     ) {
                         val need = if (s.lsfgReady) null else "install Lossless Scaling in Steam"
                         MenuItem("Off", checked = s.frameGenEngine == FrameGen.ENGINE_OFF) { a.onFrameGenPick(FrameGen.ENGINE_OFF, 2); menus.open = null }
@@ -399,7 +365,6 @@ private fun Rail(
                     item("Session logs", if (s.logsEnabled) "on" else "off", 6, null) { menus.open = "logs" }
                     AnchoredMenu(
                         menus.open == "logs", onDismiss = { if (menus.open == "logs") menus.open = null }, title = "Session logs",
-                        note = "Each session leaves a folder in Downloads: the guest log, the device and network reports, the app's own log.",
                     ) {
                         MenuItem("On", checked = s.logsEnabled) { if (!s.logsEnabled) a.onLogs(); menus.open = null }
                         MenuItem("Off", checked = !s.logsEnabled) { if (s.logsEnabled) a.onLogs(); menus.open = null }
@@ -409,7 +374,6 @@ private fun Rail(
                     item("Start offline", when { s.offlineAccount == null -> "sign in first"; s.offline -> "on"; else -> "off" }, 7, null) { if (s.offlineAccount != null) menus.open = "offline" }
                     AnchoredMenu(
                         menus.open == "offline", onDismiss = { if (menus.open == "offline") menus.open = null }, title = "Start offline",
-                        note = "The client starts as ${s.offlineAccount ?: "the saved account"} without the network: the library and installed games, no store.",
                     ) {
                         MenuItem("On", checked = s.offline) { if (!s.offline) a.onOffline(); menus.open = null }
                         MenuItem("Off", checked = !s.offline) { if (s.offline) a.onOffline(); menus.open = null }
@@ -423,8 +387,8 @@ private fun Rail(
                 }, 8, null, a.onRuntime)
                 Box {
                     item("Theme", Themes.byId(s.theme).label, 9, null) { menus.open = "theme" }
-                    AnchoredMenu(menus.open == "theme", onDismiss = { if (menus.open == "theme") menus.open = null }, title = "Theme", note = "The icon's three colours, dealt out three ways. Applies at once.") {
-                        for (t in Themes.all) MenuItem(t.label, checked = s.theme == t.id, detail = t.detail) { a.onTheme(t.id); menus.open = null }
+                    AnchoredMenu(menus.open == "theme", onDismiss = { if (menus.open == "theme") menus.open = null }, title = "Theme") {
+                        for (t in Themes.all) MenuItem(t.label, checked = s.theme == t.id) { a.onTheme(t.id); menus.open = null }
                     }
                 }
             }
@@ -469,7 +433,6 @@ private fun RunningTile(name: String, onResume: () -> Unit) {
     }
 }
 
-/** A sub-list that unfolds; its children stagger in through [NavItem]'s index. */
 @Composable
 private fun Sub(open: Boolean, content: @Composable () -> Unit) {
     val line = LocalPalette.current.line
@@ -517,7 +480,7 @@ private fun NavItem(
             .padding(horizontal = 10.dp, vertical = if (small) 7.dp else 9.dp),
     ) {
         if (caret != null) {
-            Text("▶", fontSize = 9.sp, color = sub, modifier = Modifier.width(14.dp).rotate(rot))
+            Text("›", fontSize = 16.sp, color = sub, modifier = Modifier.width(14.dp).rotate(rot))
         }
         Text(
             label, fontSize = if (tiny) 13.sp else if (small) 14.sp else 15.sp,
@@ -532,9 +495,7 @@ private fun NavItem(
     }
 }
 
-// ───────────────────────────── Pane ─────────────────────────────
 
-/** The chosen thing, behind a blurred wash of its own colour; a change sinks the old page out and cascades the new one in. */
 @Composable
 private fun Pane(s: FrontEndState, selected: String, a: FrontEndActions, page: (@Composable () -> Unit)?, modifier: Modifier) {
     Box(modifier = modifier) {
@@ -591,8 +552,6 @@ private fun Content(s: FrontEndState, selected: String, a: FrontEndActions, modi
         when {
             selected == "steam" -> {
                 Rise(0) { Eyebrow("Steam") }
-                Rise(1) { Title("Valve's native client, under gamescope") }
-                Rise(2) { Lede("Big Picture with a controller, or the client's desktop UI. Installed games launch straight from the rail or the shelf below.") }
                 Rise(3) {
                     Actions {
                         PrimaryButton("Play", enabled = s.ready && !s.busy, onClick = a.onPlay)
@@ -601,7 +560,7 @@ private fun Content(s: FrontEndState, selected: String, a: FrontEndActions, modi
                     }
                 }
                 Rise(4) { SectionTitle("Installed", "${s.steamGames.size} game${if (s.steamGames.size == 1) "" else "s"}") }
-                if (s.steamGames.isEmpty()) Rise(5) { Note("Nothing installed yet. Press Play, sign in, and install from the store; games appear here and on the left.") }
+                if (s.steamGames.isEmpty()) Rise(5) { Note("No games installed.") }
                 else Rise(5, Modifier.weight(1f).fillMaxWidth()) { ArtGrid(s.steamGames.map { g -> Tile(g.name, g.library, g.art, "steam:${g.appId}", null) { a.onSteamGame(g) } }) }
             }
             selected.startsWith("app:") -> {
@@ -612,7 +571,6 @@ private fun Content(s: FrontEndState, selected: String, a: FrontEndActions, modi
                     Rise(2) {
                         Row {
                             Column(modifier = Modifier.weight(1f)) {
-                                Lede("Starts the Steam session and launches the game straight away (steam://rungameid/${g.appId}).")
                                 Actions {
                                     PrimaryButton("Launch", enabled = s.ready && !s.busy) { a.onSteamGame(g) }
                                     Cog(a.onSteamSettings)
@@ -631,8 +589,6 @@ private fun Content(s: FrontEndState, selected: String, a: FrontEndActions, modi
             }
             selected == "desktop" -> {
                 Rise(0) { Eyebrow("Desktop") }
-                Rise(1) { Title("Linux desktop environment") }
-                Rise(2) { Lede("Files, Firefox and the emulators' own windows. Emulators and their games launch from the rail, under gamescope, where the GPU is.") }
                 Rise(3) {
                     Actions {
                         PrimaryButton(if (s.desktopInstalled) "Desktop" else "Install the desktop first", enabled = s.ready && !s.busy && s.desktopInstalled, onClick = a.onDesktop)
@@ -642,7 +598,7 @@ private fun Content(s: FrontEndState, selected: String, a: FrontEndActions, modi
                 }
                 Rise(4) { SectionTitle("Emulators", "${s.emulators.count { it.installed }} installed · ${s.emulators.count { !it.installed }} available") }
                 Rise(5) {
-                    Text("?  why emulators do not run on the desktop", fontSize = 12.sp, color = colors.onSurfaceVariant, modifier = Modifier.padding(bottom = 6.dp).clip(Shape10).clickable(onClick = a.onEmulatorHelp).padding(horizontal = 6.dp, vertical = 4.dp))
+                    Text("?  Why emulators?", fontSize = 12.sp, color = colors.onSurfaceVariant, modifier = Modifier.padding(bottom = 6.dp).clip(Shape10).clickable(onClick = a.onEmulatorHelp).padding(horizontal = 6.dp, vertical = 4.dp))
                 }
                 Rise(6, Modifier.weight(1f).fillMaxWidth()) {
                     ArtGrid(s.emulators.map { e -> Tile(e.name, if (e.installed) (if (e.id == "retroarch") "browses its own games" else "${e.games.size} game${if (e.games.size == 1) "" else "s"}") else "not installed", null, "emu:${e.id}", e.iconRes, dim = !e.installed) { if (e.installed) a.onEmulator(e) else a.onApps() } })
@@ -653,7 +609,6 @@ private fun Content(s: FrontEndState, selected: String, a: FrontEndActions, modi
                 if (e == null) Note("Not installed.") else {
                     Rise(0) { Eyebrow("Desktop · ${e.system}") }
                     Rise(1) { Title(e.name) }
-                    Rise(2) { Lede("Opens fullscreen under gamescope. Games are the ${e.system} files in the ROMs folder; each launches straight in.") }
                     Rise(3) {
                         Actions {
                             Image(painterResource(e.iconRes), null, modifier = Modifier.size(40.dp))
@@ -710,7 +665,6 @@ private fun Content(s: FrontEndState, selected: String, a: FrontEndActions, modi
 
 private class Tile(val title: String, val sub: String, val art: File?, val key: String, val iconRes: Int? = null, val dim: Boolean = false, val onClick: () -> Unit)
 
-// ───────────────────────────── Type + small parts ─────────────────────────────
 
 @Composable
 internal fun Eyebrow(t: String) {
@@ -746,11 +700,9 @@ private fun Chip(t: String, ok: Boolean) {
     )
 }
 
-/** Hover/focus/press state shared by every control that lifts, glows or squashes. */
 @Composable
 private fun rememberHot(src: MutableInteractionSource): Boolean = src.collectIsFocusedAsState().value || src.collectIsHoveredAsState().value
 
-/** The launch button: gradient, a sheen that sweeps on focus, a squash on press. */
 @Composable
 private fun PrimaryButton(text: String, enabled: Boolean = true, onClick: () -> Unit) {
     val colors = MaterialTheme.colorScheme
@@ -760,7 +712,6 @@ private fun PrimaryButton(text: String, enabled: Boolean = true, onClick: () -> 
     val pressed by src.collectIsPressedAsState()
     val scale by animateFloatAsState(if (pressed) 0.955f else if (hot) 1.02f else 1f, Motion.sp(0.5f, Spring.StiffnessMedium), label = "btnScale")
     val lift by animateFloatAsState(if (hot) 14f else 6f, Motion.tw(300), label = "btnLift")
-    val nudge by animateFloatAsState(if (hot) 2f else 0f, Motion.sp(0.5f), label = "tri")
     Row(
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp),
         modifier = Modifier
@@ -771,7 +722,6 @@ private fun PrimaryButton(text: String, enabled: Boolean = true, onClick: () -> 
             .hoverable(src).clickable(interactionSource = src, indication = LocalIndication.current, enabled = enabled, onClick = onClick)
             .padding(horizontal = 18.dp, vertical = 11.dp),
     ) {
-        Text("▶", fontSize = 11.sp, color = if (enabled) colors.onPrimary else colors.onSurfaceVariant, modifier = Modifier.graphicsLayer { translationX = nudge.dp.toPx() })
         Text(text, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 0.5.sp, color = if (enabled) colors.onPrimary else colors.onSurfaceVariant, maxLines = 1)
     }
 }
@@ -824,14 +774,12 @@ private fun Poster(art: File?, name: String, modifier: Modifier) {
     }
 }
 
-// ───────────────────────────── Grid + tiles ─────────────────────────────
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun ArtGrid(tiles: List<Tile>, wide: Boolean = false) {
     val square = tiles.isNotEmpty() && tiles.all { it.art == null && it.iconRes != null }
     LazyVerticalGrid(
-        // Thumbnails to recognise a game by, not posters; icon tiles are squares.
         columns = GridCells.Adaptive(minSize = if (square) 64.dp else if (wide) 92.dp else 70.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp),
         contentPadding = PaddingValues(top = 6.dp, bottom = 14.dp, start = 4.dp, end = 4.dp),
@@ -845,7 +793,6 @@ private fun ArtGrid(tiles: List<Tile>, wide: Boolean = false) {
     }
 }
 
-/** A tile lifts, rings and shines when the pad lands on it; its play badge pops in. */
 @Composable
 private fun GameTile(t: Tile, wide: Boolean, square: Boolean, src: MutableInteractionSource, hot: Boolean) {
     val colors = MaterialTheme.colorScheme
@@ -866,7 +813,6 @@ private fun GameTile(t: Tile, wide: Boolean, square: Boolean, src: MutableIntera
     ) {
         Box(modifier = Modifier.fillMaxWidth().shine(hot)) {
             Art(t.art, t.iconRes, t.title, Modifier.fillMaxWidth(), wide)
-            // Qualified: the enclosing Column would otherwise pick its scoped overload.
             androidx.compose.animation.AnimatedVisibility(
                 visible = hot, modifier = Modifier.align(Alignment.Center),
                 enter = scaleIn(Motion.sp(0.5f), initialScale = 0.5f) + fadeIn(Motion.tw(200)),
@@ -875,7 +821,7 @@ private fun GameTile(t: Tile, wide: Boolean, square: Boolean, src: MutableIntera
                 Box(
                     contentAlignment = Alignment.Center,
                     modifier = Modifier.size(if (square) 26.dp else 32.dp).graphicsLayer { shadowElevation = 10.dp.toPx(); shape = CircleShape; clip = false; spotShadowColor = pal.signal }.clip(CircleShape).background(pal.signal),
-                ) { Text("▶", fontSize = if (square) 9.sp else 11.sp, color = Color.White, modifier = Modifier.padding(start = 2.dp)) }
+                ) { Text("›", fontSize = if (square) 16.sp else 20.sp, color = Color.White) }
             }
         }
         Column(modifier = Modifier.padding(horizontal = 6.dp, vertical = 5.dp)) {
@@ -888,7 +834,6 @@ private fun GameTile(t: Tile, wide: Boolean, square: Boolean, src: MutableIntera
 @Composable
 private fun Art(art: File?, iconRes: Int?, label: String, modifier: Modifier, wide: Boolean = false) {
     val colors = MaterialTheme.colorScheme
-    // Game art is a poster (2:3) or a screenshot (16:9); an emulator's icon is a square.
     val ratio = if (art == null && iconRes != null) 1f else if (wide) 16f / 9f else 2f / 3f
     Box(modifier = modifier.aspectRatio(ratio).background(if (art == null && iconRes == null) artBrush(hueOf(label)) else Brush.linearGradient(listOf(colors.surfaceVariant, colors.surface)))) {
         when {

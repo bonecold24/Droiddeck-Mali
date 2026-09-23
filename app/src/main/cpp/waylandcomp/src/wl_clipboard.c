@@ -1,6 +1,6 @@
 /*
  * Clipboard: wl_data_device_manager (core, v3) and zwlr_data_control_manager_v1 (v1), selection
- * only — drag and drop is refused. Both protocols share one selection:
+ * only - drag and drop is refused. Both protocols share one selection:
  *
  *   owner CLIENT  a program's wl_data_source / zwlr_data_control_source_v1 (its mime list)
  *   owner HOST    text the app pushed from Android's clipboard (offered under the text mimes)

@@ -18,7 +18,7 @@ ROWS=$(gh api "repos/$REPO/pulls?state=all&per_page=100" --paginate \
   echo "| Contributor | Pull request | Opened | State |"
   echo "|---|---|---|---|"
   if [ -z "$ROWS" ]; then
-    echo "| — | none yet | | |"
+    echo "| - | none yet | | |"
   else
     while IFS=$'\t' read -r login num title opened state url; do
       echo "| [@$login](https://github.com/$login) | [#$num]($url) $title | $opened | $state |"
