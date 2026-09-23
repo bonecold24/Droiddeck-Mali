@@ -31,7 +31,7 @@ fun ProtonDialog(
         text = {
             Column {
                 Text(
-                    "Native ARM64 Proton builds beside the ARM64 Proton Valve ships. Installed when a session starts - a large download - and then chosen per game in Steam under Properties → Compatibility.",
+                    "Adds ARM64 Proton builds. Downloads at next session start; select per game in Steam > Properties > Compatibility.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )

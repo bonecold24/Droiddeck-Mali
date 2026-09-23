@@ -19,20 +19,18 @@ fun RomsDialog(path: String?, onChoose: () -> Unit, onClear: () -> Unit, onDismi
         text = {
             Column {
                 Text(
-                    "A folder on this device that every session shows as ROMs in the home folder " +
-                        "(/root/ROMs) - open it from any emulator's file dialog. All of internal " +
-                        "storage is there too, as Storage.",
+                    "This folder appears as /root/ROMs in each session. Internal storage is available at /root/Storage.",
                     style = MaterialTheme.typography.bodyMedium,
                 )
                 Spacer(Modifier.height(10.dp))
                 Text(
-                    path ?: "No folder chosen yet.",
+                    path ?: "No folder chosen",
                     style = MaterialTheme.typography.bodySmall,
                     color = if (path != null) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 Spacer(Modifier.height(6.dp))
                 Text(
-                    "Takes effect at the next session. A folder on an SD card works too.",
+                    "Applies next session. SD cards are supported.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
