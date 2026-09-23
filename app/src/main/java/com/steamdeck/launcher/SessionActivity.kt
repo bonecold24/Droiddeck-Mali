@@ -504,7 +504,7 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
             KeyEvent.KEYCODE_VOLUME_UP, KeyEvent.KEYCODE_VOLUME_DOWN, KeyEvent.KEYCODE_VOLUME_MUTE ->
                 return super.dispatchKeyEvent(event)
         }
-        if (padBridge?.onKeyEvent(event) == true) return true
+        if (event.keyCode != KeyEvent.KEYCODE_BACK && padBridge?.onKeyEvent(event) == true) return true
         // A hardware keyboard, forwarded to the compositor's wl_keyboard. Back is left to the
         // activity, which opens the drawer.
         val fromPad = event.device != null && PadBridge.isFromController(event.device)
