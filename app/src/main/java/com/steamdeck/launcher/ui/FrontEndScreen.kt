@@ -551,8 +551,9 @@ private fun Content(s: FrontEndState, selected: String, a: FrontEndActions, modi
                 Rise(0) { Eyebrow("Steam") }
                 Rise(3) {
                     Actions {
-                        PrimaryButton("Play", enabled = s.ready && !s.busy, onClick = a.onPlay)
-                        SecondaryButton("Desktop UI", enabled = s.ready && !s.busy, onClick = a.onPlayDesktopUi)
+                        // Enabled without a runtime: the session's loading screen installs it first.
+                        PrimaryButton("Play", enabled = !s.busy, onClick = a.onPlay)
+                        SecondaryButton("Desktop UI", enabled = !s.busy, onClick = a.onPlayDesktopUi)
                         Cog(a.onSteamSettings)
                     }
                 }

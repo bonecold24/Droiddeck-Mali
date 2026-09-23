@@ -203,7 +203,12 @@ class MainActivity : ComponentActivity() {
                         theme = theme,
                     ),
                     FrontEndActions(
-                        onPlay = { startActivity(Intent(this, SessionActivity::class.java)) },
+                        onPlay = {
+                            // No runtime and not an Adreno: the same warning Setup gives, before any download.
+                            val warn = installed == null && !com.steamdeck.launcher.core.DeviceSupport.adreno()
+                            if (warn && available != null) showNonAdreno = available
+                            else startActivity(Intent(this, SessionActivity::class.java))
+                        },
                         onPlayDesktopUi = {
                             startActivity(Intent(this, SessionActivity::class.java)
                                 .putExtra(SessionService.EXTRA_STEAM_UI, "desktop"))

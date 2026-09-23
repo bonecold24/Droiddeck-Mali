@@ -140,6 +140,7 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
         surfaceView.pointerIcon = noCursor
 
         loading = LoadingState(this)
+        if (!SessionState.running && com.steamdeck.launcher.runtime.LinuxRuntimeInstaller.installedVersion(this) == null) installRuntimeThenStart()
         hud = PerfHud(this)
         hud.onPresentingWindowChanged = {
             if (FrameGen.engine(this) != FrameGen.ENGINE_OFF) CompositorHost.rearmFrameGen { applyFrameGen() }
@@ -254,7 +255,47 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
 
     // ── Compositor ──────────────────────────────────────────────────────────────────────────
 
+    /** True while the loading screen is installing the Linux runtime; the session waits for it. */
+    @Volatile private var installingRuntime = false
+
+    /**
+     * First Play on a fresh install: the runtime is downloaded and unpacked here, on the loading
+     * screen's own line and bar, and the session starts when it is in. Nothing else changes.
+     */
+    private fun installRuntimeThenStart() {
+        installingRuntime = true
+        loading.step = "downloading the Linux runtime"
+        loading.percent = -1
+        Thread({
+            val release = com.steamdeck.launcher.runtime.LinuxRuntimeInstaller.fetchRelease()
+            val mb = release?.let { it.size / 1_000_000 } ?: 0L
+            val ok = release != null && com.steamdeck.launcher.runtime.LinuxRuntimeInstaller.install(this, release) { stage, p ->
+                uiHandler.post {
+                    loading.percent = p
+                    loading.step = when (stage) {
+                        "Downloading" -> if (p >= 0 && mb > 0) "downloading the Linux runtime · ${p * mb / 100} of $mb MB" else "downloading the Linux runtime"
+                        "Verifying" -> "checking the Linux runtime"
+                        else -> "unpacking the Linux runtime"
+                    }
+                }
+            }
+            uiHandler.post {
+                installingRuntime = false
+                if (!ok) {
+                    loading.showEnded(if (release == null) "Could not reach the runtime catalog. Check the connection and press Play again."
+                        else "The Linux runtime did not install. Check the connection and press Play again.")
+                    return@post
+                }
+                loading.percent = -1
+                loading.step = "Starting the session…"
+                // The surface may have come and gone while the download ran; start on the live one.
+                if (surfaceView.holder.surface?.isValid == true) surfaceCreated(surfaceView.holder)
+            }
+        }, "runtime-install").start()
+    }
+
     override fun surfaceCreated(holder: SurfaceHolder) {
+        if (installingRuntime) return
         val runtimeDir = File(filesDir, ".wayland-rt").apply { mkdirs() }
         // The compositor hands this keymap to wl_keyboard clients, which is how the guest reads
         // the evdev codes we inject.
@@ -423,7 +464,7 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
             override fun run() {
                 if (!watching) return
                 if (loading.visible && !loading.ended) {
-                    loading.update(this@SessionActivity, SessionState.logFile)
+                    if (!installingRuntime) loading.update(this@SessionActivity, SessionState.logFile)
                     if (ticks++ % 2 == 0) loading.tick()
                 }
                 handler.postDelayed(this, 500)
