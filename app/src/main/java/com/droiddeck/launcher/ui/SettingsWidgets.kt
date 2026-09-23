@@ -242,8 +242,8 @@ fun <T> ChoiceRow(
 }
 
 @Composable
-fun ToggleRow(host: MenuHost, key: String, label: String, hint: String?, checked: Boolean, enabled: Boolean = true, onChange: (Boolean) -> Unit) =
-    ChoiceRow(host, key, label, hint, listOf(true to "On", false to "Off"), checked, enabled, onPick = onChange)
+fun ToggleRow(host: MenuHost, key: String, label: String, hint: String?, checked: Boolean, enabled: Boolean = true, chipModifier: Modifier = Modifier, onChange: (Boolean) -> Unit) =
+    ChoiceRow(host, key, label, hint, listOf(true to "On", false to "Off"), checked, enabled, chipModifier = chipModifier, onPick = onChange)
 
 @Composable
 fun MultiRow(

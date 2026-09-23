@@ -179,6 +179,8 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
                     CursorOverlay(cursorPos, cursorVisible, resources.displayMetrics.density)
                     if (hud.text.isNotEmpty()) HudText(hud.text)
                     if (loading.visible) LoadingOverlay(loading.step, loading.percent, loading.elapsed, loading.hint, loading.ended)
+                    // Opening the drawer takes the controller away from the game: release its pad.
+                    androidx.compose.runtime.LaunchedEffect(drawerOpen) { if (drawerOpen) padBridge?.releaseAll() }
                     SessionDrawer(drawerOpen, DrawerActions(
                         steam = SessionState.mode == SessionService.MODE_STEAM,
                         isHomeApp = isHomeApp,
@@ -607,6 +609,10 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
             KeyEvent.KEYCODE_VOLUME_UP, KeyEvent.KEYCODE_VOLUME_DOWN, KeyEvent.KEYCODE_VOLUME_MUTE ->
                 return super.dispatchKeyEvent(event)
         }
+        // With the drawer open the controller drives the drawer, not the game: Android's own
+        // handling moves focus with the d-pad and stick, and its fallbacks make A select and B Back
+        // (which closes the drawer) - the same as on the app's main screen.
+        if (drawerOpen && event.device != null && PadBridge.isFromController(event.device)) return super.dispatchKeyEvent(event)
         if (event.keyCode != KeyEvent.KEYCODE_BACK && padBridge?.onKeyEvent(event) == true) return true
         // A hardware keyboard, forwarded to the compositor's wl_keyboard. Back is left to the
         // activity, which opens the drawer.
@@ -648,6 +654,7 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
     }
 
     override fun dispatchGenericMotionEvent(event: MotionEvent): Boolean {
+        if (drawerOpen && event.device != null && PadBridge.isFromController(event.device)) return super.dispatchGenericMotionEvent(event)
         if (padBridge?.onMotionEvent(event) == true) return true
         if (event.isFromSource(android.view.InputDevice.SOURCE_MOUSE) && !drawerOpen && onMouse(event)) return true
         return super.dispatchGenericMotionEvent(event)
