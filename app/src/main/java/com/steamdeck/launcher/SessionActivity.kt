@@ -140,6 +140,12 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
         surfaceView.pointerIcon = noCursor
 
         loading = LoadingState(this)
+        if (!SessionState.running) {
+            val needRuntime = com.steamdeck.launcher.runtime.LinuxRuntimeInstaller.installedVersion(this) == null
+            val needDesktop = intent.getStringExtra(SessionService.EXTRA_MODE) == SessionService.MODE_DESKTOP &&
+                !com.steamdeck.launcher.runtime.DesktopCatalog.desktopInstalled(this)
+            if (needRuntime || needDesktop) installThenStart(needRuntime, needDesktop)
+        }
         hud = PerfHud(this)
         hud.onPresentingWindowChanged = {
             if (FrameGen.engine(this) != FrameGen.ENGINE_OFF) CompositorHost.rearmFrameGen { applyFrameGen() }
@@ -254,7 +260,64 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
 
     // ── Compositor ──────────────────────────────────────────────────────────────────────────
 
+    /** True while the loading screen is installing the Linux runtime or the desktop; the session waits for it. */
+    @Volatile private var installingRuntime = false
+
+    /**
+     * First Play (or Desktop) on a fresh install: the runtime, and for the desktop its package,
+     * are downloaded and unpacked here, on the loading screen's own line and bar, and the session
+     * starts when they are in. Nothing else changes.
+     */
+    private fun installThenStart(runtime: Boolean, desktop: Boolean) {
+        installingRuntime = true
+        loading.step = if (runtime) "downloading the Linux runtime" else "downloading the desktop"
+        loading.percent = -1
+        Thread({
+            val problem = (if (runtime) installRuntime() else null) ?: (if (desktop) installDesktop() else null)
+            uiHandler.post {
+                installingRuntime = false
+                if (problem != null) { loading.showEnded(problem); return@post }
+                loading.percent = -1
+                loading.step = "Starting the session…"
+                // The surface may have come and gone while the download ran; start on the live one.
+                if (surfaceView.holder.surface?.isValid == true) surfaceCreated(surfaceView.holder)
+            }
+        }, "runtime-install").start()
+    }
+
+    /** Reports one package's download on the loading screen: "<what> · 332 of 791 MB", checking, unpacking. */
+    private fun progressFor(what: String, mb: Long) = com.steamdeck.launcher.runtime.LinuxRuntimeInstaller.ProgressListener { stage, p ->
+        uiHandler.post {
+            loading.percent = p
+            loading.step = when {
+                stage.startsWith("Downloading") -> if (p >= 0 && mb > 0) "downloading $what · ${p * mb / 100} of $mb MB" else "downloading $what"
+                stage.startsWith("Verifying") -> "checking $what"
+                else -> "unpacking $what"
+            }
+        }
+    }
+
+    /** Null when the runtime is in, else the loading screen's closing line. */
+    private fun installRuntime(): String? {
+        val release = com.steamdeck.launcher.runtime.LinuxRuntimeInstaller.fetchRelease()
+            ?: return "Could not reach the runtime catalog. Check the connection and press Play again."
+        val ok = com.steamdeck.launcher.runtime.LinuxRuntimeInstaller.install(this, release,
+            progressFor("the Linux runtime", release.size / 1_000_000))
+        return if (ok) null else "The Linux runtime did not install. Check the connection and press Play again."
+    }
+
+    /** Null when the desktop package is in, else the loading screen's closing line. */
+    private fun installDesktop(): String? {
+        uiHandler.post { loading.percent = -1; loading.step = "downloading the desktop" }
+        val entry = com.steamdeck.launcher.runtime.DesktopCatalog.fetch()?.firstOrNull { it.id == "desktop" }
+            ?: return "Could not reach the desktop catalog. Check the connection and press Desktop again."
+        val problem = com.steamdeck.launcher.runtime.DesktopCatalog.install(this, entry,
+            progressFor("the desktop", entry.size / 1_000_000))
+        return problem?.let { "The desktop did not install ($it). Check the connection and press Desktop again." }
+    }
+
     override fun surfaceCreated(holder: SurfaceHolder) {
+        if (installingRuntime) return
         val runtimeDir = File(filesDir, ".wayland-rt").apply { mkdirs() }
         // The compositor hands this keymap to wl_keyboard clients, which is how the guest reads
         // the evdev codes we inject.
@@ -423,7 +486,7 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
             override fun run() {
                 if (!watching) return
                 if (loading.visible && !loading.ended) {
-                    loading.update(this@SessionActivity, SessionState.logFile)
+                    if (!installingRuntime) loading.update(this@SessionActivity, SessionState.logFile)
                     if (ticks++ % 2 == 0) loading.tick()
                 }
                 handler.postDelayed(this, 500)
