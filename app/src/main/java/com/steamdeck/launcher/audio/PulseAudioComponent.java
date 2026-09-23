@@ -28,7 +28,7 @@ public class PulseAudioComponent extends SessionPart {
     /** Where the guest reaches the daemon; the session exports PULSE_SERVER=unix:<this>. */
     public static final String SOCKET_NAME = "PS0";
     /** Identifies the bundled pulseaudio.tzst; a change here re-unpacks it over what a device has. */
-    private static final String BUNDLE_STAMP = "2026-09-23-pa13-suspend-r4";
+    private static final String BUNDLE_STAMP = "2026-09-23-pa13-suspend-r5";
 
     private final File workingDir;
     /** Where the daemon's own output is kept for this session, or null for logcat only. */

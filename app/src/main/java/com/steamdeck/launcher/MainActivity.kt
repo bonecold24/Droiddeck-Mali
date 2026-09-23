@@ -298,9 +298,18 @@ class MainActivity : ComponentActivity() {
         // The session's logs land in Downloads so a failed run can be handed over as a folder
         // rather than dug out of app-private storage. targetSdk 28 means the old permission still
         // grants exactly that.
+        val wanted = ArrayList<String>()
         if (checkSelfPermission(Manifest.permission.WRITE_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED) {
-            requestPermissions(arrayOf(Manifest.permission.WRITE_EXTERNAL_STORAGE), 1)
+            wanted.add(Manifest.permission.WRITE_EXTERNAL_STORAGE)
         }
+        // The microphone is on by default; ask once, with the storage prompt, so voice chat works
+        // without a trip to the settings. A refusal is not asked again - the toggle asks when used.
+        if (SessionPrefs.micEnabled(this) && !SessionPrefs.micAsked(this)
+            && checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+            wanted.add(Manifest.permission.RECORD_AUDIO)
+            SessionPrefs.setMicAsked(this)
+        }
+        if (wanted.isNotEmpty()) requestPermissions(wanted.toTypedArray(), 1)
         // A session folder left without its ending - the process was killed - gets it now.
         if (!SessionState.running) Thread({ SessionArtifacts.finishAbandoned(this) }, "finish-abandoned").start()
     }

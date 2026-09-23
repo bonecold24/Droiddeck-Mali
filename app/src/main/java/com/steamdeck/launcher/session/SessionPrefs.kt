@@ -78,8 +78,15 @@ object SessionPrefs {
         prefs(context).edit().putBoolean("directAudio", on).apply()
     }
 
-    /** The microphone, its own opt-in: the helper opens an input stream only when asked. */
-    fun micEnabled(context: Context): Boolean = prefs(context).getBoolean("mic", false)
+    /** The microphone for voice chat, on unless turned off; used only once RECORD_AUDIO is granted. */
+    fun micEnabled(context: Context): Boolean = prefs(context).getBoolean("mic", true)
+
+    /** Whether the app has already asked for the microphone once at start-up. */
+    fun micAsked(context: Context): Boolean = prefs(context).getBoolean("micAsked", false)
+
+    fun setMicAsked(context: Context) {
+        prefs(context).edit().putBoolean("micAsked", true).apply()
+    }
 
     fun setMicEnabled(context: Context, on: Boolean) {
         prefs(context).edit().putBoolean("mic", on).apply()
