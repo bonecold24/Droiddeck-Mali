@@ -150,6 +150,7 @@ class FrontEndActions(
     val onRoms: () -> Unit,
     val onFiles: () -> Unit,
     val onLogs: () -> Unit,
+    val onShareLogs: () -> Unit = {},
     val onOffline: () -> Unit,
     val onEmulatorHelp: () -> Unit,
     val onCredits: () -> Unit,
@@ -363,6 +364,7 @@ private fun Rail(
                     ) {
                         MenuItem("On", checked = s.logsEnabled) { if (!s.logsEnabled) a.onLogs(); menus.open = null }
                         MenuItem("Off", checked = !s.logsEnabled) { if (s.logsEnabled) a.onLogs(); menus.open = null }
+                        MenuItem("Share latest logs", checked = false) { a.onShareLogs(); menus.open = null }
                     }
                 }
                 Box {

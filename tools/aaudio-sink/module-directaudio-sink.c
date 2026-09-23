@@ -63,6 +63,10 @@ PA_MODULE_USAGE(
 #define STATS_EVERY_USEC (30 * PA_USEC_PER_SEC)
 /* Never queue more than this ahead of the relay's target, whatever it asks for. */
 #define MAX_AHEAD_MS 250
+/* Always keep at least this much queued. The relay starts its target at two bursts (8 ms), which
+ * a producer inside proot misses while the client is loading: two underruns in the first seconds
+ * on the FIT, steady stutter on a slower phone. 40 ms of slack costs 40 ms of latency at most. */
+#define MIN_AHEAD_MS 40
 
 static const char* const valid_modargs[] = {
     "socket", "sink_name", "sink_properties", "volume", "performance_mode", "adaptive", NULL
@@ -239,6 +243,8 @@ static int service_ring(struct userdata *u) {
         return -1;
     }
     target = (uint32_t) (r->target_frames > 0 ? r->target_frames : 2 * u->burst);
+    if (target < u->ss.rate / 1000 * MIN_AHEAD_MS)
+        target = u->ss.rate / 1000 * MIN_AHEAD_MS;
     if (target > (uint32_t) (u->ss.rate / 1000 * MAX_AHEAD_MS))
         target = (uint32_t) (u->ss.rate / 1000 * MAX_AHEAD_MS);
     avail = da_ring_avail(r);

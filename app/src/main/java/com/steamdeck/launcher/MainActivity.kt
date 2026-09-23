@@ -32,6 +32,7 @@ import com.steamdeck.launcher.ui.DesktopAppsDialog
 import com.steamdeck.launcher.ui.PackageRow
 import com.steamdeck.launcher.session.OfflineMode
 import com.steamdeck.launcher.session.ProtonExtras
+import com.steamdeck.launcher.session.SessionLogShare
 import com.steamdeck.launcher.session.SessionPrefs
 import com.steamdeck.launcher.ui.ProtonDialog
 import com.steamdeck.launcher.ui.ProtonRow
@@ -239,6 +240,15 @@ class MainActivity : ComponentActivity() {
                         onLogs = {
                             SessionPrefs.setLogsEnabled(this, !SessionPrefs.logsEnabled(this))
                             logsEnabled = SessionPrefs.logsEnabled(this)
+                        },
+                        onShareLogs = {
+                            Thread({
+                                val zip = runCatching { SessionLogShare.zipLatest(this) }.getOrNull()
+                                ui.post {
+                                    if (zip == null) android.widget.Toast.makeText(this, "No session logs yet: run a session first.", android.widget.Toast.LENGTH_LONG).show()
+                                    else startActivity(SessionLogShare.shareIntent(this, zip))
+                                }
+                            }, "share-logs").start()
                         },
                         onOffline = {
                             OfflineMode.setEnabled(this, !OfflineMode.enabled(this))
