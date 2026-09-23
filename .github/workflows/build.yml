@@ -299,8 +299,9 @@ jobs:
           WORK=$(mktemp -d)
           unzip -q "$APK" 'lib/arm64-v8a/*' -d "$WORK"
           cd "$WORK/lib/arm64-v8a"
-          # Provided by the platform, so never packaged.
-          SYSTEM="libc.so libm.so libdl.so liblog.so libandroid.so libz.so libvulkan.so
+          # Provided by the platform, so never packaged. libstdc++.so is Android's minimal system
+          # C++ runtime; the Termux PTY JNI library has this in its NEEDED list.
+          SYSTEM="libc.so libm.so libdl.so liblog.so libandroid.so libz.so libvulkan.so libstdc++.so
                   libGLESv2.so libEGL.so libnativewindow.so libjnigraphics.so libaaudio.so
                   libOpenSLES.so libmediandk.so libcamera2ndk.so libsync.so libneuralnetworks.so"
           fail=0
