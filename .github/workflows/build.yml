@@ -150,7 +150,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: app/src/main/assets/linuxfs
-          key: preloads-${{ env.PRELOAD_CACHE_VERSION }}-${{ hashFiles('app/src/main/cpp/fakeinput_steam.cpp', 'tools/linuxfs/preload/*.c', 'tools/linuxfs/overlay/usr/local/bin/*', 'tools/linuxfs/overlay/usr/bin/**', 'tools/linuxfs/desktop/*', 'tools/gamescope/release.env', 'tools/mangoapp/*') }}
+          key: preloads-${{ env.PRELOAD_CACHE_VERSION }}-${{ hashFiles('app/src/main/cpp/fakeinput_steam.cpp', 'tools/linuxfs/preload/*.c', 'tools/linuxfs/overlay/usr/local/bin/*', 'tools/linuxfs/overlay/usr/bin/**', 'tools/linuxfs/desktop/*', 'tools/gamescope/release.env', 'tools/wlroots/release.env', 'tools/mangoapp/*') }}
 
       - name: Build libfakeinput.so and libblsession.so (glibc aarch64)
         if: steps.preloads.outputs.cache-hit != 'true'
@@ -191,6 +191,15 @@ jobs:
             test -f "$D/usr/local/bin/gamescope"
             rm gamescope.tzst
           fi
+          # The patched wlroots for the desktop's GPU renderers (tools/wlroots), the same way.
+          if [ -f tools/wlroots/release.env ]; then
+            . tools/wlroots/release.env
+            gh release download "${WLROOTS_TAG}" -R "${GITHUB_REPOSITORY}" -p wlroots.tzst -O wlroots.tzst
+            echo "${WLROOTS_SHA256}  wlroots.tzst" | sha256sum -c -
+            tar --use-compress-program=unzstd -xf wlroots.tzst -C "$D"
+            test -f "$D/usr/local/lib/droiddeck-wlroots/libwlroots-0.20.so"
+            rm wlroots.tzst
+          fi
           # Valve's aarch64 mangoapp for Deck mode's performance overlay, plus the five libraries the
           # runtime lacks, pinned by sha256 in tools/mangoapp/packages.txt. Stored under the SONAME
           # each is loaded by, as real files: assets cannot carry symlinks.
@@ -212,6 +221,8 @@ jobs:
           ls -l "$M"
           # And the desktop's launcher and labwc defaults, staged over the desktop package's copies.
           install -Dm644 tools/linuxfs/desktop/droiddeck-desktop "$D/usr/local/bin/droiddeck-desktop"
+          install -Dm644 tools/linuxfs/desktop/droiddeck-gpu "$D/usr/local/bin/droiddeck-gpu"
+          install -Dm644 tools/linuxfs/desktop/droiddeck-desktop-gpu "$D/usr/local/bin/droiddeck-desktop-gpu"
           install -Dm644 tools/linuxfs/desktop/autostart "$D/etc/xdg/labwc/autostart"
           install -Dm644 tools/linuxfs/desktop/rc.xml "$D/etc/xdg/labwc/rc.xml"
           install -Dm644 tools/linuxfs/desktop/panel.conf "$D/etc/xdg/lxqt/panel.conf"

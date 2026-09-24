@@ -330,9 +330,10 @@ object SessionPrefs {
     }
 
     /**
-     * What the desktop shell composites with: pixman (software, the default - the Adreno stand-in
-     * is not a DRM render node, so labwc's gbm allocator cannot use it), or gles2 / vulkan for a
-     * device that has a real node. `Download/droiddeck-wlr-renderer` still overrides it.
+     * What the desktop shell composites with: pixman (software, the default), or vulkan / gles2 on
+     * the GPU - those need the app's patched wlroots (tools/wlroots), since the Adreno stand-in is
+     * not a DRM device and stock wlroots cannot allocate on it. `Download/droiddeck-wlr-renderer`
+     * still overrides it.
      */
     fun desktopRenderer(context: Context): String = prefs(context).getString("desktopRenderer", "pixman") ?: "pixman"
 

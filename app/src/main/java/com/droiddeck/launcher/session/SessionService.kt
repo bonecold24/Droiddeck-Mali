@@ -407,12 +407,11 @@ class SessionService : Service() {
             }
             SessionState.fakeInputDir = fakeInputDir
         }
-        // The desktop is wlroots (labwc), and wlroots allocates its buffers through gbm on a real
-        // DRM render node. Ours is a KGSL stand-in that gbm cannot use - labwc dies at "unable to
-        // create allocator" - so the desktop shell is composited by pixman (software, a shm
-        // allocator, no DRM). Accelerated clients on it pay a CPU copy; a 2D emulator does not
-        // notice, a demanding one does. droiddeck-wlr-renderer in Downloads (pixman/vulkan/gles2)
-        // overrides it, for trying acceleration on a device that has a real node.
+        // The desktop is wlroots (labwc). Stock wlroots allocates through gbm on a real DRM render
+        // node, and ours is a KGSL stand-in - labwc died at "unable to create allocator" - so the
+        // default is pixman (software, shm), where a Vulkan program cannot draw at all; those run
+        // through droiddeck-gpu instead. vulkan / gles2 use the app's patched wlroots and fall back
+        // to pixman by themselves. droiddeck-wlr-renderer in Downloads overrides the choice.
         if (SessionState.mode == MODE_DESKTOP) {
             val override = File(Environment.getExternalStorageDirectory(), "Download/droiddeck-wlr-renderer")
                 .takeIf { it.isFile }?.let { FileUtils.readString(it)?.trim() }

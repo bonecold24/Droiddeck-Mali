@@ -56,6 +56,9 @@ object SessionFiles {
         // staging them into a runtime without it would make the desktop look present when it is not.
         val desktop = arrayOf(
             "usr/local/bin/droiddeck-desktop" to "usr/local/bin/droiddeck-desktop",
+            // Games and emulators from the menu, full screen in a gamescope of their own.
+            "usr/local/bin/droiddeck-gpu" to "usr/local/bin/droiddeck-gpu",
+            "usr/local/bin/droiddeck-desktop-gpu" to "usr/local/bin/droiddeck-desktop-gpu",
             "etc/xdg/labwc/autostart" to "etc/xdg/labwc/autostart",
             "etc/xdg/labwc/rc.xml" to "etc/xdg/labwc/rc.xml",
             "etc/xdg/lxqt/panel.conf" to "etc/xdg/lxqt/panel.conf",
@@ -75,9 +78,13 @@ object SessionFiles {
             "usr/local/lib/mangoapp/libtraceevent.so.1",
             "usr/local/lib/mangoapp/libtracefs.so.1",
         ).map { it to it }
+        // The patched wlroots (tools/wlroots) the desktop loads for its vulkan / gles2 renderers.
+        val wlroots = if (File(root, "usr/bin/labwc").isFile) {
+            arrayOf("usr/local/lib/droiddeck-wlroots/libwlroots-0.20.so" to "usr/local/lib/droiddeck-wlroots/libwlroots-0.20.so")
+        } else emptyArray()
         val optional = (arrayOf(
             "usr/local/bin/gamescope" to "usr/local/bin/gamescope",
-        ) + mangoapp).filter { (asset, _) ->
+        ) + wlroots + mangoapp).filter { (asset, _) ->
             val dir = asset.substringBeforeLast('/')
             runCatching { context.assets.list("linuxfs/$dir")?.contains(asset.substringAfterLast('/')) == true }.getOrDefault(false)
         }

@@ -14,9 +14,25 @@ export QT_QPA_PLATFORMTHEME=lxqt
 # The prefs for this are only advisory and a profile can override them; the environment is not.
 export MOZ_DISABLE_CONTENT_SANDBOX=1 MOZ_DISABLE_GMP_SANDBOX=1 MOZ_DISABLE_RDD_SANDBOX=1
 export MOZ_DISABLE_SOCKET_PROCESS_SANDBOX=1 MOZ_DISABLE_UTILITY_SANDBOX=1
-# wlroots allocates through gbm on a real DRM node, which the KGSL stand-in is not: pixman
-# (software, shm) is what boots here. BL_WLR_RENDERER=vulkan/gles2 tries acceleration.
+# pixman composites in software and gives programs shm buffers only, so a Vulkan program on it
+# fails at its swapchain. vulkan (or gles2) composite on the GPU and give programs DMA-BUFs, but
+# stock wlroots allocates through gbm on a real DRM node and the KGSL stand-in is not one ("unable
+# to create allocator"): they need the app's patched wlroots (tools/wlroots), whose Vulkan
+# allocator exports the buffers instead. BL_WLR_RENDERER picks; see the fallback at the end.
 export WLR_RENDERER=${BL_WLR_RENDERER:-pixman}
+WLROOTS_DIR=/usr/local/lib/droiddeck-wlroots
+BASE_LD_LIBRARY_PATH=${LD_LIBRARY_PATH:-}
+use_renderer() {
+  export WLR_RENDERER=$1
+  if [ "$1" != pixman ] && [ -f "$WLROOTS_DIR/libwlroots-0.20.so" ]; then
+    export LD_LIBRARY_PATH=$WLROOTS_DIR${BASE_LD_LIBRARY_PATH:+:$BASE_LD_LIBRARY_PATH}
+  elif [ -n "$BASE_LD_LIBRARY_PATH" ]; then
+    export LD_LIBRARY_PATH=$BASE_LD_LIBRARY_PATH
+  else
+    unset LD_LIBRARY_PATH
+  fi
+}
+use_renderer "$WLR_RENDERER"
 # The desktop's own log, beside the session's, so labwc and the programs on it can be read apart
 # from the session that started them. The session log keeps the milestones either way.
 if [ -n "${BL_DEBUG_DIR:-}" ]; then
@@ -85,12 +101,38 @@ export BL_DESKTOP=1
 ln -sf /usr/local/bin/bannerlator-steam-launch /usr/local/bin/steamdeck-steam 2>/dev/null
 ln -sf /usr/local/bin/bannerlator-steam-shim /usr/local/bin/steam 2>/dev/null
 python3 /usr/local/bin/bannerlator-desktop-games 2>&1 | sed 's/^/[games] /'
+# Games and emulators from the menu run through droiddeck-gpu (their own gamescope on the app's
+# compositor) while the desktop is on pixman, where they could not draw with the GPU.
+# BL_DESKTOP_GPU=on/off overrides; each entry keeps "Run in a desktop window" either way.
+gpu_entries() { python3 /usr/local/bin/droiddeck-desktop-gpu 2>&1 | sed 's/^/[gpu] /'; }
+gpu_entries
 
-echo "== droiddeck-desktop: labwc ($WLR_RENDERER) on $WAYLAND_DISPLAY"
 # ~/.droiddeck-desktop-debug: labwc's own debug log (views and layer surfaces mapping) too.
 DEBUG=; [ -f "$HOME/.droiddeck-desktop-debug" ] && DEBUG=-d
-# A session bus: the panel's menus, the file manager and the portal all expect one.
-if command -v dbus-run-session >/dev/null 2>&1; then
-  exec dbus-run-session -- labwc $DEBUG -C "$HOME/.config/labwc"
+run_labwc() {
+  echo "== droiddeck-desktop: labwc ($WLR_RENDERER${LD_LIBRARY_PATH:+, wlroots from $WLROOTS_DIR}) on $WAYLAND_DISPLAY"
+  # A session bus: the panel's menus, the file manager and the portal all expect one.
+  if command -v dbus-run-session >/dev/null 2>&1; then
+    dbus-run-session -- labwc $DEBUG -C "$HOME/.config/labwc"
+  else
+    labwc $DEBUG -C "$HOME/.config/labwc"
+  fi
+}
+if [ "$WLR_RENDERER" = pixman ]; then
+  run_labwc
+  exit $?
 fi
-exec labwc $DEBUG -C "$HOME/.config/labwc"
+# A GPU renderer this device cannot start ends the desktop within a second or two; rather than a
+# session that closes at once, the desktop comes up on pixman and the log says why.
+started=$(date +%s)
+run_labwc
+rc=$?
+if [ "$rc" -ne 0 ] && [ $(( $(date +%s) - started )) -lt 15 ]; then
+  echo "== droiddeck-desktop: labwc on $WLR_RENDERER stopped at start (exit $rc); starting on pixman instead"
+  use_renderer pixman
+  find "$XDG_RUNTIME_DIR" -mindepth 1 -maxdepth 1 ! -name 'wayland-0*' ! -name 'keymap.xkb' -exec rm -rf {} + 2>/dev/null
+  gpu_entries
+  run_labwc
+  rc=$?
+fi
+exit $rc
