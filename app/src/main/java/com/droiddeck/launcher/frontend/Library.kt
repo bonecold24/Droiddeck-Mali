@@ -191,6 +191,8 @@ object Library {
         // Straight into the game in its controller-driven full-screen UI (first-time setup there
         // too), and gone when the game is quit from its pause menu (guide button): -batch.
         "armsx2" -> listOf("-batch", "-bigpicture", "-fullscreen", "--", guestPath)
+        // DuckStation shares PCSX2's flags (src/duckstation-qt/qthost.cpp): the same launch and exit.
+        "duckstation" -> listOf("-batch", "-bigpicture", "-fullscreen", "--", guestPath)
         "dolphin" -> listOf("-e", guestPath)
         "cemu" -> listOf("-g", guestPath)
         else -> listOf(guestPath)
