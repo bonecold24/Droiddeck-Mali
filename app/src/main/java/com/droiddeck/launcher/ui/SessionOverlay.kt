@@ -69,6 +69,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.InputMode
@@ -277,7 +278,10 @@ fun SessionDrawer(open: Boolean, a: DrawerActions) {
                             onClick = { host.open = null; a.onSteamMenu.invoke() },
                             interactionSource = steamSrc,
                             modifier = Modifier.weight(1f).height(48.dp).focusRequester(firstFocus)
-                                .onFocusChanged { firstControlFocused = it.isFocused }.controllerConfirm {
+                                .onFocusChanged {
+                                    firstControlFocused = it.isFocused
+                                    android.util.Log.i("SessionDrawer", "first control focused=${it.isFocused}")
+                                }.controllerConfirm {
                                 host.open = null
                                 a.onSteamMenu.invoke()
                             },

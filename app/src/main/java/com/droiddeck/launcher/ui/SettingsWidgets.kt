@@ -122,6 +122,7 @@ fun AnchoredMenu(open: Boolean, onDismiss: () -> Unit, title: String? = null, no
         if (open) {
             repeat(2) { androidx.compose.runtime.withFrameNanos { } }
             runCatching { firstItemFocus.requestFocus() }
+            android.util.Log.i("AnchoredMenu", "requested first option focus")
         }
     }
     val gap = with(LocalDensity.current) { 6.dp.roundToPx() }

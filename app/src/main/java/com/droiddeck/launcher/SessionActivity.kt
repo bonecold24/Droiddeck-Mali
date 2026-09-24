@@ -197,7 +197,8 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
                         if (drawerOpen) {
                             padBridge?.releaseAll()
                             androidx.compose.runtime.withFrameNanos { }
-                            sessionOverlay.requestFocus()
+                            val requested = sessionOverlay.requestFocus()
+                            Log.i(TAG, "drawer root focus requested=$requested focused=${sessionOverlay.hasFocus()}")
                         } else {
                             releaseDrawerDirection()
                         }
@@ -676,6 +677,9 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
         }
         if (drawerOpen) {
             val handled = super.dispatchKeyEvent(event)
+            if (event.action == KeyEvent.ACTION_DOWN) {
+                Log.i(TAG, "drawer key=${KeyEvent.keyCodeToString(event.keyCode)} handled=$handled viewFocused=${sessionOverlay.hasFocus()}")
+            }
             if (event.keyCode == KeyEvent.KEYCODE_BUTTON_B || event.keyCode == KeyEvent.KEYCODE_BACK) {
                 if (!handled && event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0) drawerOpen = false
                 releaseDrawerDirection()
@@ -769,6 +773,7 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
         }
         val now = SystemClock.uptimeMillis()
         if (keyCode != drawerDirectionKey) {
+            Log.i(TAG, "drawer axis source=${event.source} x=$x y=$y direction=$keyCode")
             releaseDrawerDirection()
             if (keyCode == KeyEvent.KEYCODE_UNKNOWN) return
             drawerDirectionKey = keyCode
@@ -794,6 +799,9 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
             drawerDirectionDownTime, eventTime, action, drawerDirectionKey,
             repeatCount, 0, drawerDirectionDeviceId, 0, 0, InputDevice.SOURCE_DPAD,
         )
+        if (action == KeyEvent.ACTION_DOWN) {
+            Log.i(TAG, "drawer synthetic key=${KeyEvent.keyCodeToString(drawerDirectionKey)} viewFocused=${sessionOverlay.hasFocus()}")
+        }
         super.dispatchKeyEvent(event)
     }
 
