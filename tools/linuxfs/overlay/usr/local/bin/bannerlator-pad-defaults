@@ -1,0 +1,77 @@
+#!/usr/bin/python3
+# Player 1 on the session's controller, for every emulator that would otherwise start on the
+# keyboard. The session's pad is an Xbox 360 controller (libfakeinput's identity outside Steam) that
+# SDL maps by itself; what an emulator lacks is a profile that points Player 1 at it. One is
+# written only where the emulator has none yet - a profile the user made is never touched.
+# Run at every desktop start and before every program from the rail.
+import os
+
+HOME = os.environ.get("HOME", "/root")
+CONFIG = os.environ.get("XDG_CONFIG_HOME", os.path.join(HOME, ".config"))
+
+
+def seed(path, text, what):
+    if os.path.exists(path):
+        return False
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path + ".tmp", "w", encoding="utf-8") as f:
+        f.write(text)
+    os.replace(path + ".tmp", path)
+    print(f"bannerlator-pad-defaults: {what}: Player 1 on the controller ({path})")
+    return True
+
+
+# RPCS3: its global input configuration (rpcs3::utils::get_input_config_dir() + "Default.yml").
+# Without one it adds the keyboard pad handler (pad_config.cpp, cfg_input::load). SDL handler
+# names from rpcs3/Input/sdl_pad_handler.cpp (button_list, init_config); the device is
+# "<SDL gamepad name> <n>" (sdl_pad_handler::enumerate_devices).
+RPCS3_PLAYER1 = """Player 1 Input:
+  Handler: SDL
+  Device: Xbox 360 Controller 1
+  Config:
+    Left Stick Left: LS X-
+    Left Stick Down: LS Y-
+    Left Stick Right: LS X+
+    Left Stick Up: LS Y+
+    Right Stick Left: RS X-
+    Right Stick Down: RS Y-
+    Right Stick Right: RS X+
+    Right Stick Up: RS Y+
+    Start: Start
+    Select: Back
+    PS Button: Guide
+    Square: West
+    Cross: South
+    Circle: East
+    Triangle: North
+    Left: Left
+    Down: Down
+    Right: Right
+    Up: Up
+    R1: RB
+    R2: RT
+    R3: RS
+    L1: LB
+    L2: LT
+    L3: LS
+    Left Stick Deadzone: 8000
+    Right Stick Deadzone: 8000
+    Left Stick Anti-Deadzone: 4259
+    Right Stick Anti-Deadzone: 4259
+    Left Trigger Threshold: 0
+    Right Trigger Threshold: 0
+    Color Value B: 20
+    LED battery indicator brightness: 10
+  Buddy Device: ""
+"""
+
+
+def rpcs3():
+    seed(os.path.join(CONFIG, "rpcs3/input_configs/global/Default.yml"), RPCS3_PLAYER1, "RPCS3")
+
+
+for step in (rpcs3,):
+    try:
+        step()
+    except OSError as e:
+        print(f"bannerlator-pad-defaults: {step.__name__}: {e}")

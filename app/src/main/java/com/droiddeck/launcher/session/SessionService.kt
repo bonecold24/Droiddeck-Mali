@@ -321,13 +321,13 @@ class SessionService : Service() {
         // on, even naming every core: it exists to undo the pin Steam applies to its own interface
         // renderer, and the scheduler's default is exactly what that pin takes away. A game's is
         // sent only when it is a real restriction - a game has no pin of its own to undo.
-        if (SessionState.mode == MODE_STEAM) {
-            if (SessionPrefs.clientCpusOverride(this)) {
-                guest.add("BL_CLIENT_CPUS=" + CpuCores.listOrAll(SessionPrefs.clientCpus(this)))
-            }
-            CpuCores.restrictionOrEmpty(SessionPrefs.gameCpus(this))
-                .takeIf { it.isNotEmpty() }?.let { guest.add("BL_GAME_CPUS=$it") }
+        if (SessionState.mode == MODE_STEAM && SessionPrefs.clientCpusOverride(this)) {
+            guest.add("BL_CLIENT_CPUS=" + CpuCores.listOrAll(SessionPrefs.clientCpus(this)))
         }
+        // The game cores also pin the desktop and a program from the rail; without a choice the
+        // session script picks every core but the slowest cluster for those (program_cores).
+        CpuCores.restrictionOrEmpty(SessionPrefs.gameCpus(this))
+            .takeIf { it.isNotEmpty() }?.let { guest.add("BL_GAME_CPUS=$it") }
 
         // PulseAudio always: the client is a native Linux program and has no other way to make a
         // sound - its menus, its music and its voice chat all go through here. DirectAudio is not
@@ -398,7 +398,11 @@ class SessionService : Service() {
             // identity gets the standard layout without the user configuring the pad by hand.
             guest.add("FAKE_EVDEV_IDENTITY=xbox360")
             guest.add("FAKE_EVDEV_VIBRATION=1")
-            guest.add("FAKE_EVDEV_STEAM_VIRTUAL=1")
+            // Steam Input's virtual-gamepad identity is for games the client starts, which are
+            // meant to see that pad. Everywhere else (the desktop, a program from the rail) it
+            // hides the pad: SDL ignores a Steam virtual gamepad unless it runs under Steam, so
+            // every SDL emulator came up with no controller. There it is a plain Xbox 360 pad.
+            if (SessionState.mode == MODE_STEAM) guest.add("FAKE_EVDEV_STEAM_VIRTUAL=1")
             guest.add("SDL_JOYSTICK_DISABLE_UDEV=1")
             guest.add("SDL_HIDAPI_JOYSTICK_DISABLE_UDEV=1")
             guest.add("SDL_JOYSTICK_HIDAPI=0")
