@@ -315,7 +315,8 @@ private fun FrontEndScreenBody(s: FrontEndState, a: FrontEndActions, page: (@Com
     LaunchedEffect(s.isHomeApp) { if (!s.isHomeApp && selected == "android-apps") selected = "steam" }
     remember { Motion.scale = Settings.Global.getFloat(ctx.contentResolver, Settings.Global.ANIMATOR_DURATION_SCALE, 1f); true }
 
-    BoxWithConstraints(modifier = Modifier.fillMaxSize().background(colors.background).systemBarsPadding()) {
+    var anyFocused by remember { mutableStateOf(false) }
+    BoxWithConstraints(modifier = Modifier.fillMaxSize().background(colors.background).systemBarsPadding().onFocusChanged { anyFocused = it.hasFocus }) {
         val wide = maxWidth >= 640.dp
         val railSelection = when {
             s.pageKey == "performance" || s.pageKey == "protons" -> "setup"
@@ -349,6 +350,17 @@ private fun FrontEndScreenBody(s: FrontEndState, a: FrontEndActions, page: (@Com
                 if (inputMode.inputMode != InputMode.Keyboard) inputMode.requestInputMode(InputMode.Keyboard)
                 runCatching { frontFocus.railFor(railSelection).requestFocus() }
                 kotlinx.coroutines.delay(100)
+            }
+        }
+        // A tile or button that opens a page goes away with the page it was on, and focus with it;
+        // the pad then had nothing to move from (a press landed back on the rail's first item). So
+        // once the new page is in, a controller lands on its main button.
+        val inputModeManager = LocalInputModeManager.current
+        LaunchedEffect(selected, s.pageKey) {
+            kotlinx.coroutines.delay(450)
+            if (!anyFocused && inputModeManager.inputMode == InputMode.Keyboard) runCatching {
+                if (frontFocus.primaryAttached > 0) frontFocus.primary.requestFocus()
+                else frontFocus.railFor(railSelection).requestFocus()
             }
         }
         val back = if (wide) FocusDirection.Left else FocusDirection.Up
