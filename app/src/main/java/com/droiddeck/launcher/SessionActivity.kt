@@ -93,7 +93,6 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
     private var drawerDirectionKey = KeyEvent.KEYCODE_UNKNOWN
     private var drawerDirectionDownTime = 0L
     private var drawerDirectionLastRepeat = 0L
-    private var drawerDirectionRepeatCount = 0
     private var drawerDirectionDeviceId = -1
 
     // Compose reads these; the activity writes them.
@@ -743,18 +742,8 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
         val hatY = event.getAxisValue(MotionEvent.AXIS_HAT_Y)
         val x = if (abs(hatX) > 0.4f) hatX else event.getAxisValue(MotionEvent.AXIS_X)
         val y = if (abs(hatY) > 0.4f) hatY else event.getAxisValue(MotionEvent.AXIS_Y)
-        val heldDirection = drawerDirectionKey.takeIf {
-            when (it) {
-                KeyEvent.KEYCODE_DPAD_LEFT -> -x >= DRAWER_DIRECTION_RELEASE_THRESHOLD
-                KeyEvent.KEYCODE_DPAD_RIGHT -> x >= DRAWER_DIRECTION_RELEASE_THRESHOLD
-                KeyEvent.KEYCODE_DPAD_UP -> -y >= DRAWER_DIRECTION_RELEASE_THRESHOLD
-                KeyEvent.KEYCODE_DPAD_DOWN -> y >= DRAWER_DIRECTION_RELEASE_THRESHOLD
-                else -> false
-            }
-        }
         val keyCode = when {
-            heldDirection != null -> heldDirection
-            maxOf(abs(x), abs(y)) < DRAWER_DIRECTION_ENGAGE_THRESHOLD -> KeyEvent.KEYCODE_UNKNOWN
+            maxOf(abs(x), abs(y)) < 0.45f -> KeyEvent.KEYCODE_UNKNOWN
             abs(x) > abs(y) && x < 0f -> KeyEvent.KEYCODE_DPAD_LEFT
             abs(x) > abs(y) -> KeyEvent.KEYCODE_DPAD_RIGHT
             y < 0f -> KeyEvent.KEYCODE_DPAD_UP
@@ -768,29 +757,17 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
             drawerDirectionDeviceId = event.deviceId
             drawerDirectionDownTime = now
             drawerDirectionLastRepeat = now
-            drawerDirectionRepeatCount = 0
             dispatchDrawerKey(KeyEvent.ACTION_DOWN, 0, now)
-        } else if (keyCode != KeyEvent.KEYCODE_UNKNOWN &&
-            now - drawerDirectionLastRepeat >= drawerDirectionRepeatIntervalMs()) {
+        } else if (keyCode != KeyEvent.KEYCODE_UNKNOWN && now - drawerDirectionLastRepeat >= 240L) {
             drawerDirectionLastRepeat = now
-            drawerDirectionRepeatCount++
-            dispatchDrawerKey(KeyEvent.ACTION_DOWN, drawerDirectionRepeatCount, now)
+            dispatchDrawerKey(KeyEvent.ACTION_DOWN, 1, now)
         }
-    }
-
-    private fun drawerDirectionRepeatIntervalMs(): Long = when (drawerDirectionRepeatCount) {
-        0 -> DRAWER_DIRECTION_INITIAL_REPEAT_MS
-        1 -> 250L
-        2 -> 180L
-        3 -> 135L
-        else -> 105L
     }
 
     private fun releaseDrawerDirection() {
         if (drawerDirectionKey == KeyEvent.KEYCODE_UNKNOWN) return
         dispatchDrawerKey(KeyEvent.ACTION_UP, 0, SystemClock.uptimeMillis())
         drawerDirectionKey = KeyEvent.KEYCODE_UNKNOWN
-        drawerDirectionRepeatCount = 0
         drawerDirectionDeviceId = -1
     }
 
@@ -1125,9 +1102,6 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
     companion object {
         private const val TAG = "SessionActivity"
         private const val BACK_DOUBLE_PRESS_TIMEOUT_MS = 500L
-        private const val DRAWER_DIRECTION_ENGAGE_THRESHOLD = 0.55f
-        private const val DRAWER_DIRECTION_RELEASE_THRESHOLD = 0.30f
-        private const val DRAWER_DIRECTION_INITIAL_REPEAT_MS = 420L
         /** Compositor scale modes (Container.FULLSCREEN_* values): 1 = fit with bars, centred. */
         private const val SCALE_FIT = 1
         private const val ALIGN_CENTER = 0
