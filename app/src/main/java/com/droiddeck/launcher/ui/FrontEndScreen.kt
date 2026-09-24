@@ -108,6 +108,8 @@ import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalWindowInfo
+import androidx.compose.ui.platform.LocalInputModeManager
+import androidx.compose.ui.input.InputMode
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -307,13 +309,17 @@ private fun FrontEndScreenBody(s: FrontEndState, a: FrontEndActions, page: (@Com
                 modifier = if (wide) Modifier.width(236.dp).fillMaxHeight() else Modifier.fillMaxWidth().height(maxHeight * 0.42f),
             )
         }
-        // The app opens with the selected rail item focused, so a controller sees where it is. A
-        // request before the window has focus is dropped, so wait for it and retry until it sticks.
+        // The app opens with the selected rail item focused, so a controller sees where it is. An
+        // app starts in touch mode, where clickables refuse focus, so leave it first (a touch goes
+        // straight back to it); a request before the window has focus is dropped, so wait for
+        // that and retry until it sticks.
         val window = LocalWindowInfo.current
+        val inputMode = LocalInputModeManager.current
         LaunchedEffect(Unit) {
             snapshotFlow { window.isWindowFocused }.first { it }
             repeat(20) {
                 if (frontFocus.railFocused) return@LaunchedEffect
+                if (inputMode.inputMode != InputMode.Keyboard) inputMode.requestInputMode(InputMode.Keyboard)
                 runCatching { frontFocus.railFor(railSelection).requestFocus() }
                 kotlinx.coroutines.delay(100)
             }
