@@ -7,6 +7,26 @@ the timeline, then lessons and backlog. Companion to the README (what the app *d
 
 ---
 
+## 2026-09-24 - main `08a6769`: GPU desktop, emulators like PS3, ARMSX2, game art
+
+State: **main = `08a6769`** (PR #29 merge), main build run 35983098806, staged as `Download/DroidDeck-main-08a6769(-Genshin).apk`. No tag, no release since 0.1.6. **Device-tested on the AYANEO Pocket FIT** (Adreno 750) unless marked.
+
+- **PR #25 → `f6f7470`** (`feat/desktop-gpu`) - the desktop on the GPU:
+  - **Patched wlroots** (`tools/wlroots`, release `wlroots-0.20.2-p1`, staged at `/usr/local/lib/droiddeck-wlroots`): a Vulkan DMA-BUF allocator for the KGSL stand-in node, which is not a DRM device - stock wlroots failed at `drmModeCreateLease` → "unable to create allocator"; linux-dmabuf skips its GEM import check on such a node. labwc's **vulkan** and **gles2** renderers start; **vulkan is the default**.
+  - Compositor: a toplevel's **initial commit is answered with a configure** (labwc on vulkan waited for ever - wlroots moves its toplevel to a private queue after that commit); **`xdg_positioner` / `xdg_popup` / `wl_output` requests no longer abort** the app (NULL implementations; a gamescope beside labwc took the app down); without a Wine desktop a new window takes the keys.
+  - Fallback: labwc that exits or does not answer its socket within 20 s → pixman, remembered per renderer + wlroots md5 + driver (`~/.droiddeck-renderer-failed`, cleared by choosing a renderer). On pixman, Game/Emulator menu entries run through `droiddeck-gpu` (their own gamescope on wayland-0).
+  - Emulators: the pad is a plain Xbox 360 controller outside Steam (SDL ignores Steam's virtual gamepad outside Steam); `bannerlator-pad-defaults` seeds Player 1 per emulator (source-verified formats) and never overwrites a user's profile; big-core pinning (`program_cores`, game cores when chosen); rail programs use the desktop's Linux driver (one shader cache); RPCS3 moved once to `Async Recompiler (multi-threaded)` (no 6650-variant interpreter precompile each boot).
+  - **PC keyboard** (drawer: Keyboard [Hardware] [Android]): Esc, F1-F12, editing block, modifiers (sticky), arrows; real evdev key presses; 47% of the screen.
+  - Proven: Vulkan and gles2 desktops, Firefox on Vulkan, RPCS3 God of War II HD in a window and from the rail (pad bound, no precompile, cores 2-7), pixman fallback path, Steam session.
+- **PR #26 → `6980428`** (`feat/armsx2`) - **PS2 is ARMSX2** (PCSX2 fork with ARM64 recompilers, GPL-3.0). Upstream PCSX2 only has `pcsx2/arm64/RecStubs.cpp`: NFS Underground 2 ran at 17 fps with one core at 100%; ARMSX2 runs it at **59.9 fps / 100%**, all recompilers + fastmem on under proot. PCSX2 left the front end and the catalog.
+- **PR #29 → `08a6769`** (`feat/armsx2-polish`):
+  - ARMSX2 from the rail: `-batch -bigpicture -fullscreen`; guide → pause menu → Close Game returns to the app. First run: PCSX2 settings + memory cards copied once; a new player gets ARMSX2's setup with the BIOS folder in `ROMs/ps2/bios` (or `ps2/firmware`), `ps2` as game list, Vulkan, controller on Player 1. Users bring their own BIOS and games.
+  - Catalog `pages` - a file per memory page size; ARMSX2 4K + 16K.
+  - On-screen controls: Auto for rail games and Steam when no controller, off on the desktop; setting in the drawer everywhere; drawer headed by the emulator for rail games.
+  - Front end: Back/B steps back a level (emulator → Desktop, game → emulator) instead of leaving the app; games found up to 3 folders deep (`ps2/games/<game>/`); **box art** (libretro-thumbnails by name exact/loose, xlenore/ps2-covers by PS2 serial, GameTDB by GC/Wii ID, PS3 discs' own `ICON0.PNG`), kept in `files/covers`; wide art shown whole over a blurred copy; titles without dump tags.
+- **winlator-contents** (the catalog): ARMSX2 `nightly-20260923-92aa2174da` mirrored (`armsx2.AppImage` 4K, `armsx2-16k.AppImage`), PCSX2 dropped from `desktop.json` (PRs #12, #13); the mirror workflow lists only the file being added (a re-run re-fetches and clobbers every listed file, and DuckStation's upstream link moves).
+- **Not yet device-played**: DuckStation, Dolphin, Cemu, melonDS, PPSSPP, RetroArch (profiles + covers written from their sources). Known gap: a keyboard's Esc does not open ARMSX2's pause menu in a rail game (guide does).
+
 ## 2026-09-23 (evening) - renamed SteamDeck → DroidDeck
 
 - **App name, app ID and code package**: DroidDeck, `com.droiddeck.launcher` (was `com.steamdeck.launcher`), sources under `app/src/main/java/com/droiddeck/launcher`, the 68 JNI functions renamed with them. A new app ID means DroidDeck installs **beside** SteamDeck, not over it: the runtime, the Steam sign-in and the settings start fresh.
@@ -191,8 +211,21 @@ State: **main = `90c7574`** (PR #14 merge), main build run 35895701784. No tag, 
 - Bannerlator's File Manager ports mechanically (`port_fm.py` anchors) once the container hooks
   are cut; do not hand-edit 2,500 lines.
 - Deleting a release asset on GitHub can drop a sibling asset - re-list and restore.
+- A resource without an implementation makes libwayland abort on its first request - every
+  interface the compositor hands out needs one, even as no-ops (positioner, popup, output).
+- The KGSL stand-in answers no DRM ioctl: `drmIsMaster()` reads that as "master"; check
+  `drmGetVersion()` before treating a GPU fd as DRM.
+- Verify an emulator's config values from its source: RPCS3's GUI says "Async Shader Recompiler",
+  the config value is "Async Recompiler (multi-threaded)".
+- Upstream PCSX2 has no ARM64 recompiler; a correct ARM64 build of it is still interpreter-slow.
 
 ## Backlog / next
+- Play-test the other emulators one by one on the FIT: DuckStation, Dolphin, Cemu, melonDS,
+  PPSSPP, RetroArch (pad profiles and covers exist; nothing played yet).
+- Keyboard Esc in a rail game does not reach ARMSX2's pause menu (guide does).
+- Kurt's PR #20 (Back shortcuts) conflicts with main since the keyboard/drawer work - rebase.
+- 0.1.7 pre-release when ready (everything above is on main only).
+- Pin a newer ARMSX2 nightly only after testing it (it changes daily).
 - Device-prove 0.1.4 on the FIT (list above).
 - Thor Pro: trackpad tap; the 1–2 min in-game crash once a `crash.log` arrives.
 - Xfce as a second desktop shell (Max's branch runs XFCE 4.20 on labwc) - a catalog package + a
