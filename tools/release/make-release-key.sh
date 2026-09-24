@@ -49,7 +49,6 @@ SHA=$(awk '/SHA256:/ { print $2 }' <<<"$listing" | head -n1 | tr -d ':' | tr 'A-
 for env in "${ENVIRONMENTS[@]}"; do
   base64 -w0 < "$KS" | gh secret set RELEASE_KEYSTORE_B64 --env "$env" -R "$REPO" >/dev/null
   printf '%s' "$KS_PW" | gh secret set RELEASE_STORE_PASSWORD --env "$env" -R "$REPO" >/dev/null
-  printf '%s' "$ALIAS" | gh secret set RELEASE_KEY_ALIAS --env "$env" -R "$REPO" >/dev/null
   echo "secrets set for environment: $env"
 done
 unset KS_PW

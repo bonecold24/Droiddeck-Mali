@@ -68,7 +68,8 @@ jobs:
         env:
           RELEASE_KEYSTORE_B64: ${{ secrets.RELEASE_KEYSTORE_B64 }}
           RELEASE_STORE_PASSWORD: ${{ secrets.RELEASE_STORE_PASSWORD }}
-          RELEASE_KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
+          # The alias is not a secret (and as one, GitHub would mask 'droiddeck' all over the logs).
+          RELEASE_KEY_ALIAS: droiddeck
           ENVIRONMENT: ${{ inputs.environment }}
           VARIANT: ${{ matrix.variant }}
           LABEL: ${{ inputs.label }}
