@@ -11,9 +11,9 @@ def gitValue = { List<String> arguments ->
             workingDir rootProject.projectDir
             ignoreExitValue = true
         }
-        output.result.get().exitValue == 0 ? output.standardOutput.asText.get().trim() : ''
+        output.result.get().exitValue == 0 ? output.standardOutput.asText.get().trim() : null
     } catch (Exception ignored) {
-        ''
+        null
     }
 }
 
@@ -40,6 +40,13 @@ if (buildLabel == null || buildLabel.trim().isEmpty()) {
         buildLabel = "${branch} at ${commit}"
     }
 }
+def buildOrigin = providers.environmentVariable('GITHUB_ACTIONS').getOrNull() == 'true' ? 'remote' : 'local'
+def treeState = providers.environmentVariable('DROIDDECK_BUILD_TREE_STATE').getOrNull()
+if (!(treeState in ['clean', 'dirty'])) {
+    def status = gitValue(['status', '--porcelain'])
+    treeState = status == null ? 'unknown' : (status.isEmpty() ? 'clean' : 'dirty')
+}
+buildLabel = "${buildOrigin} ${treeState} · ${buildLabel}"
 def escapedBuildLabel = buildLabel.replace('\\', '\\\\').replace('"', '\\"')
 
 android {
