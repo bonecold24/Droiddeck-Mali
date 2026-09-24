@@ -905,6 +905,7 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
                 onQam = {
                     if (SessionState.mode == SessionService.MODE_STEAM) padBridge?.triggerQam()
                 },
+                onClose = { selectSecondScreenMode(SecondScreenMode.NONE) },
             )
             secondScreenPresentation = presentation
         }
