@@ -229,11 +229,12 @@ fun ModeSettingsPage(s: ModeSettings, a: ModeSettingsActions) {
                 ), s.oscMode,
                 note = "Auto shows all controls without a controller. Steam + QAM shows only those buttons.", onPick = a.onOsc,
             )
-            if (steam) ToggleRow(
-                host, "back-actions", "Invert Back actions",
-                if (s.backActionsInverted) "Back once opens Steam QAM; twice opens the session menu."
-                else "Back once opens the session menu; twice opens Steam QAM.",
-                s.backActionsInverted, onChange = a.onBackActionsInverted,
+            if (steam) ChoiceRow(
+                host, "back-actions", "Back", SessionPrefs.backActionsOrder(s.backActionsInverted),
+                listOf(
+                    false to SessionPrefs.BACK_MENU_THEN_QAM,
+                    true to SessionPrefs.BACK_QAM_THEN_MENU,
+                ), s.backActionsInverted, onPick = a.onBackActionsInverted,
             )
         }
         SettingsGroup("Session") {

@@ -13,6 +13,12 @@ object SessionPrefs {
     const val OSC_STEAM_QAM = "steam-qam"
     const val OSC_NEVER = "never"
 
+    const val BACK_MENU_THEN_QAM = "1: menu 2: QAM"
+    const val BACK_QAM_THEN_MENU = "1: QAM 2: menu"
+
+    fun backActionsOrder(inverted: Boolean): String =
+        if (inverted) BACK_QAM_THEN_MENU else BACK_MENU_THEN_QAM
+
     private fun prefs(context: Context) = context.getSharedPreferences("session", Context.MODE_PRIVATE)
 
     fun hudEnabled(context: Context): Boolean = prefs(context).getBoolean("hud", true)

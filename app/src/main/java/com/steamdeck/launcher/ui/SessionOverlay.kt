@@ -298,11 +298,12 @@ fun SessionDrawer(open: Boolean, a: DrawerActions) {
                         listOf(SessionPrefs.OSC_AUTO to "Auto", SessionPrefs.OSC_ALWAYS to "Always", SessionPrefs.OSC_STEAM_QAM to "Steam + QAM", SessionPrefs.OSC_NEVER to "Never"), a.oscMode,
                         onPick = a.onOsc,
                     )
-                    if (a.steam) ToggleRow(
-                        host, "back-actions", "Invert Back actions",
-                        if (a.backActionsInverted) "Back once opens Steam QAM; twice opens the session menu."
-                        else "Back once opens the session menu; twice opens Steam QAM.",
-                        a.backActionsInverted, onChange = a.onBackActionsInverted,
+                    if (a.steam) ChoiceRow(
+                        host, "back-actions", "Back", SessionPrefs.backActionsOrder(a.backActionsInverted),
+                        listOf(
+                            false to SessionPrefs.BACK_MENU_THEN_QAM,
+                            true to SessionPrefs.BACK_QAM_THEN_MENU,
+                        ), a.backActionsInverted, onPick = a.onBackActionsInverted,
                     )
                     ActionRow("Keyboard", null, "Show") { host.open = null; a.onKeyboard() }
                 }

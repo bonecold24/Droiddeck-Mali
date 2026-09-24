@@ -108,6 +108,7 @@ import coil.compose.AsyncImage
 import com.steamdeck.launcher.R
 import com.steamdeck.launcher.frontend.Library
 import com.steamdeck.launcher.gpu.FrameGen
+import com.steamdeck.launcher.session.SessionPrefs
 import java.io.File
 import kotlin.math.roundToInt
 
@@ -694,11 +695,12 @@ private fun SetupPanel(s: FrontEndState, a: FrontEndActions) {
                     ActionRow("ROMs folder", s.romsDir ?: "Choose where emulator games are stored", "Choose", a.onRoms)
                 }
                 SettingsGroup("Session") {
-                    ToggleRow(
-                        host, "back-actions", "Invert Back actions",
-                        if (s.backActionsInverted) "Back once opens Steam QAM; twice opens the in-session menu."
-                        else "Back once opens the in-session menu; twice opens Steam QAM.",
-                        s.backActionsInverted, onChange = a.onBackActionsInverted,
+                    ChoiceRow(
+                        host, "back-actions", "Back", SessionPrefs.backActionsOrder(s.backActionsInverted),
+                        listOf(
+                            false to SessionPrefs.BACK_MENU_THEN_QAM,
+                            true to SessionPrefs.BACK_QAM_THEN_MENU,
+                        ), s.backActionsInverted, onPick = a.onBackActionsInverted,
                     )
                     SettingsRow("Frame generation", "Select the frame generation mode") {
                         Box {
