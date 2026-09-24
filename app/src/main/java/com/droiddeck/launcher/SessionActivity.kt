@@ -37,6 +37,7 @@ import com.droiddeck.launcher.input.OnScreenControls
 import com.droiddeck.launcher.input.PadBridge
 import com.droiddeck.launcher.input.PointerGestures
 import com.droiddeck.launcher.input.SecondScreenDisplay
+import com.droiddeck.launcher.input.SecondScreenDisplays
 import com.droiddeck.launcher.input.SecondScreenMode
 import com.droiddeck.launcher.input.TouchpadGestures
 import com.droiddeck.launcher.runtime.LinuxRuntime
@@ -249,12 +250,14 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
                         onFexPreset = { v -> SessionPrefs.setFexPreset(this@SessionActivity, v); readPrefs() },
                         onSecondScreenMode = ::selectSecondScreenMode,
                         onSecondScreenDisplay = ::selectSecondScreenDisplay,
-                        onLaunchAndroidApp = { app ->
+                        onLaunchAndroidApp = { app, displayId ->
                             drawerOpen = false
                             try {
-                                HomeApp.launch(this@SessionActivity, app)
+                                HomeApp.launch(this@SessionActivity, app, displayId)
                             } catch (_: Exception) {
-                                Toast.makeText(this@SessionActivity, "Could not open ${app.label}", Toast.LENGTH_SHORT).show()
+                                val target = if (displayId == null || displayId == Display.DEFAULT_DISPLAY) "the primary screen"
+                                    else secondScreenDisplays.firstOrNull { it.id == displayId }?.label ?: "display $displayId"
+                                Toast.makeText(this@SessionActivity, "Could not open ${app.label} on $target", Toast.LENGTH_SHORT).show()
                             }
                         },
                         onBackground = { drawerOpen = false; moveTaskToBack(true) },
@@ -848,14 +851,7 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
     private fun refreshSecondScreenDisplays() {
         if (!::displayManager.isInitialized) return
         val primaryId = display?.displayId ?: windowManager.defaultDisplay.displayId
-        val candidates = displayManager.getDisplays(DisplayManager.DISPLAY_CATEGORY_PRESENTATION)
-            .asSequence()
-            .filter { it.isValid && it.displayId != primaryId && (it.flags and Display.FLAG_PRESENTATION) != 0 }
-            .map { target ->
-                val mode = target.mode
-                SecondScreenDisplay(target.displayId, "${target.name} · ${mode.physicalWidth}×${mode.physicalHeight}")
-            }
-            .toList()
+        val candidates = SecondScreenDisplays.available(displayManager, primaryId)
         val oldIds = secondScreenDisplays.map { it.id }.toSet()
         secondScreenDisplays = candidates
         val newIds = candidates.map { it.id }.toSet()

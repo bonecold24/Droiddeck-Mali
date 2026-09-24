@@ -12,6 +12,7 @@ import androidx.compose.ui.focus.onFocusChanged
 import android.graphics.Bitmap
 import android.os.Build
 import android.provider.Settings
+import android.view.Display
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
@@ -126,8 +127,10 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
 import coil.compose.AsyncImage
 import com.droiddeck.launcher.R
+import com.droiddeck.launcher.HomeApp
 import com.droiddeck.launcher.frontend.Library
 import com.droiddeck.launcher.gpu.FrameGen
+import com.droiddeck.launcher.input.SecondScreenDisplay
 import com.droiddeck.launcher.session.SessionPrefs
 import java.io.File
 import kotlin.math.roundToInt
@@ -155,7 +158,8 @@ class FrontEndState(
     val theme: String = Themes.PAPER,
     val isHomeApp: Boolean = false,
     val defaultHomeLabel: String? = null,
-    val androidApps: List<com.droiddeck.launcher.HomeApp.LaunchableApp> = emptyList(),
+    val androidApps: List<HomeApp.LaunchableApp> = emptyList(),
+    val secondScreenDisplays: List<SecondScreenDisplay> = emptyList(),
     val packages: List<PackageRow>? = null,
     val packageCatalogLoading: Boolean = false,
     val packageBusyId: String? = null,
@@ -191,7 +195,7 @@ class FrontEndActions(
     val onPageBack: () -> Unit = {},
     val onTheme: (String) -> Unit = {},
     val onHomeApp: () -> Unit = {},
-    val onAndroidApp: (com.droiddeck.launcher.HomeApp.LaunchableApp) -> Unit = {},
+    val onAndroidApp: (HomeApp.LaunchableApp, Int?) -> Unit = { _, _ -> },
     val onBackActionsInverted: (Boolean) -> Unit = {},
     val onCheckLatestBuild: () -> Unit = {},
 )
@@ -305,6 +309,7 @@ fun FrontEndScreen(s: FrontEndState, a: FrontEndActions, page: (@Composable () -
 @Composable
 private fun FrontEndScreenBody(s: FrontEndState, a: FrontEndActions, page: (@Composable () -> Unit)?, frontFocus: FrontFocus) {
     var selected by rememberSaveable { mutableStateOf("steam") }
+    var appToChooseDisplay by remember { mutableStateOf<HomeApp.LaunchableApp?>(null) }
     val colors = MaterialTheme.colorScheme
     val ctx = LocalContext.current
     BackHandler(enabled = s.pageKey != null && page != null) { a.onPageBack() }
@@ -368,9 +373,31 @@ private fun FrontEndScreenBody(s: FrontEndState, a: FrontEndActions, page: (@Com
                 }
             }
             .focusGroup()
-        val content: @Composable (Modifier) -> Unit = { m -> Pane(s, selected, a, page, m.then(paneFocus)) { selected = it } }
+        val content: @Composable (Modifier) -> Unit = { m ->
+            Pane(s, selected, a, page, m.then(paneFocus), { selected = it }) { app ->
+                if (s.secondScreenDisplays.isEmpty()) a.onAndroidApp(app, null)
+                else appToChooseDisplay = app
+            }
+        }
         if (wide) Row(modifier = Modifier.fillMaxSize()) { rail(); content(Modifier.weight(1f).fillMaxHeight()) }
         else Column(modifier = Modifier.fillMaxSize()) { rail(); content(Modifier.weight(1f).fillMaxWidth()) }
+
+        appToChooseDisplay?.let { app ->
+            val secondaryDisplay = s.secondScreenDisplays.firstOrNull()
+            ChooseAppDisplayDialog(
+                app = app,
+                secondaryDisplay = secondaryDisplay,
+                onPrimary = {
+                    appToChooseDisplay = null
+                    a.onAndroidApp(app, Display.DEFAULT_DISPLAY)
+                },
+                onSecondary = {
+                    appToChooseDisplay = null
+                    secondaryDisplay?.let { a.onAndroidApp(app, it.id) }
+                },
+                onDismiss = { appToChooseDisplay = null },
+            )
+        }
     }
 }
 
@@ -551,7 +578,10 @@ private fun NavItem(
 
 
 @Composable
-private fun Pane(s: FrontEndState, selected: String, a: FrontEndActions, page: (@Composable () -> Unit)?, modifier: Modifier, onSelect: (String) -> Unit) {
+private fun Pane(
+    s: FrontEndState, selected: String, a: FrontEndActions, page: (@Composable () -> Unit)?, modifier: Modifier,
+    onSelect: (String) -> Unit, onAndroidAppClick: (HomeApp.LaunchableApp) -> Unit,
+) {
     Box(modifier = modifier) {
         val wash: Pair<File?, Float> = when {
             s.pageKey != null && page != null -> null to 250f
@@ -572,7 +602,7 @@ private fun Pane(s: FrontEndState, selected: String, a: FrontEndActions, page: (
                     .apply { targetContentZIndex = 1f }
             },
             label = "pane",
-        ) { key -> if (page != null && key == s.pageKey) page() else Content(s, key, a, Modifier.fillMaxSize(), onSelect) }
+        ) { key -> if (page != null && key == s.pageKey) page() else Content(s, key, a, Modifier.fillMaxSize(), onSelect, onAndroidAppClick) }
     }
 }
 
@@ -642,7 +672,10 @@ private fun romFor(s: FrontEndState, selected: String): Pair<Library.Emulator, L
 }
 
 @Composable
-private fun Content(s: FrontEndState, selected: String, a: FrontEndActions, modifier: Modifier, onSelect: (String) -> Unit) {
+private fun Content(
+    s: FrontEndState, selected: String, a: FrontEndActions, modifier: Modifier,
+    onSelect: (String) -> Unit, onAndroidAppClick: (HomeApp.LaunchableApp) -> Unit,
+) {
     val colors = MaterialTheme.colorScheme
     Column(modifier = modifier.padding(horizontal = 22.dp, vertical = 18.dp)) {
         when {
@@ -658,7 +691,7 @@ private fun Content(s: FrontEndState, selected: String, a: FrontEndActions, modi
                             null,
                             null,
                             "android:${app.packageName}",
-                            onClick = { a.onAndroidApp(app) },
+                            onClick = { onAndroidAppClick(app) },
                             iconBitmap = app.icon,
                         )
                     })
