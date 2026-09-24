@@ -589,6 +589,10 @@ static void map_toplevel(struct surface *s) {
                    s->placed ? "" : " (no desktop position yet)");
     }
     wl_list_insert(g_toplevels.prev, &s->toplevel_link); /* new windows start on top */
+    /* Without a Wine desktop the clients are whole programs (the Linux desktop, a gamescope a
+     * program on it started over it): a window that opens on top takes the keys too, as it would
+     * on any desktop, rather than the one clicked last that is now underneath it. */
+    if (!g_desktop) g_key_target = s;
     apply_zorder();
 }
 
