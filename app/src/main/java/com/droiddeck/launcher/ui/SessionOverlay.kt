@@ -318,9 +318,11 @@ fun SessionDrawer(open: Boolean, a: DrawerActions) {
                         listOf(SessionPrefs.TOUCH_AUTO to "Auto (${a.touchAuto})", SessionPrefs.TOUCH_PAD to "Touchpad", SessionPrefs.TOUCH_DIRECT to "Direct"), a.touchMode,
                         onPick = a.onTouch,
                     )
-                    if (a.steam) ChoiceRow(
+                    ChoiceRow(
                         host, "osc", "On-screen controls", null,
-                        listOf(SessionPrefs.OSC_AUTO to "Auto", SessionPrefs.OSC_ALWAYS to "Always", SessionPrefs.OSC_STEAM_QAM to "Steam + QAM", SessionPrefs.OSC_NEVER to "Never"), a.oscMode,
+                        if (a.steam) listOf(SessionPrefs.OSC_AUTO to "Auto", SessionPrefs.OSC_ALWAYS to "Always", SessionPrefs.OSC_STEAM_QAM to "Steam + QAM", SessionPrefs.OSC_NEVER to "Never")
+                        else listOf(SessionPrefs.OSC_AUTO to "Auto", SessionPrefs.OSC_ALWAYS to "Always", SessionPrefs.OSC_NEVER to "Never"),
+                        a.oscMode,
                         onPick = a.onOsc,
                     )
                     SettingsRow("Keyboard", null) {

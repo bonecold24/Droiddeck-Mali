@@ -170,6 +170,9 @@ object Library {
     /** How the emulator is told which game to boot, on its command line. */
     fun launchArgs(emulatorId: String, guestPath: String): List<String> = when (emulatorId) {
         "rpcs3" -> listOf("--no-gui", guestPath)
+        // Straight into the game in its controller-driven full-screen UI (first-time setup there
+        // too), and gone when the game is quit from its pause menu (guide button): -batch.
+        "armsx2" -> listOf("-batch", "-bigpicture", "-fullscreen", "--", guestPath)
         "dolphin" -> listOf("-e", guestPath)
         "cemu" -> listOf("-g", guestPath)
         else -> listOf(guestPath)
