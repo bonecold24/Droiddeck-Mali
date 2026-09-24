@@ -330,15 +330,18 @@ object SessionPrefs {
     }
 
     /**
-     * What the desktop shell composites with: pixman (software, the default), or vulkan / gles2 on
-     * the GPU - those need the app's patched wlroots (tools/wlroots), since the Adreno stand-in is
-     * not a DRM device and stock wlroots cannot allocate on it. `Download/droiddeck-wlr-renderer`
-     * still overrides it.
+     * What the desktop shell composites with: vulkan (the default) or gles2 on the GPU, through the
+     * app's patched wlroots (tools/wlroots) - the Adreno stand-in is not a DRM device and stock
+     * wlroots cannot allocate on it - or pixman in software. A GPU renderer a device cannot start
+     * falls back to pixman by itself (droiddeck-desktop). `Download/droiddeck-wlr-renderer` still
+     * overrides it.
      */
-    fun desktopRenderer(context: Context): String = prefs(context).getString("desktopRenderer", "pixman") ?: "pixman"
+    fun desktopRenderer(context: Context): String = prefs(context).getString("desktopRenderer", "vulkan") ?: "vulkan"
 
     fun setDesktopRenderer(context: Context, renderer: String) {
         prefs(context).edit().putString("desktopRenderer", renderer).apply()
+        // A choice made again is a retry: forget that a renderer failed to start here before.
+        java.io.File(com.droiddeck.launcher.runtime.LinuxRuntime.rootDir(context), "root/.droiddeck-renderer-failed").delete()
     }
 
     /**

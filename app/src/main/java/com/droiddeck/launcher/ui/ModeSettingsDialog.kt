@@ -322,7 +322,7 @@ fun ModeSettingsPage(s: ModeSettings, a: ModeSettingsActions) {
         if (!steam && s.renderer != null) SettingsGroup("Renderer") {
             ChoiceRow(
                 host, "renderer", "Desktop renderer", "Composites the desktop.",
-                listOf("pixman" to "pixman - software", "vulkan" to "vulkan - GPU (experimental)", "gles2" to "gles2 - GPU (experimental)"), s.renderer,
+                listOf("vulkan" to "vulkan - GPU", "gles2" to "gles2 - GPU (experimental)", "pixman" to "pixman - software"), s.renderer,
                 note = "On Vulkan, programs on the desktop draw with the GPU in their own windows; if it cannot start, " +
                     "the desktop comes up on pixman. On pixman, games and emulators from the menu open full screen " +
                     "on the GPU instead (right-click one for a desktop window).",

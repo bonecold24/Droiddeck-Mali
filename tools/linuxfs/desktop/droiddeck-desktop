@@ -19,7 +19,7 @@ export MOZ_DISABLE_SOCKET_PROCESS_SANDBOX=1 MOZ_DISABLE_UTILITY_SANDBOX=1
 # stock wlroots allocates through gbm on a real DRM node and the KGSL stand-in is not one ("unable
 # to create allocator"): they need the app's patched wlroots (tools/wlroots), whose Vulkan
 # allocator exports the buffers instead. BL_WLR_RENDERER picks; see the fallback at the end.
-export WLR_RENDERER=${BL_WLR_RENDERER:-pixman}
+export WLR_RENDERER=${BL_WLR_RENDERER:-vulkan}
 WLROOTS_DIR=/usr/local/lib/droiddeck-wlroots
 BASE_LD_LIBRARY_PATH=${LD_LIBRARY_PATH:-}
 use_renderer() {
@@ -33,6 +33,18 @@ use_renderer() {
   fi
 }
 use_renderer "$WLR_RENDERER"
+# A GPU renderer that failed to start here is not tried again on every desktop start (each try costs
+# up to 20 s): the failure is kept with what it failed on - the renderer, the patched wlroots and the
+# Linux driver - so an app update or a different driver retries, and so does picking a renderer
+# again in the app's settings (which deletes the file).
+FAILED_FILE=$HOME/.droiddeck-renderer-failed
+renderer_key() {
+  echo "$WLR_RENDERER $(md5sum "$WLROOTS_DIR/libwlroots-0.20.so" 2>/dev/null | cut -d' ' -f1) ${BL_VK_DRIVER:-runtime}"
+}
+if [ "$WLR_RENDERER" != pixman ] && [ "$(cat "$FAILED_FILE" 2>/dev/null)" = "$(renderer_key)" ]; then
+  echo "== droiddeck-desktop: $WLR_RENDERER failed to start here before; using pixman (choose a renderer in the settings to retry)"
+  use_renderer pixman
+fi
 # The desktop's own log, beside the session's, so labwc and the programs on it can be read apart
 # from the session that started them. The session log keeps the milestones either way.
 if [ -n "${BL_DEBUG_DIR:-}" ]; then
@@ -175,6 +187,7 @@ else
 fi
 if [ "$rc" -ne 0 ] && [ $(( $(date +%s) - started )) -lt 40 ]; then
   echo "== droiddeck-desktop: labwc on $WLR_RENDERER failed at start (exit $rc); starting on pixman instead"
+  renderer_key > "$FAILED_FILE"
   use_renderer pixman
   DEBUG=; [ -f "$HOME/.droiddeck-desktop-debug" ] && DEBUG=-d
   find "$XDG_RUNTIME_DIR" -mindepth 1 -maxdepth 1 ! -name 'wayland-0*' ! -name 'keymap.xkb' -exec rm -rf {} + 2>/dev/null
