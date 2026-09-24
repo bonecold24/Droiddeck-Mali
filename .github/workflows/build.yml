@@ -500,6 +500,10 @@ jobs:
   sign:
     needs: build
     if: github.event_name != 'pull_request_target'
+    # What sign.yml asks for; a called workflow never gets more than its caller gives it.
+    permissions:
+      contents: read
+      actions: read
     uses: ./.github/workflows/sign.yml
     with:
       environment: ${{ github.ref == 'refs/heads/main' && 'signing-main' || 'signing-branch' }}
