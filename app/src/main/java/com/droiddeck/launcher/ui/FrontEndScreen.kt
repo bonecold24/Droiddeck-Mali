@@ -490,10 +490,14 @@ private fun BuildStatus(label: String, onCheckLatest: () -> Unit, modifier: Modi
     val pal = LocalPalette.current
     val interaction = remember { MutableInteractionSource() }
     val hot = rememberHot(interaction)
+    val divider = label.lastIndexOf(" at ")
+    val branch = if (divider >= 0) label.substring(0, divider).substringAfterLast('/') else label
+    val displayLabel = if (divider >= 0) "$branch${label.substring(divider)}" else branch
     Row(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(6.dp),
         modifier = modifier
+            .fillMaxWidth()
             .clip(RoundedCornerShape(6.dp))
             .semantics { contentDescription = "Build $label. Check for newest build." }
             .hoverable(interaction)
@@ -504,10 +508,10 @@ private fun BuildStatus(label: String, onCheckLatest: () -> Unit, modifier: Modi
                 onClick = onCheckLatest,
             )
             .heightIn(min = 40.dp)
-            .padding(horizontal = 8.dp),
+            .padding(horizontal = 4.dp),
     ) {
-        Text(label, fontSize = 10.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Medium, color = if (hot) colors.onSurfaceVariant else colors.onSurfaceVariant.copy(alpha = 0.72f), maxLines = 1, overflow = TextOverflow.Ellipsis)
-        Icon(Icons.Filled.Refresh, contentDescription = null, tint = if (hot) pal.signal else colors.onSurfaceVariant.copy(alpha = 0.72f), modifier = Modifier.size(12.dp))
+        Text(displayLabel, modifier = Modifier.weight(1f), fontSize = 9.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Medium, color = if (hot) colors.onSurfaceVariant else colors.onSurfaceVariant.copy(alpha = 0.82f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Icon(Icons.Filled.Refresh, contentDescription = null, tint = if (hot) pal.signal else colors.onSurfaceVariant.copy(alpha = 0.82f), modifier = Modifier.size(12.dp))
     }
 }
 
