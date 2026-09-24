@@ -280,7 +280,12 @@ class SessionService : Service() {
         // An imported glibc Turnip for this mode, when the user chose one: the session script checks
         // the manifest and its library from inside and points the loader at it with VK_DRIVER_FILES,
         // so the runtime's own driver above stays untouched and is what a bad import falls back to.
-        val linuxDriverId = SessionPrefs.linuxDriver(this, SessionPrefs.prefMode(SessionState.mode))
+        // A program from the rail is one of the desktop's emulators, so it draws with the desktop's
+        // Linux driver, not the Steam session's: the driver's shader cache is keyed on the driver
+        // build, and with two drivers every emulator compiled its shaders twice - once per way of
+        // starting it (RPCS3's 6650 interpreter variants on each first boot).
+        val driverMode = if (SessionState.mode == MODE_RUN) MODE_DESKTOP else SessionPrefs.prefMode(SessionState.mode)
+        val linuxDriverId = SessionPrefs.linuxDriver(this, driverMode)
         LinuxVulkanDriver.resolveIcdPath(this, linuxDriverId)
             ?.let { guest.add(LinuxVulkanDriver.ENV + "=" + it) }
         // Turnip's own debug switches, for the runtime's driver and everything on it. The file in
@@ -321,13 +326,13 @@ class SessionService : Service() {
         // on, even naming every core: it exists to undo the pin Steam applies to its own interface
         // renderer, and the scheduler's default is exactly what that pin takes away. A game's is
         // sent only when it is a real restriction - a game has no pin of its own to undo.
-        if (SessionState.mode == MODE_STEAM) {
-            if (SessionPrefs.clientCpusOverride(this)) {
-                guest.add("BL_CLIENT_CPUS=" + CpuCores.listOrAll(SessionPrefs.clientCpus(this)))
-            }
-            CpuCores.restrictionOrEmpty(SessionPrefs.gameCpus(this))
-                .takeIf { it.isNotEmpty() }?.let { guest.add("BL_GAME_CPUS=$it") }
+        if (SessionState.mode == MODE_STEAM && SessionPrefs.clientCpusOverride(this)) {
+            guest.add("BL_CLIENT_CPUS=" + CpuCores.listOrAll(SessionPrefs.clientCpus(this)))
         }
+        // The game cores also pin the desktop and a program from the rail; without a choice the
+        // session script picks every core but the slowest cluster for those (program_cores).
+        CpuCores.restrictionOrEmpty(SessionPrefs.gameCpus(this))
+            .takeIf { it.isNotEmpty() }?.let { guest.add("BL_GAME_CPUS=$it") }
 
         // PulseAudio always: the client is a native Linux program and has no other way to make a
         // sound - its menus, its music and its voice chat all go through here. DirectAudio is not
@@ -398,7 +403,11 @@ class SessionService : Service() {
             // identity gets the standard layout without the user configuring the pad by hand.
             guest.add("FAKE_EVDEV_IDENTITY=xbox360")
             guest.add("FAKE_EVDEV_VIBRATION=1")
-            guest.add("FAKE_EVDEV_STEAM_VIRTUAL=1")
+            // Steam Input's virtual-gamepad identity is for games the client starts, which are
+            // meant to see that pad. Everywhere else (the desktop, a program from the rail) it
+            // hides the pad: SDL ignores a Steam virtual gamepad unless it runs under Steam, so
+            // every SDL emulator came up with no controller. There it is a plain Xbox 360 pad.
+            if (SessionState.mode == MODE_STEAM) guest.add("FAKE_EVDEV_STEAM_VIRTUAL=1")
             guest.add("SDL_JOYSTICK_DISABLE_UDEV=1")
             guest.add("SDL_HIDAPI_JOYSTICK_DISABLE_UDEV=1")
             guest.add("SDL_JOYSTICK_HIDAPI=0")
@@ -407,12 +416,11 @@ class SessionService : Service() {
             }
             SessionState.fakeInputDir = fakeInputDir
         }
-        // The desktop is wlroots (labwc), and wlroots allocates its buffers through gbm on a real
-        // DRM render node. Ours is a KGSL stand-in that gbm cannot use - labwc dies at "unable to
-        // create allocator" - so the desktop shell is composited by pixman (software, a shm
-        // allocator, no DRM). Accelerated clients on it pay a CPU copy; a 2D emulator does not
-        // notice, a demanding one does. droiddeck-wlr-renderer in Downloads (pixman/vulkan/gles2)
-        // overrides it, for trying acceleration on a device that has a real node.
+        // The desktop is wlroots (labwc). Stock wlroots allocates through gbm on a real DRM render
+        // node, and ours is a KGSL stand-in - labwc died at "unable to create allocator" - so the
+        // default is pixman (software, shm), where a Vulkan program cannot draw at all; those run
+        // through droiddeck-gpu instead. vulkan / gles2 use the app's patched wlroots and fall back
+        // to pixman by themselves. droiddeck-wlr-renderer in Downloads overrides the choice.
         if (SessionState.mode == MODE_DESKTOP) {
             val override = File(Environment.getExternalStorageDirectory(), "Download/droiddeck-wlr-renderer")
                 .takeIf { it.isFile }?.let { FileUtils.readString(it)?.trim() }

@@ -275,6 +275,7 @@ struct surface {
     int sub_x, sub_y, sub_pending_x, sub_pending_y, sub_pending;
     int below_parent;
     int fullscreen;                         /* xdg_toplevel.set_fullscreen: no client decorations */
+    int toplevel_committed;                 /* the toplevel's initial commit was answered */
 
     char *title;                            /* xdg_toplevel title, for the session log */
     int announced_vulkan;                   /* logged its first dmabuf frame */
@@ -589,6 +590,10 @@ static void map_toplevel(struct surface *s) {
                    s->placed ? "" : " (no desktop position yet)");
     }
     wl_list_insert(g_toplevels.prev, &s->toplevel_link); /* new windows start on top */
+    /* Without a Wine desktop the clients are whole programs (the Linux desktop, a gamescope a
+     * program on it started over it): a window that opens on top takes the keys too, as it would
+     * on any desktop, rather than the one clicked last that is now underneath it. */
+    if (!g_desktop) g_key_target = s;
     apply_zorder();
 }
 
@@ -884,9 +889,20 @@ static void surface_set_opaque(struct wl_client *c, struct wl_resource *r,
 static void surface_set_input(struct wl_client *c, struct wl_resource *r,
                               struct wl_resource *region) {}
 
+static void send_toplevel_configure(struct surface *s);
+
 static void surface_commit(struct wl_client *c, struct wl_resource *r) {
     struct surface *s = wl_resource_get_user_data(r);
     struct surface *child;
+
+    /* xdg-shell: the initial commit of a toplevel is answered with a configure. One is also sent
+     * at get_toplevel, which Wine's driver has always had; a client that waits for the reply to its
+     * commit on a queue of its own (wlroots' Wayland backend - the desktop's labwc) can read that
+     * early one onto the wrong queue and would wait for ever. */
+    if (s->xdg_toplevel && !s->toplevel_committed) {
+        s->toplevel_committed = 1;
+        send_toplevel_configure(s);
+    }
 
     if (s->pending_src_set) {
         s->src_set = s->pending_src[2] > 0;
@@ -1298,6 +1314,7 @@ static void xdg_toplevel_resource_destroy(struct wl_resource *r) {
     struct surface *s = wl_resource_get_user_data(r);
     if (!s) return;
     s->xdg_toplevel = NULL;
+    s->toplevel_committed = 0;
     unmap_toplevel(s);
     s->placed = 0;
     s->hwnd = 0;
@@ -1315,8 +1332,23 @@ static void xdg_surface_get_toplevel(struct wl_client *c, struct wl_resource *r,
     s->xdg_toplevel = tl;
     send_toplevel_configure(s);
 }
+/* A popup is dismissed as soon as it is made (see the positioner below). */
+static void popup_destroy(struct wl_client *c, struct wl_resource *r) { wl_resource_destroy(r); }
+static void popup_grab(struct wl_client *c, struct wl_resource *r, struct wl_resource *seat, uint32_t serial) {}
+static void popup_reposition(struct wl_client *c, struct wl_resource *r, struct wl_resource *positioner,
+                             uint32_t token) {}
+static const struct xdg_popup_interface popup_impl = {
+    .destroy = popup_destroy,
+    .grab = popup_grab,
+    .reposition = popup_reposition,
+};
 static void xdg_surface_get_popup(struct wl_client *c, struct wl_resource *r, uint32_t id,
-                                  struct wl_resource *parent, struct wl_resource *positioner) {}
+                                  struct wl_resource *parent, struct wl_resource *positioner) {
+    struct wl_resource *p = wl_resource_create(c, &xdg_popup_interface, wl_resource_get_version(r), id);
+    if (!p) { wl_client_post_no_memory(c); return; }
+    wl_resource_set_implementation(p, &popup_impl, NULL, NULL);
+    xdg_popup_send_popup_done(p);
+}
 static void xdg_surface_set_geometry(struct wl_client *c, struct wl_resource *r,
                                      int32_t x, int32_t y, int32_t w, int32_t h) {}
 static void xdg_surface_ack_configure(struct wl_client *c, struct wl_resource *r, uint32_t serial) {}
@@ -1333,9 +1365,40 @@ static void xdg_surface_resource_destroy(struct wl_resource *r) {
 }
 
 static void xdg_wm_base_destroy(struct wl_client *c, struct wl_resource *r) { wl_resource_destroy(r); }
+
+/* Popups are not drawn here, but their requests must still land somewhere: a resource without an
+ * implementation makes libwayland abort on the first request to it - the whole compositor, and the
+ * app with it. A positioner takes every request and keeps nothing; a popup is dismissed at once
+ * (popup_done), which is what a client does with a popup it cannot show. Seen with a gamescope
+ * started from the Linux desktop beside labwc. */
+static void positioner_destroy(struct wl_client *c, struct wl_resource *r) { wl_resource_destroy(r); }
+static void positioner_set_size(struct wl_client *c, struct wl_resource *r, int32_t w, int32_t h) {}
+static void positioner_set_anchor_rect(struct wl_client *c, struct wl_resource *r, int32_t x, int32_t y,
+                                       int32_t w, int32_t h) {}
+static void positioner_set_anchor(struct wl_client *c, struct wl_resource *r, uint32_t a) {}
+static void positioner_set_gravity(struct wl_client *c, struct wl_resource *r, uint32_t g) {}
+static void positioner_set_constraint_adjustment(struct wl_client *c, struct wl_resource *r, uint32_t a) {}
+static void positioner_set_offset(struct wl_client *c, struct wl_resource *r, int32_t x, int32_t y) {}
+static void positioner_set_reactive(struct wl_client *c, struct wl_resource *r) {}
+static void positioner_set_parent_size(struct wl_client *c, struct wl_resource *r, int32_t w, int32_t h) {}
+static void positioner_set_parent_configure(struct wl_client *c, struct wl_resource *r, uint32_t serial) {}
+static const struct xdg_positioner_interface positioner_impl = {
+    .destroy = positioner_destroy,
+    .set_size = positioner_set_size,
+    .set_anchor_rect = positioner_set_anchor_rect,
+    .set_anchor = positioner_set_anchor,
+    .set_gravity = positioner_set_gravity,
+    .set_constraint_adjustment = positioner_set_constraint_adjustment,
+    .set_offset = positioner_set_offset,
+    .set_reactive = positioner_set_reactive,
+    .set_parent_size = positioner_set_parent_size,
+    .set_parent_configure = positioner_set_parent_configure,
+};
+
 static void xdg_wm_base_create_positioner(struct wl_client *c, struct wl_resource *r, uint32_t id) {
     struct wl_resource *p = wl_resource_create(c, &xdg_positioner_interface, wl_resource_get_version(r), id);
-    if (p) wl_resource_set_implementation(p, NULL, NULL, NULL);
+    if (!p) { wl_client_post_no_memory(c); return; }
+    wl_resource_set_implementation(p, &positioner_impl, NULL, NULL);
 }
 static void xdg_wm_base_get_xdg_surface(struct wl_client *c, struct wl_resource *r, uint32_t id,
                                         struct wl_resource *surf) {
@@ -1721,9 +1784,15 @@ static void bind_dmabuf(struct wl_client *c, void *data, uint32_t ver, uint32_t 
 
 /* ------------------------------------------------------------------ wl_output */
 
+/* wl_output v3+ has a request (release); without an implementation the first client to send it
+ * aborted the compositor. */
+static void output_release(struct wl_client *c, struct wl_resource *r) { wl_resource_destroy(r); }
+static const struct wl_output_interface output_impl = { .release = output_release };
+
 static void bind_output(struct wl_client *c, void *data, uint32_t ver, uint32_t id) {
     struct wl_resource *r = wl_resource_create(c, &wl_output_interface, ver, id);
-    wl_resource_set_implementation(r, NULL, NULL, NULL);
+    if (!r) { wl_client_post_no_memory(c); return; }
+    wl_resource_set_implementation(r, &output_impl, NULL, NULL);
     wl_output_send_geometry(r, 0, 0, 340, 190, WL_OUTPUT_SUBPIXEL_UNKNOWN,
                             "Bannerlator", "Wayland", WL_OUTPUT_TRANSFORM_NORMAL);
     wl_output_send_mode(r, WL_OUTPUT_MODE_CURRENT | WL_OUTPUT_MODE_PREFERRED,

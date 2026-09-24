@@ -38,6 +38,7 @@ object SessionFiles {
             "usr/local/bin/bannerlator-desktop-games" to "usr/local/bin/bannerlator-desktop-games",
             "usr/local/bin/bannerlator-steam-shim" to "usr/local/bin/bannerlator-steam-shim",
             "usr/local/bin/bannerlator-steam-shortcuts" to "usr/local/bin/bannerlator-steam-shortcuts",
+            "usr/local/bin/bannerlator-pad-defaults" to "usr/local/bin/bannerlator-pad-defaults",
             // The SteamOS helpers the client calls in Deck mode: the two Armada found it needs, plus
             // the three under /usr/bin, all no-ops that answer "nothing to do" (see each file).
             "usr/bin/steamos-update" to "usr/bin/steamos-update",
@@ -56,6 +57,9 @@ object SessionFiles {
         // staging them into a runtime without it would make the desktop look present when it is not.
         val desktop = arrayOf(
             "usr/local/bin/droiddeck-desktop" to "usr/local/bin/droiddeck-desktop",
+            // Games and emulators from the menu, full screen in a gamescope of their own.
+            "usr/local/bin/droiddeck-gpu" to "usr/local/bin/droiddeck-gpu",
+            "usr/local/bin/droiddeck-desktop-gpu" to "usr/local/bin/droiddeck-desktop-gpu",
             "etc/xdg/labwc/autostart" to "etc/xdg/labwc/autostart",
             "etc/xdg/labwc/rc.xml" to "etc/xdg/labwc/rc.xml",
             "etc/xdg/lxqt/panel.conf" to "etc/xdg/lxqt/panel.conf",
@@ -75,9 +79,13 @@ object SessionFiles {
             "usr/local/lib/mangoapp/libtraceevent.so.1",
             "usr/local/lib/mangoapp/libtracefs.so.1",
         ).map { it to it }
+        // The patched wlroots (tools/wlroots) the desktop loads for its vulkan / gles2 renderers.
+        val wlroots = if (File(root, "usr/bin/labwc").isFile) {
+            arrayOf("usr/local/lib/droiddeck-wlroots/libwlroots-0.20.so" to "usr/local/lib/droiddeck-wlroots/libwlroots-0.20.so")
+        } else emptyArray()
         val optional = (arrayOf(
             "usr/local/bin/gamescope" to "usr/local/bin/gamescope",
-        ) + mangoapp).filter { (asset, _) ->
+        ) + wlroots + mangoapp).filter { (asset, _) ->
             val dir = asset.substringBeforeLast('/')
             runCatching { context.assets.list("linuxfs/$dir")?.contains(asset.substringAfterLast('/')) == true }.getOrDefault(false)
         }

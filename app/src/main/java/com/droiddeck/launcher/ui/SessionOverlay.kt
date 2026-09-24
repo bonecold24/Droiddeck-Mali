@@ -3,6 +3,7 @@ package com.droiddeck.launcher.ui
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.focusGroup
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.material3.ButtonDefaults
@@ -30,7 +31,9 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.res.painterResource
@@ -64,6 +67,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.InputMode
+import androidx.compose.ui.platform.LocalInputModeManager
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
@@ -159,7 +164,10 @@ class DrawerActions(
     val selectedSecondScreenDisplay: Int,
     val onHud: (Boolean) -> Unit,
     val onFrameGenPick: (engine: String, multiplier: Int) -> Unit,
+    /** The Android keyboard (text, turned into key presses). */
     val onKeyboard: () -> Unit,
+    /** The on-screen PC keyboard: real keys, Esc, F1-F12, Ctrl, Alt... */
+    val onHardwareKeyboard: () -> Unit,
     val onSteamMenu: (() -> Unit)?,
     val onQam: (() -> Unit)?,
     val onOsc: (String) -> Unit,
@@ -175,6 +183,7 @@ class DrawerActions(
     val onClose: () -> Unit,
 )
 
+@OptIn(ExperimentalComposeUiApi::class)
 @Composable
 fun SessionDrawer(open: Boolean, a: DrawerActions) {
     val colors = MaterialTheme.colorScheme
@@ -185,11 +194,19 @@ fun SessionDrawer(open: Boolean, a: DrawerActions) {
     // A controller starts on the drawer's first control, highlighted, as on the app's main screen:
     // the STEAM button, or in a desktop session the first setting.
     val firstFocus = remember { androidx.compose.ui.focus.FocusRequester() }
+    var firstControlFocused by remember { mutableStateOf(false) }
+    val inputModeManager = LocalInputModeManager.current
     val steamButtons = a.onSteamMenu != null && a.onQam != null
     LaunchedEffect(open) {
         if (open) {
-            androidx.compose.runtime.withFrameNanos { }
-            runCatching { firstFocus.requestFocus() }
+            inputModeManager.requestInputMode(InputMode.Keyboard)
+            var attempts = 0
+            while (attempts < 24 && !firstControlFocused) {
+                firstFocus.requestFocus()
+                androidx.compose.runtime.withFrameNanos { }
+                attempts++
+            }
+            if (!firstControlFocused) android.util.Log.w("SessionDrawer", "first controller focus request did not focus a control")
         }
     }
     if (open || veil > 0.01f) Box(
@@ -208,6 +225,7 @@ fun SessionDrawer(open: Boolean, a: DrawerActions) {
                     .width(340.dp)
                     .background(pal.background.copy(alpha = 0.97f))
                     .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) {}
+                    .focusGroup()
                     .verticalScroll(rememberScrollState())
                     .padding(horizontal = 14.dp, vertical = 16.dp),
             ) {
@@ -238,7 +256,8 @@ fun SessionDrawer(open: Boolean, a: DrawerActions) {
                         OutlinedButton(
                             onClick = { host.open = null; a.onSteamMenu.invoke() },
                             interactionSource = steamSrc,
-                            modifier = Modifier.weight(1f).height(48.dp).focusRequester(firstFocus),
+                            modifier = Modifier.weight(1f).height(48.dp).focusRequester(firstFocus)
+                                .onFocusChanged { firstControlFocused = it.isFocused },
                             shape = RoundedCornerShape(12.dp),
                             border = BorderStroke(if (steamHot) 2.dp else 1.dp, if (steamHot) pal.signal else colors.outline),
                             colors = ButtonDefaults.outlinedButtonColors(containerColor = if (steamHot) pal.signal.copy(alpha = 0.16f) else Color.Transparent),
@@ -293,7 +312,8 @@ fun SessionDrawer(open: Boolean, a: DrawerActions) {
                 SettingsGroup("Now") {
                     ToggleRow(
                         host, "hud", "Performance HUD", null, a.hudOn,
-                        chipModifier = if (steamButtons) Modifier else Modifier.focusRequester(firstFocus), onChange = a.onHud,
+                        chipModifier = if (steamButtons) Modifier else Modifier.focusRequester(firstFocus)
+                            .onFocusChanged { firstControlFocused = it.isFocused }, onChange = a.onHud,
                     )
                     val fgOpen = host.open == "fg"
                     val fgLabel = when (a.frameGenEngine) {
@@ -329,7 +349,13 @@ fun SessionDrawer(open: Boolean, a: DrawerActions) {
                             true to SessionPrefs.BACK_QAM_THEN_MENU,
                         ), a.backActionsInverted, onPick = a.onBackActionsInverted,
                     )
-                    ActionRow("Keyboard", null, "Show") { host.open = null; a.onKeyboard() }
+                    SettingsRow("Keyboard", null) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            SecondaryButton("Hardware") { host.open = null; a.onHardwareKeyboard() }
+                            Spacer(Modifier.width(8.dp))
+                            SecondaryButton("Android") { host.open = null; a.onKeyboard() }
+                        }
+                    }
                 }
 
                 if (a.steam && a.secondScreenDisplays.isNotEmpty()) SettingsGroup("Second screen") {

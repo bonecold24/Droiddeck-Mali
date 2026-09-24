@@ -8,7 +8,9 @@ import android.os.Bundle
 import android.os.Environment
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import android.util.Log
+import android.view.InputDevice
 import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.Display
@@ -58,6 +60,7 @@ import com.droiddeck.launcher.ui.DroidDeckTheme
 import com.droiddeck.launcher.wayland.CompositorHost
 import com.droiddeck.launcher.wayland.WaylandCompositor
 import java.io.File
+import kotlin.math.abs
 
 /**
  * The session's screen: our Wayland compositor presenting onto this activity's Surface, and the
@@ -72,6 +75,7 @@ import java.io.File
  */
 class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
     private lateinit var surfaceView: SurfaceView
+    private lateinit var sessionOverlay: ComposeView
     private lateinit var loading: LoadingState
     private lateinit var hud: PerfHud
     private var padBridge: PadBridge? = null
@@ -86,10 +90,16 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
     private val cursorHide = Runnable { cursorVisible = false }
     private val uiHandler = Handler(Looper.getMainLooper())
     private var pendingBackAction: Runnable? = null
+    private var drawerDirectionKey = KeyEvent.KEYCODE_UNKNOWN
+    private var drawerDirectionDownTime = 0L
+    private var drawerDirectionLastRepeat = 0L
+    private var drawerDirectionDeviceId = -1
 
     // Compose reads these; the activity writes them.
     private var drawerOpen by mutableStateOf(false)
     private var backActionsInverted by mutableStateOf(false)
+    /** The on-screen PC keyboard (ui/PcKeyboard): real key presses, Esc and F1 included. */
+    private var pcKeyboardOpen by mutableStateOf(false)
     private var hudOn by mutableStateOf(true)
     private var frameGenLabel by mutableStateOf("Off")
     private var frameGenEngine by mutableStateOf(FrameGen.ENGINE_OFF)
@@ -175,14 +185,31 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
 
         // One Compose layer for every menu and overlay. Touches nothing in it consumes fall
         // through to the pad and the game underneath.
-        root.addView(ComposeView(this).apply {
+        sessionOverlay = ComposeView(this).apply {
+            isFocusable = true
+            isFocusableInTouchMode = true
             setContent {
                 DroidDeckTheme {
                     CursorOverlay(cursorPos, cursorVisible, resources.displayMetrics.density)
                     if (hud.text.isNotEmpty()) HudText(hud.text)
                     if (loading.visible) LoadingOverlay(loading.step, loading.percent, loading.elapsed, loading.hint, loading.ended)
                     // Opening the drawer takes the controller away from the game: release its pad.
-                    androidx.compose.runtime.LaunchedEffect(drawerOpen) { if (drawerOpen) padBridge?.releaseAll() }
+                    androidx.compose.runtime.LaunchedEffect(drawerOpen) {
+                        if (drawerOpen) {
+                            padBridge?.releaseAll()
+                            androidx.compose.runtime.withFrameNanos { }
+                            sessionOverlay.requestFocus()
+                        } else {
+                            releaseDrawerDirection()
+                        }
+                    }
+                    // The PC keyboard takes it too, for moving over the keys; the drawer opens over it.
+                    androidx.compose.runtime.LaunchedEffect(pcKeyboardOpen) { if (pcKeyboardOpen) padBridge?.releaseAll() }
+                    if (pcKeyboardOpen) com.droiddeck.launcher.ui.PcKeyboard(
+                        sendKey = { code, down -> if (CompositorHost.isStarted) WaylandCompositor.nativeSendKey(code, if (down) 1 else 0) },
+                        onAndroidKeyboard = { pcKeyboardOpen = false; keyboard?.toggle() },
+                        onClose = { pcKeyboardOpen = false },
+                    )
                     SessionDrawer(drawerOpen, DrawerActions(
                         steam = SessionState.mode == SessionService.MODE_STEAM,
                         isHomeApp = isHomeApp,
@@ -202,7 +229,8 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
                             readPrefs()
                             applyFrameGen()
                         },
-                        onKeyboard = { drawerOpen = false; keyboard?.toggle() },
+                        onKeyboard = { drawerOpen = false; pcKeyboardOpen = false; keyboard?.toggle() },
+                        onHardwareKeyboard = { drawerOpen = false; pcKeyboardOpen = !pcKeyboardOpen },
                         onSteamMenu = if (SessionState.mode == SessionService.MODE_STEAM) ({ sendSteamGuide() }) else null,
                         onQam = if (SessionState.mode == SessionService.MODE_STEAM) ({ triggerSteamQam() }) else null,
                         backActionsInverted = backActionsInverted,
@@ -233,7 +261,8 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
                     }
                 }
             }
-        })
+        }
+        root.addView(sessionOverlay)
         setContentView(root)
         handleHomeGuideIntent(intent)
 
@@ -250,7 +279,12 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
         // The single action waits out the double-press window so the two actions stay distinct.
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() {
-                routeBackAction()
+                // The PC keyboard closes first (B on a controller), then Back is the drawer again.
+                when {
+                    drawerOpen -> drawerOpen = false
+                    pcKeyboardOpen -> pcKeyboardOpen = false
+                    else -> routeBackAction()
+                }
             }
         })
         watchSession()
@@ -639,10 +673,17 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
             KeyEvent.KEYCODE_VOLUME_UP, KeyEvent.KEYCODE_VOLUME_DOWN, KeyEvent.KEYCODE_VOLUME_MUTE ->
                 return super.dispatchKeyEvent(event)
         }
-        // With the drawer open the controller drives the drawer, not the game: Android's own
-        // handling moves focus with the d-pad and stick, and its fallbacks make A select and B Back
-        // (which closes the drawer) - the same as on the app's main screen.
-        if (drawerOpen && event.device != null && PadBridge.isFromController(event.device)) return super.dispatchKeyEvent(event)
+        // Keep keys in the Android/Compose focus tree while the drawer is open. Its Back key and
+        // controller B always dismiss the drawer; directional and confirm keys stay with the UI.
+        if (drawerOpen) {
+            if (event.keyCode == KeyEvent.KEYCODE_BACK || event.keyCode == KeyEvent.KEYCODE_BUTTON_B) {
+                if (event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0) drawerOpen = false
+                releaseDrawerDirection()
+                return true
+            }
+            return super.dispatchKeyEvent(event)
+        }
+        if (pcKeyboardOpen && event.device != null && PadBridge.isFromController(event.device)) return super.dispatchKeyEvent(event)
         if (event.keyCode != KeyEvent.KEYCODE_BACK && padBridge?.onKeyEvent(event) == true) return true
         // A hardware keyboard, forwarded to the compositor's wl_keyboard. Back is left to the
         // activity, which opens the drawer.
@@ -684,10 +725,58 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
     }
 
     override fun dispatchGenericMotionEvent(event: MotionEvent): Boolean {
-        if (drawerOpen && event.device != null && PadBridge.isFromController(event.device)) return super.dispatchGenericMotionEvent(event)
+        if (drawerOpen && event.device != null && PadBridge.isFromController(event.device)) {
+            dispatchDrawerDirection(event)
+            return true
+        }
+        if (drawerDirectionKey != KeyEvent.KEYCODE_UNKNOWN) releaseDrawerDirection()
+        if (pcKeyboardOpen && event.device != null && PadBridge.isFromController(event.device)) return super.dispatchGenericMotionEvent(event)
         if (padBridge?.onMotionEvent(event) == true) return true
         if (event.isFromSource(android.view.InputDevice.SOURCE_MOUSE) && !drawerOpen && onMouse(event)) return true
         return super.dispatchGenericMotionEvent(event)
+    }
+
+    /** Convert a held left-stick or d-pad-hat direction into focus navigation. */
+    private fun dispatchDrawerDirection(event: MotionEvent) {
+        val hatX = event.getAxisValue(MotionEvent.AXIS_HAT_X)
+        val hatY = event.getAxisValue(MotionEvent.AXIS_HAT_Y)
+        val x = if (abs(hatX) > 0.4f) hatX else event.getAxisValue(MotionEvent.AXIS_X)
+        val y = if (abs(hatY) > 0.4f) hatY else event.getAxisValue(MotionEvent.AXIS_Y)
+        val keyCode = when {
+            maxOf(abs(x), abs(y)) < 0.45f -> KeyEvent.KEYCODE_UNKNOWN
+            abs(x) > abs(y) && x < 0f -> KeyEvent.KEYCODE_DPAD_LEFT
+            abs(x) > abs(y) -> KeyEvent.KEYCODE_DPAD_RIGHT
+            y < 0f -> KeyEvent.KEYCODE_DPAD_UP
+            else -> KeyEvent.KEYCODE_DPAD_DOWN
+        }
+        val now = SystemClock.uptimeMillis()
+        if (keyCode != drawerDirectionKey) {
+            releaseDrawerDirection()
+            if (keyCode == KeyEvent.KEYCODE_UNKNOWN) return
+            drawerDirectionKey = keyCode
+            drawerDirectionDeviceId = event.deviceId
+            drawerDirectionDownTime = now
+            drawerDirectionLastRepeat = now
+            dispatchDrawerKey(KeyEvent.ACTION_DOWN, 0, now)
+        } else if (keyCode != KeyEvent.KEYCODE_UNKNOWN && now - drawerDirectionLastRepeat >= 240L) {
+            drawerDirectionLastRepeat = now
+            dispatchDrawerKey(KeyEvent.ACTION_DOWN, 1, now)
+        }
+    }
+
+    private fun releaseDrawerDirection() {
+        if (drawerDirectionKey == KeyEvent.KEYCODE_UNKNOWN) return
+        dispatchDrawerKey(KeyEvent.ACTION_UP, 0, SystemClock.uptimeMillis())
+        drawerDirectionKey = KeyEvent.KEYCODE_UNKNOWN
+        drawerDirectionDeviceId = -1
+    }
+
+    private fun dispatchDrawerKey(action: Int, repeatCount: Int, eventTime: Long) {
+        val event = KeyEvent(
+            drawerDirectionDownTime, eventTime, action, drawerDirectionKey,
+            repeatCount, 0, drawerDirectionDeviceId, 0, 0, InputDevice.SOURCE_DPAD,
+        )
+        super.dispatchKeyEvent(event)
     }
 
     /**
