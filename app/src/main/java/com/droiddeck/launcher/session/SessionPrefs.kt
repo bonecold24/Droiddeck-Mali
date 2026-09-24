@@ -13,12 +13,25 @@ object SessionPrefs {
     const val OSC_STEAM_QAM = "steam-qam"
     const val OSC_NEVER = "never"
 
+    const val BACK_MENU_THEN_QAM = "1: menu 2: QAM"
+    const val BACK_QAM_THEN_MENU = "1: QAM 2: menu"
+
+    fun backActionsOrder(inverted: Boolean): String =
+        if (inverted) BACK_QAM_THEN_MENU else BACK_MENU_THEN_QAM
+
     private fun prefs(context: Context) = context.getSharedPreferences("session", Context.MODE_PRIVATE)
 
     fun hudEnabled(context: Context): Boolean = prefs(context).getBoolean("hud", true)
 
     fun setHudEnabled(context: Context, on: Boolean) {
         prefs(context).edit().putBoolean("hud", on).apply()
+    }
+
+    /** When enabled, a single Back opens Steam QAM and a double Back opens the session menu. */
+    fun backActionsInverted(context: Context): Boolean = prefs(context).getBoolean("backActionsInverted", false)
+
+    fun setBackActionsInverted(context: Context, inverted: Boolean) {
+        prefs(context).edit().putBoolean("backActionsInverted", inverted).apply()
     }
 
     const val TOUCH_AUTO = "auto"

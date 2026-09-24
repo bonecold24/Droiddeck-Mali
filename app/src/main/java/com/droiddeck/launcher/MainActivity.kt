@@ -170,6 +170,7 @@ class MainActivity : ComponentActivity() {
     private var touchMode by mutableStateOf(SessionPrefs.TOUCH_AUTO)
     private var suspendPolicy by mutableStateOf(SessionPrefs.SUSPEND_MANUAL)
     private var oscMode by mutableStateOf(SessionPrefs.OSC_AUTO)
+    private var backActionsInverted by mutableStateOf(false)
     private var renderer by mutableStateOf("vulkan")
     private var gameStorage by mutableStateOf("")
     private var storageOptions by mutableStateOf<List<Pair<String, String>>>(emptyList())
@@ -211,6 +212,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         theme = SessionPrefs.theme(this)
+        backActionsInverted = SessionPrefs.backActionsInverted(this)
         setContent {
             DroidDeckTheme(theme) {
                 val sm = settingsMode
@@ -241,6 +243,7 @@ class MainActivity : ComponentActivity() {
                         packageStage = pkgStage,
                         packagePercent = pkgPercent,
                         sessionRunning = SessionState.running,
+                        backActionsInverted = backActionsInverted,
                     ),
                     FrontEndActions(
                         onPlay = { startSession(Intent(this, SessionActivity::class.java)) },
@@ -301,6 +304,10 @@ class MainActivity : ComponentActivity() {
                         onTheme = { id -> SessionPrefs.setTheme(this, id); theme = id },
                         onHomeApp = { manageHomeApp() },
                         onAndroidApp = { app -> launchAndroidApp(app) },
+                        onBackActionsInverted = { inverted ->
+                            SessionPrefs.setBackActionsInverted(this, inverted)
+                            backActionsInverted = inverted
+                        },
                     ),
                     page = page,
                 )
@@ -516,6 +523,7 @@ class MainActivity : ComponentActivity() {
                 touchMode = touchMode,
                 suspendPolicy = suspendPolicy,
                 oscMode = if (mode == SessionService.MODE_STEAM) oscMode else null,
+                backActionsInverted = backActionsInverted,
                 directAudio = if (mode == SessionService.MODE_STEAM) directAudio else null,
                 clientDirectAudio = clientDirectAudio,
                 mic = if (mode == SessionService.MODE_STEAM) mic else null,
@@ -547,6 +555,10 @@ class MainActivity : ComponentActivity() {
                 onTouch = { t -> SessionPrefs.setTouchMode(this, t); touchMode = t },
                 onSuspendPolicy = { policy -> SessionPrefs.setSuspendPolicy(this, mode, policy); suspendPolicy = policy },
                 onOsc = { o -> SessionPrefs.setOscMode(this, o); oscMode = o },
+                onBackActionsInverted = { inverted ->
+                    SessionPrefs.setBackActionsInverted(this, inverted)
+                    backActionsInverted = inverted
+                },
                 onDirectAudio = { on -> SessionPrefs.setDirectAudio(this, on); directAudio = on },
                 onClientDirectAudio = { on -> SessionPrefs.setClientDirectAudio(this, on); clientDirectAudio = on },
                 onMic = { on ->
@@ -642,6 +654,7 @@ class MainActivity : ComponentActivity() {
         touchMode = SessionPrefs.touchMode(this)
         suspendPolicy = SessionPrefs.suspendPolicy(this, mode)
         oscMode = SessionPrefs.oscMode(this)
+        backActionsInverted = SessionPrefs.backActionsInverted(this)
         directAudio = SessionPrefs.directAudio(this)
         clientDirectAudio = SessionPrefs.clientDirectAudio(this)
         mic = SessionPrefs.micEnabled(this)

@@ -46,6 +46,8 @@ class ModeSettings(
     val suspendPolicy: String,
     /** Steam only. */
     val oscMode: String?,
+    /** Steam only: whether single and double Back actions are swapped. */
+    val backActionsInverted: Boolean = false,
     val directAudio: Boolean?,
     val clientDirectAudio: Boolean = false,
     val mic: Boolean?,
@@ -91,6 +93,7 @@ class ModeSettingsActions(
     val onTouch: (String) -> Unit,
     val onSuspendPolicy: (String) -> Unit,
     val onOsc: (String) -> Unit,
+    val onBackActionsInverted: (Boolean) -> Unit = {},
     val onDirectAudio: (Boolean) -> Unit,
     val onClientDirectAudio: (Boolean) -> Unit = {},
     val onMic: (Boolean) -> Unit,
@@ -225,6 +228,13 @@ fun ModeSettingsPage(s: ModeSettings, a: ModeSettingsActions) {
                     SessionPrefs.OSC_NEVER to "Never",
                 ), s.oscMode,
                 note = "Auto shows all controls without a controller. Steam + QAM shows only those buttons.", onPick = a.onOsc,
+            )
+            if (steam) ChoiceRow(
+                host, "back-actions", "Back", SessionPrefs.backActionsOrder(s.backActionsInverted),
+                listOf(
+                    false to SessionPrefs.BACK_MENU_THEN_QAM,
+                    true to SessionPrefs.BACK_QAM_THEN_MENU,
+                ), s.backActionsInverted, onPick = a.onBackActionsInverted,
             )
         }
         SettingsGroup("Session") {
