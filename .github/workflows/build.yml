@@ -317,7 +317,7 @@ jobs:
           echo "apk: $APK"
           ls -l "$APK"
           sha256sum "$APK"
-          unzip -l "$APK" | grep -E 'lib/arm64-v8a|assets/linuxfs' | head -30
+          unzip -l "$APK" | grep -E 'lib/arm64-v8a|assets/linuxfs' | awk 'NR <= 30'  # awk reads to the end: head would break the pipe under pipefail
 
       # Every NEEDED of every library we ship must resolve inside the apk or on the device. The
       # first build shipped libwayland-server.so without libffi.so, and the app died on
