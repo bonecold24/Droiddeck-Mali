@@ -63,6 +63,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -73,6 +74,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
@@ -112,6 +114,10 @@ import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.platform.LocalInputModeManager
 import androidx.compose.ui.input.InputMode
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
@@ -157,6 +163,7 @@ class FrontEndState(
     val packagePercent: Int = -1,
     val sessionRunning: Boolean = false,
     val backActionsInverted: Boolean = false,
+    val buildLabel: String = "local",
 )
 
 class FrontEndActions(
@@ -186,6 +193,7 @@ class FrontEndActions(
     val onHomeApp: () -> Unit = {},
     val onAndroidApp: (com.droiddeck.launcher.HomeApp.LaunchableApp) -> Unit = {},
     val onBackActionsInverted: (Boolean) -> Unit = {},
+    val onCheckLatestBuild: () -> Unit = {},
 )
 
 
@@ -374,82 +382,89 @@ private fun Rail(
 ) {
     val colors = MaterialTheme.colorScheme
     Column(
-        modifier = modifier.background(colors.surface).verticalScroll(rememberScrollState()).padding(horizontal = 10.dp, vertical = 12.dp),
-        verticalArrangement = Arrangement.spacedBy(2.dp),
+        modifier = modifier.background(colors.surface).padding(horizontal = 10.dp, vertical = 12.dp),
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(start = 8.dp, bottom = 10.dp)) {
-            Image(painterResource(R.drawable.logo), null, modifier = Modifier.size(30.dp))
-            Spacer(Modifier.width(10.dp))
-            Column {
-                Text("DroidDeck", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = colors.onBackground)
-                val status = when {
-                    s.busy -> if (s.percent >= 0) "${s.stage} ${s.percent}%" else s.stage
-                    !s.ready -> "runtime not installed"
-                    s.available != null && s.available != s.installed -> "runtime update available"
-                    else -> null
+        Column(
+            modifier = Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()),
+            verticalArrangement = Arrangement.spacedBy(2.dp),
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(start = 8.dp, bottom = 10.dp)) {
+                Image(painterResource(R.drawable.logo), null, modifier = Modifier.size(30.dp))
+                Spacer(Modifier.width(10.dp))
+                Column {
+                    Text("DroidDeck", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = colors.onBackground)
+                    val status = when {
+                        s.busy -> if (s.percent >= 0) "${s.stage} ${s.percent}%" else s.stage
+                        !s.ready -> "runtime not installed"
+                        s.available != null && s.available != s.installed -> "runtime update available"
+                        else -> null
+                    }
+                    if (status != null) Text(status, fontSize = 11.sp, color = colors.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
-                if (status != null) Text(status, fontSize = 11.sp, color = colors.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
-        }
-        AnimatedVisibility(s.busy, enter = expandVertically() + fadeIn(), exit = shrinkVertically() + fadeOut()) {
-            LinearProgressIndicator(modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp))
-        }
+            AnimatedVisibility(s.busy, enter = expandVertically() + fadeIn(), exit = shrinkVertically() + fadeOut()) {
+                LinearProgressIndicator(modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp))
+            }
 
-        var lastRunning by remember { mutableStateOf("") }
-        if (s.running != null) lastRunning = s.running
-        AnimatedVisibility(
-            s.running != null,
-            enter = expandVertically(Motion.sp(0.75f)) + fadeIn(Motion.tw(300)) + slideInVertically(Motion.sp(0.6f)) { -it / 2 },
-            exit = shrinkVertically(Motion.tw(220)) + fadeOut(Motion.tw(180)),
-        ) { RunningTile(lastRunning, a.onResume) }
+            var lastRunning by remember { mutableStateOf("") }
+            if (s.running != null) lastRunning = s.running
+            AnimatedVisibility(
+                s.running != null,
+                enter = expandVertically(Motion.sp(0.75f)) + fadeIn(Motion.tw(300)) + slideInVertically(Motion.sp(0.6f)) { -it / 2 },
+                exit = shrinkVertically(Motion.tw(220)) + fadeOut(Motion.tw(180)),
+            ) { RunningTile(lastRunning, a.onResume) }
 
-        val pal = LocalPalette.current
-        var navOrigin by remember { mutableStateOf(Offset.Zero) }
-        val positions = remember { mutableStateMapOf<String, Rect>() }
-        Box(modifier = Modifier.fillMaxWidth().onGloballyPositioned { val o = it.positionInRoot(); if (o != navOrigin) navOrigin = o }) {
-            val target = positions[selected]?.translate(-navOrigin)
-            val y by animateFloatAsState(target?.top ?: 0f, Motion.sp(0.72f, Spring.StiffnessLow), label = "indY")
-            val x by animateFloatAsState(target?.left ?: 0f, Motion.sp(0.9f), label = "indX")
-            val h by animateFloatAsState(target?.height ?: 0f, Motion.sp(1f, Spring.StiffnessMediumLow), label = "indH")
-            val w by animateFloatAsState(target?.width ?: 0f, Motion.sp(1f, Spring.StiffnessMediumLow), label = "indW")
-            val alpha by animateFloatAsState(if (target != null) 1f else 0f, Motion.tw(250), label = "indA")
-            val density = LocalDensity.current
-            Box(
-                modifier = Modifier
-                    .offset { IntOffset(x.roundToInt(), y.roundToInt()) }
-                    .width(with(density) { w.toDp() }).height(with(density) { h.toDp() })
-                    .alpha(alpha)
-                    .graphicsLayer { shadowElevation = 6.dp.toPx(); shape = Shape10; clip = false; ambientShadowColor = pal.signal; spotShadowColor = pal.signal }
-                    .clip(Shape10)
-                    .background(Brush.linearGradient(listOf(colors.primary, pal.primary2))),
+            val pal = LocalPalette.current
+            var navOrigin by remember { mutableStateOf(Offset.Zero) }
+            val positions = remember { mutableStateMapOf<String, Rect>() }
+            Box(modifier = Modifier.fillMaxWidth().onGloballyPositioned { val o = it.positionInRoot(); if (o != navOrigin) navOrigin = o }) {
+                val target = positions[selected]?.translate(-navOrigin)
+                val y by animateFloatAsState(target?.top ?: 0f, Motion.sp(0.72f, Spring.StiffnessLow), label = "indY")
+                val x by animateFloatAsState(target?.left ?: 0f, Motion.sp(0.9f), label = "indX")
+                val h by animateFloatAsState(target?.height ?: 0f, Motion.sp(1f, Spring.StiffnessMediumLow), label = "indH")
+                val w by animateFloatAsState(target?.width ?: 0f, Motion.sp(1f, Spring.StiffnessMediumLow), label = "indW")
+                val alpha by animateFloatAsState(if (target != null) 1f else 0f, Motion.tw(250), label = "indA")
+                val density = LocalDensity.current
+                Box(
+                    modifier = Modifier
+                        .offset { IntOffset(x.roundToInt(), y.roundToInt()) }
+                        .width(with(density) { w.toDp() }).height(with(density) { h.toDp() })
+                        .alpha(alpha)
+                        .graphicsLayer { shadowElevation = 6.dp.toPx(); shape = Shape10; clip = false; ambientShadowColor = pal.signal; spotShadowColor = pal.signal }
+                        .clip(Shape10)
+                        .background(Brush.linearGradient(listOf(colors.primary, pal.primary2))),
+                )
+                val register: (String, LayoutCoordinates) -> Unit = { key, c ->
+                    val o = c.positionInRoot(); val r = Rect(o.x, o.y, o.x + c.size.width, o.y + c.size.height)
+                    if (positions[key] != r) positions[key] = r
+                }
+                val unregister: (String) -> Unit = { positions.remove(it) }
+                Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    if (s.isHomeApp) {
+                        NavItem("Android apps", "android-apps", selected == "android-apps", count = s.androidApps.size,
+                            register = register, unregister = unregister) { onSelect("android-apps") }
+                    }
+                    NavItem("Steam", "steam", selected == "steam", count = s.steamGames.size, register = register, unregister = unregister) { onSelect("steam") }
+                    NavItem("Desktop", "desktop", selected == "desktop", count = s.emulators.count { it.installed }, register = register, unregister = unregister) { onSelect("desktop") }
+                    NavItem("Setup", "setup", selected == "setup", register = register, unregister = unregister) { onSelect("setup") }
+                    Spacer(Modifier.height(6.dp))
+                }
+            }
+
+            val creditsSrc = remember { MutableInteractionSource() }
+            val creditsHot = rememberHot(creditsSrc)
+            Text(
+                "credits", fontSize = 11.sp, color = if (creditsHot) LocalPalette.current.signal else colors.onSurfaceVariant,
+                modifier = Modifier.clip(Shape10)
+                    .border(2.dp, if (creditsHot) LocalPalette.current.signal else Color.Transparent, Shape10)
+                    .hoverable(creditsSrc).clickable(interactionSource = creditsSrc, indication = null, onClick = a.onCredits)
+                    .padding(horizontal = 10.dp, vertical = 8.dp),
             )
-            val register: (String, LayoutCoordinates) -> Unit = { key, c ->
-                val o = c.positionInRoot(); val r = Rect(o.x, o.y, o.x + c.size.width, o.y + c.size.height)
-                if (positions[key] != r) positions[key] = r
-            }
-            val unregister: (String) -> Unit = { positions.remove(it) }
-            Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                if (s.isHomeApp) {
-                    NavItem("Android apps", "android-apps", selected == "android-apps", count = s.androidApps.size,
-                        register = register, unregister = unregister) { onSelect("android-apps") }
-                }
-                NavItem("Steam", "steam", selected == "steam", count = s.steamGames.size, register = register, unregister = unregister) { onSelect("steam") }
-                NavItem("Desktop", "desktop", selected == "desktop", count = s.emulators.count { it.installed }, register = register, unregister = unregister) { onSelect("desktop") }
-                NavItem("Setup", "setup", selected == "setup", register = register, unregister = unregister) { onSelect("setup") }
-                Spacer(Modifier.height(6.dp))
-            }
         }
-
-        // Outlined when a controller is on it, like every other control; the ripple alone was
-        // a faint box on the dark rail.
-        val creditsSrc = remember { MutableInteractionSource() }
-        val creditsHot = rememberHot(creditsSrc)
-        Text(
-            "credits", fontSize = 11.sp, color = if (creditsHot) LocalPalette.current.signal else colors.onSurfaceVariant,
-            modifier = Modifier.clip(Shape10)
-                .border(2.dp, if (creditsHot) LocalPalette.current.signal else Color.Transparent, Shape10)
-                .hoverable(creditsSrc).clickable(interactionSource = creditsSrc, indication = null, onClick = a.onCredits)
-                .padding(horizontal = 10.dp, vertical = 8.dp),
+        BuildStatus(
+            label = s.buildLabel,
+            onCheckLatest = a.onCheckLatestBuild,
+            modifier = Modifier.align(Alignment.Start).padding(start = 8.dp, top = 4.dp, bottom = 2.dp),
         )
     }
 }
@@ -558,6 +573,47 @@ private fun Pane(s: FrontEndState, selected: String, a: FrontEndActions, page: (
             },
             label = "pane",
         ) { key -> if (page != null && key == s.pageKey) page() else Content(s, key, a, Modifier.fillMaxSize(), onSelect) }
+    }
+}
+
+@Composable
+private fun BuildStatus(label: String, onCheckLatest: () -> Unit, modifier: Modifier = Modifier) {
+    val colors = MaterialTheme.colorScheme
+    val pal = LocalPalette.current
+    val interaction = remember { MutableInteractionSource() }
+    val hot = rememberHot(interaction)
+    val contextDivider = label.indexOf(" · ")
+    val context = if (contextDivider >= 0) label.substring(0, contextDivider) else ""
+    val identity = if (contextDivider >= 0) label.substring(contextDivider + 3) else label
+    val identityDivider = identity.lastIndexOf(" at ")
+    val branch = (if (identityDivider >= 0) identity.substring(0, identityDivider) else identity).substringAfterLast('/')
+    val commit = if (identityDivider >= 0) identity.substring(identityDivider + 4) else ""
+    Column(
+        verticalArrangement = Arrangement.spacedBy(1.dp),
+        modifier = modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(6.dp))
+            .semantics { contentDescription = "Build $label. Check for newest build." }
+            .hoverable(interaction)
+            .clickable(
+                interactionSource = interaction,
+                indication = LocalIndication.current,
+                role = Role.Button,
+                onClick = onCheckLatest,
+            )
+            .heightIn(min = 44.dp)
+            .padding(horizontal = 4.dp, vertical = 3.dp),
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(5.dp),
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Text(branch, modifier = Modifier.weight(1f), fontSize = 9.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Medium, color = if (hot) colors.onSurfaceVariant else colors.onSurfaceVariant.copy(alpha = 0.82f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+            if (commit.isNotEmpty()) Text("@$commit", fontSize = 8.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Medium, color = colors.onSurfaceVariant.copy(alpha = 0.82f), maxLines = 1)
+            Icon(Icons.Filled.Refresh, contentDescription = null, tint = if (hot) pal.signal else colors.onSurfaceVariant.copy(alpha = 0.82f), modifier = Modifier.size(12.dp))
+        }
+        if (context.isNotEmpty()) Text(context, fontSize = 8.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Medium, color = colors.onSurfaceVariant.copy(alpha = 0.82f), maxLines = 1)
     }
 }
 
@@ -816,9 +872,9 @@ private fun SetupPanel(s: FrontEndState, a: FrontEndActions) {
                     SettingsRow("Frame generation", "Select the frame generation mode") {
                         Box {
                             ValueChip(s.frameGenLabel, host.open == "fg") { host.open = if (host.open == "fg") null else "fg" }
-                            AnchoredMenu(host.open == "fg", onDismiss = { if (host.open == "fg") host.open = null }, title = "Frame generation") {
+                            AnchoredMenu(host.open == "fg", onDismiss = { if (host.open == "fg") host.open = null }, title = "Frame generation") { firstItemFocus ->
                                 val need = if (s.lsfgReady) null else "Install Lossless Scaling in Steam"
-                                MenuItem("Off", checked = s.frameGenEngine == FrameGen.ENGINE_OFF) { a.onFrameGenPick(FrameGen.ENGINE_OFF, 2); host.open = null }
+                                MenuItem("Off", checked = s.frameGenEngine == FrameGen.ENGINE_OFF, focusRequester = firstItemFocus) { a.onFrameGenPick(FrameGen.ENGINE_OFF, 2); host.open = null }
                                 for (m in 2..4) MenuItem("Win-FG ${m}×", checked = s.frameGenEngine == FrameGen.ENGINE_WINFG && s.frameGenMultiplier == m) { a.onFrameGenPick(FrameGen.ENGINE_WINFG, m); host.open = null }
                                 for (m in 2..4) MenuItem("LSFG ${m}×", checked = s.frameGenEngine == FrameGen.ENGINE_LSFG && s.frameGenMultiplier == m, enabled = s.lsfgReady, detail = need) { a.onFrameGenPick(FrameGen.ENGINE_LSFG, m); host.open = null }
                             }
@@ -839,8 +895,13 @@ private fun SetupPanel(s: FrontEndState, a: FrontEndActions) {
                     SettingsRow("Theme", "Choose the launcher appearance") {
                         Box {
                             ValueChip(Themes.byId(s.theme).label, host.open == "theme") { host.open = if (host.open == "theme") null else "theme" }
-                            AnchoredMenu(host.open == "theme", onDismiss = { if (host.open == "theme") host.open = null }, title = "Theme") {
-                                for (t in Themes.all) MenuItem(t.label, checked = s.theme == t.id) { a.onTheme(t.id); host.open = null }
+                            AnchoredMenu(host.open == "theme", onDismiss = { if (host.open == "theme") host.open = null }, title = "Theme") { firstItemFocus ->
+                                Themes.all.forEachIndexed { index, theme ->
+                                    MenuItem(theme.label, checked = s.theme == theme.id, focusRequester = if (index == 0) firstItemFocus else null) {
+                                        a.onTheme(theme.id)
+                                        host.open = null
+                                    }
+                                }
                             }
                         }
                     }
@@ -942,6 +1003,7 @@ internal fun SecondaryButton(text: String, enabled: Boolean = true, onClick: () 
         modifier = Modifier.paneItem("btn:$text").graphicsLayer { scaleX = scale; scaleY = scale }.clip(Shape12).background(fill).border(1.dp, edge, Shape12)
             .alpha(if (enabled) 1f else 0.5f)
             .hoverable(src).clickable(interactionSource = src, indication = LocalIndication.current, enabled = enabled, onClick = onClick)
+            .controllerConfirm(enabled = enabled, onClick = onClick)
             .padding(horizontal = 16.dp, vertical = 11.dp),
     ) { Text(text, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 0.5.sp, color = colors.onBackground, maxLines = 1) }
 }

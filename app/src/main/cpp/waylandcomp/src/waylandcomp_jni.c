@@ -23,6 +23,7 @@
 
 extern int banner_wayland_run(void);
 extern void banner_wayland_send_pointer(int action, int x, int y);
+extern void banner_wayland_send_touch(int action, int pointer_id, int x, int y);
 extern void banner_wayland_send_key(int evdev, int state);
 extern void banner_wayland_send_scene_input(int type, int a, int b);
 extern void banner_wayland_vsync(int64_t frame_time_ns);
@@ -269,6 +270,12 @@ JNIEXPORT void JNICALL
 Java_com_droiddeck_launcher_wayland_WaylandCompositor_nativeSendPointer(
         JNIEnv *env, jclass clazz, jint action, jint x, jint y) {
     banner_wayland_send_pointer(action, x, y);
+}
+
+JNIEXPORT void JNICALL
+Java_com_droiddeck_launcher_wayland_WaylandCompositor_nativeSendTouch(
+        JNIEnv *env, jclass clazz, jint action, jint pointer_id, jint x, jint y) {
+    banner_wayland_send_touch(action, pointer_id, x, y);
 }
 
 /* Inject a key event. evdev = Linux input keycode (KEY_A=30…); state 1=down 0=up. */
