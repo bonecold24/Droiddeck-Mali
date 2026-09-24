@@ -84,6 +84,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.snapshotFlow
+import kotlinx.coroutines.flow.first
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -105,6 +107,7 @@ import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -240,13 +243,16 @@ private fun Modifier.shine(trigger: Boolean, strength: Float = 0.22f): Modifier 
 
 /**
  * Controller focus on the front end: each rail item's requester and the page's main button (Play,
- * Open desktop, Open <emulator>, Launch...). The pane enters on the main button and leaves, to the
- * left, for the selected rail item - whatever tile or button it leaves from.
+ * Open desktop, Open <emulator>, Launch...). The pane leaves, to the left, for the selected rail
+ * item - whatever tile or button it leaves from - and remembers that control, so coming back in
+ * lands on it again; a page not yet visited enters on its main button.
  */
 private class FrontFocus {
     val rail = HashMap<String, FocusRequester>()
     val primary = FocusRequester()
+    val pane = FocusRequester()
     var primaryAttached by mutableStateOf(0)
+    var railFocused by mutableStateOf(false)
     fun railFor(key: String): FocusRequester = rail.getOrPut(key) { FocusRequester() }
 }
 
@@ -301,16 +307,29 @@ private fun FrontEndScreenBody(s: FrontEndState, a: FrontEndActions, page: (@Com
                 modifier = if (wide) Modifier.width(236.dp).fillMaxHeight() else Modifier.fillMaxWidth().height(maxHeight * 0.42f),
             )
         }
-        // The app opens with the selected rail item focused, so a controller sees where it is.
+        // The app opens with the selected rail item focused, so a controller sees where it is. A
+        // request before the window has focus is dropped, so wait for it and retry until it sticks.
+        val window = LocalWindowInfo.current
         LaunchedEffect(Unit) {
-            kotlinx.coroutines.delay(150)
-            runCatching { frontFocus.railFor(railSelection).requestFocus() }
+            snapshotFlow { window.isWindowFocused }.first { it }
+            repeat(20) {
+                if (frontFocus.railFocused) return@LaunchedEffect
+                runCatching { frontFocus.railFor(railSelection).requestFocus() }
+                kotlinx.coroutines.delay(100)
+            }
         }
         val back = if (wide) FocusDirection.Left else FocusDirection.Up
         val paneFocus = Modifier
+            .focusRequester(frontFocus.pane)
             .focusProperties {
-                enter = { if (frontFocus.primaryAttached > 0) frontFocus.primary else FocusRequester.Default }
-                exit = { dir -> if (dir == back) frontFocus.rail[railSelection] ?: FocusRequester.Default else FocusRequester.Default }
+                enter = {
+                    if (frontFocus.pane.restoreFocusedChild()) FocusRequester.Cancel
+                    else if (frontFocus.primaryAttached > 0) frontFocus.primary else FocusRequester.Default
+                }
+                exit = { dir ->
+                    frontFocus.pane.saveFocusedChild()
+                    if (dir == back) frontFocus.rail[railSelection] ?: FocusRequester.Default else FocusRequester.Default
+                }
             }
             .focusGroup()
         val content: @Composable (Modifier) -> Unit = { m -> Pane(s, selected, a, page, m.then(paneFocus)) { selected = it } }
@@ -447,7 +466,9 @@ private fun NavItem(
     val colors = MaterialTheme.colorScheme
     val src = remember { MutableInteractionSource() }
     val focused by src.collectIsFocusedAsState()
-    val railRequester = if (register != null && key != "x") LocalFrontFocus.current?.railFor(key) else null
+    val frontFocus = if (register != null && key != "x") LocalFrontFocus.current else null
+    val railRequester = frontFocus?.railFor(key)
+    if (frontFocus != null) LaunchedEffect(focused) { if (focused) frontFocus.railFocused = true }
     val hovered by src.collectIsHoveredAsState()
     val pressed by src.collectIsPressedAsState()
     val fg by animateColorAsState(if (current) colors.onPrimary else if (muted) colors.onSurfaceVariant else colors.onBackground, Motion.tw(280), label = "navFg")
