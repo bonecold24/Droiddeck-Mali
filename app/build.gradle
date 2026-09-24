@@ -5,21 +5,21 @@ apply plugin: 'kotlin-android'
 apply plugin: 'org.jetbrains.kotlin.plugin.compose'
 
 android {
-    namespace 'com.steamdeck.launcher'
+    namespace 'com.droiddeck.launcher'
     compileSdk 34
     // The NDK is pinned by property so CI can hand in whatever the runner already has rather than
     // downloading a second copy; see gradle.properties.
     ndkVersion project.findProperty('ndkVersion') ?: '27.3.13750724'
 
     defaultConfig {
-        applicationId "com.steamdeck.launcher"
+        applicationId "com.droiddeck.launcher"
         minSdkVersion 26
         // 28 is not a leftover. An app on targetSdk 29+ runs in a domain that may not execute a
         // file out of its own data directory, and this app's entire job is to exec a rootfs:
         // proot, gamescope, the Steam client and everything it launches all live under files/.
         targetSdkVersion 28
-        versionCode 6
-        versionName "0.1.5"
+        versionCode 7
+        versionName "0.1.6"
 
         ndk {
             abiFilters 'arm64-v8a'

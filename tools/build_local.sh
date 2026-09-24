@@ -4,7 +4,7 @@ set -euo pipefail
 repo_root=$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
 sdk_dir=${ANDROID_HOME:-${ANDROID_SDK_ROOT:-"${HOME}/Library/Android/sdk"}}
 java_dir=${JAVA_HOME:-"/opt/homebrew/opt/openjdk@17/libexec/openjdk.jdk/Contents/Home"}
-image_name=${STEAMDECK_BUILD_IMAGE:-steamdeck-local-cross:24.04-v2}
+image_name=${DROIDDECK_BUILD_IMAGE:-droiddeck-local-cross:24.04-v2}
 
 if [[ ! -x "${sdk_dir}/platform-tools/adb" ]]; then
     echo "Android SDK not found at ${sdk_dir}; set ANDROID_HOME or ANDROID_SDK_ROOT." >&2
@@ -40,12 +40,12 @@ docker run --rm --platform linux/amd64 \
         for script in tools/linuxfs/overlay/usr/local/bin/bannerlator-*; do
             install -Dm644 "$script" "$d/usr/local/bin/$(basename "$script")"
         done
-        install -Dm644 tools/linuxfs/desktop/steamdeck-desktop "$d/usr/local/bin/steamdeck-desktop"
+        install -Dm644 tools/linuxfs/desktop/droiddeck-desktop "$d/usr/local/bin/droiddeck-desktop"
         install -Dm644 tools/linuxfs/desktop/autostart "$d/etc/xdg/labwc/autostart"
         install -Dm644 tools/linuxfs/desktop/rc.xml "$d/etc/xdg/labwc/rc.xml"
         install -Dm644 tools/linuxfs/desktop/panel.conf "$d/etc/xdg/lxqt/panel.conf"
-        install -Dm644 tools/linuxfs/desktop/firefox-steamdeck.js \
-            "$d/usr/lib/firefox/defaults/pref/steamdeck.js"
+        install -Dm644 tools/linuxfs/desktop/firefox-droiddeck.js \
+            "$d/usr/lib/firefox/defaults/pref/droiddeck.js"
 
         need=$(aarch64-linux-gnu-readelf -d "$d/libfakeinput.so" | sed -n "s/.*NEEDED.*\\[\\(.*\\)\\]/\\1/p")
         for bad in libstdc++.so.6 libgcc_s.so.1; do
@@ -76,13 +76,13 @@ docker run --rm --platform linux/amd64 \
 export ANDROID_HOME="${sdk_dir}"
 export ANDROID_SDK_ROOT="${sdk_dir}"
 export JAVA_HOME="${java_dir}"
-ndk_version=${STEAMDECK_NDK_VERSION:-}
+ndk_version=${DROIDDECK_NDK_VERSION:-}
 if [[ -z "${ndk_version}" ]]; then
     ndk_path=$(find "${sdk_dir}/ndk" -mindepth 1 -maxdepth 1 -type d -print | sort -V | tail -1)
     ndk_version=${ndk_path##*/}
 fi
 if [[ -z "${ndk_version}" || ! -d "${sdk_dir}/ndk/${ndk_version}" ]]; then
-    echo "No Android NDK found under ${sdk_dir}/ndk; set STEAMDECK_NDK_VERSION." >&2
+    echo "No Android NDK found under ${sdk_dir}/ndk; set DROIDDECK_NDK_VERSION." >&2
     exit 1
 fi
 
@@ -93,7 +93,7 @@ for tool in curl tar zstd; do
     fi
 done
 
-staging_dir=$(mktemp -d "${TMPDIR:-/tmp}/steamdeck-build.XXXXXX")
+staging_dir=$(mktemp -d "${TMPDIR:-/tmp}/droiddeck-build.XXXXXX")
 bundle_asset="${repo_root}/app/src/main/assets/pulseaudio.tzst"
 bundle_backup="${staging_dir}/pulseaudio.original.tzst"
 bundle_replaced=0
@@ -110,8 +110,8 @@ trap cleanup EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
 
-pa_source=${STEAMDECK_PA13_SOURCE_DIR:-"${staging_dir}/pulseaudio-13.0"}
-if [[ -z "${STEAMDECK_PA13_SOURCE_DIR:-}" ]]; then
+pa_source=${DROIDDECK_PA13_SOURCE_DIR:-"${staging_dir}/pulseaudio-13.0"}
+if [[ -z "${DROIDDECK_PA13_SOURCE_DIR:-}" ]]; then
     curl -fsSL -o "${staging_dir}/pulseaudio-13.0.tar.gz" \
         https://github.com/pulseaudio/pulseaudio/archive/refs/tags/v13.0.tar.gz
     mkdir -p "${pa_source}"
@@ -119,7 +119,7 @@ if [[ -z "${STEAMDECK_PA13_SOURCE_DIR:-}" ]]; then
         -C "${pa_source}" --strip-components=1
 fi
 if [[ ! -f "${pa_source}/src/pulse/version.h.in" ]]; then
-    echo "PulseAudio 13.0 source not found at ${pa_source}; set STEAMDECK_PA13_SOURCE_DIR." >&2
+    echo "PulseAudio 13.0 source not found at ${pa_source}; set DROIDDECK_PA13_SOURCE_DIR." >&2
     exit 1
 fi
 

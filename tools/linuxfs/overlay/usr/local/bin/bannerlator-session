@@ -4,7 +4,7 @@
 #   bannerlator-session desktop            the file manager
 #   bannerlator-session run <path>         a Linux program (AppImage, script or ELF)
 #   bannerlator-session steam [steam-url]  the native Steam client
-#   bannerlator-session lxqt               the LXQt/labwc desktop (SteamDeck's desktop package)
+#   bannerlator-session lxqt               the LXQt/labwc desktop (DroidDeck's desktop package)
 # BL_WIDTH / BL_HEIGHT size the output, BL_FPS limits it, BL_LOG collects everything said here.
 set -u
 export HOME=${HOME:-/root}
@@ -86,12 +86,12 @@ if [ -z "${BL_INSIDE:-}" ]; then
     wayland-info >/dev/null 2>&1 && break
     sleep 0.1
   done
-  # The desktop (SteamDeck's hosted package) is its own nested compositor, labwc, drawing straight
+  # The desktop (DroidDeck's hosted package) is its own nested compositor, labwc, drawing straight
   # into the app's: no gamescope in between.
   if [ "$mode" = lxqt ]; then
     step "starting the desktop"
-    [ -x /usr/local/bin/steamdeck-desktop ] || { echo "== the desktop package is not installed"; exit 66; }
-    exec /usr/local/bin/steamdeck-desktop
+    [ -x /usr/local/bin/droiddeck-desktop ] || { echo "== the desktop package is not installed"; exit 66; }
+    exec /usr/local/bin/droiddeck-desktop
   fi
   width=${BL_WIDTH:-1280}
   height=${BL_HEIGHT:-720}
@@ -252,6 +252,49 @@ case $mode in
     if [ ! -f "$steam_root/steamapps/appmanifest_4427310.acf" ]; then
       step "asking the client to fetch the ARM64 Proton"
       set -- "$@" steam://install/4427310
+      # Ported from Bannerlator (bannerlator-session, device-proven 2026-09-22). The client decides
+      # a title's compatibility tool when the title is installed and keeps that decision for the
+      # rest of its run, and the tool is set up before the client comes up. So once the depot has
+      # fully landed, restart the client once - its own -shutdown, then the loop below, which knows
+      # the marker - and every title installed from then on runs through the tool, with the
+      # refreshed tool list and defaults, and no second launch by the user. A first run only: with
+      # the depot present at session start nothing here is armed.
+      (
+        _bl_acf="$steam_root/steamapps/appmanifest_4427310.acf"
+        for _ in $(seq 1 360); do
+          sleep 10
+          # StateFlags 4 = fully installed; a moment more for the client to finish its bookkeeping.
+          if grep -q '"StateFlags"[[:space:]]*"4"' "$_bl_acf" 2>/dev/null; then
+            sleep 10
+            bannerlator-steam-compat "$steam_root" >/dev/null 2>&1 || true
+            step "compatibility layer installed: restarting the Steam client once"
+            : > "$HOME/.bl-restart-once"
+            "$steam_root/steamrtarm64/steam" -shutdown >/dev/null 2>&1 || true
+            exit 0
+          fi
+        done
+      ) &
+      # A client that starts signed out drops that request - on a fresh install nobody has signed
+      # in yet - so the install dialog only appeared after the user restarted the client by hand.
+      # With no remembered sign-in, ask again once the sign-in has happened: the client binary
+      # started a second time with a URL hands it to the running instance and exits.
+      if ! grep -q '"RememberPassword"[[:space:]]*"1"' "$steam_root/config/loginusers.vdf" 2>/dev/null; then
+        (
+          _bl_conn="$steam_root/logs/connection_log.txt"
+          _bl_from=$(stat -c %s "$_bl_conn" 2>/dev/null || echo 0)
+          for _ in $(seq 1 180); do
+            sleep 10
+            [ -f "$steam_root/steamapps/appmanifest_4427310.acf" ] && exit 0
+            if tail -c +$((_bl_from + 1)) "$_bl_conn" 2>/dev/null | grep -q "RecvMsgClientLogOnResponse() : processing complete"; then
+              sleep 15
+              [ -f "$steam_root/steamapps/appmanifest_4427310.acf" ] && exit 0
+              step "signed in: asking the client again for the ARM64 Proton"
+              "$steam_root/steamrtarm64/steam" steam://install/4427310 >/dev/null 2>&1 || true
+              exit 0
+            fi
+          done
+        ) &
+      fi
     fi
     # The tool is registered before the client starts and finds the depot at launch time, so
     # nothing here waits for a download. What can still change under a running client is which
@@ -384,17 +427,21 @@ BUSCONF
     # channel Armada bootstraps its ARM64 client from. Whatever wrote package/beta, the branch on
     # disk has to agree with the one forced here - a disagreement is the restart loop above, and
     # it is silent apart from rc=42 in this log.
+    # Checked before every start, not once: the client rewrites package/beta during its own run,
+    # and a restart below (rc=42, or the one after the ARM64 Proton lands) would otherwise start it
+    # again on the branch it just wrote.
     steam_channel=${BL_STEAM_CHANNEL:-publicbeta}
     steam_beta=$steam_root/package/beta
-    if [ -f "$steam_beta" ] && [ "$(cat "$steam_beta" 2>/dev/null)" != "$steam_channel" ]; then
-      echo "== steam: client branch on disk was '$(cat "$steam_beta" 2>/dev/null)', set to '$steam_channel' to match -clientbeta"
-      echo "$steam_channel" > "$steam_beta"
-    fi
     echo "== steam args: ${_bl_ui[*]} -clientbeta $steam_channel -no-cef-sandbox -cef-force-gpu -cef-ozone-platform=x11 -cef-use-gl=angle -cef-use-angle=vulkan $*"
     # An update that cannot install asks for a restart (rc=42) every time; the count is capped so a
     # session can never again loop in silence, which reads as a menu opening and closing by itself.
     steam_updates=0
     while :; do
+      rm -f "$HOME/.bl-restart-once"
+      if [ -f "$steam_beta" ] && [ "$(cat "$steam_beta" 2>/dev/null)" != "$steam_channel" ]; then
+        echo "== steam: client branch on disk was '$(cat "$steam_beta" 2>/dev/null)', set to '$steam_channel' to match -clientbeta"
+        echo "$steam_channel" > "$steam_beta"
+      fi
       step "starting the Steam client${BL_STEAM_UI:+ ($BL_STEAM_UI UI)}"
       "$steam_root/steamrtarm64/steam" "${_bl_ui[@]}" -clientbeta "$steam_channel" \
         -no-cef-sandbox -cef-force-gpu -cef-ozone-platform=x11 \
@@ -402,6 +449,13 @@ BUSCONF
       rc=$?
       echo "== steam exited rc=$rc"
       collect_steam_logs
+      # The session asked for this exit (the ARM64 Proton landed): start again, without the URL
+      # arguments, which were acted on. Not counted against the update cap.
+      if [ -f "$HOME/.bl-restart-once" ]; then
+        echo "== steam: restarting once so the new compatibility layer is in the client's lists"
+        set --
+        continue
+      fi
       [ "$rc" -eq 42 ] || break
       steam_updates=$((steam_updates + 1))
       if [ "$steam_updates" -ge 3 ]; then

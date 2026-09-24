@@ -36,7 +36,7 @@ PATCHES=\$(ls *.patch | sort)
 { echo; echo 'source+=('; for p in \$PATCHES; do echo \"  \$p\"; done; echo ')'; for p in \$PATCHES; do echo \"sha256sums+=('SKIP')\"; done; } >> PKGBUILD
 cat >> PKGBUILD <<'PREP'
 
-_steamdeck_prepare() {
+_droiddeck_prepare() {
   # Arch's own prepare() leaves the shell inside the checkout; start from a known place.
   cd \"\$srcdir/gamescope\"
   for p in \$(ls \"\$srcdir\"/*.patch | sort); do
@@ -46,9 +46,9 @@ _steamdeck_prepare() {
 }
 if declare -f prepare >/dev/null; then
   eval \"\$(declare -f prepare | sed 's/^prepare ()/_arch_prepare ()/')\"
-  prepare() { _arch_prepare; _steamdeck_prepare; }
+  prepare() { _arch_prepare; _droiddeck_prepare; }
 else
-  prepare() { _steamdeck_prepare; }
+  prepare() { _droiddeck_prepare; }
 fi
 PREP
 makepkg -A -s --noconfirm --skipchecksums --skippgpcheck  # -A: the PKGBUILD lists x86_64 only; Arch Linux ARM builds the same file

@@ -1,10 +1,19 @@
-# SteamDeck - Progress Log
+# DroidDeck - Progress Log
 
-Running engineering log for the SteamDeck app (`com.steamdeck.launcher`). Newest state first, then
+Running engineering log for the DroidDeck app (`com.droiddeck.launcher`; called SteamDeck,
+`com.steamdeck.launcher`, until 2026-09-23 - entries below that date keep the old name). Newest state first, then
 the timeline, then lessons and backlog. Companion to the README (what the app *does*) and to
 `docs/releases/` (what each version said) - this is *how it got here and where it stands*.
 
 ---
+
+## 2026-09-23 (evening) - renamed SteamDeck → DroidDeck
+
+- **App name, app ID and code package**: DroidDeck, `com.droiddeck.launcher` (was `com.steamdeck.launcher`), sources under `app/src/main/java/com/droiddeck/launcher`, the 68 JNI functions renamed with them. A new app ID means DroidDeck installs **beside** SteamDeck, not over it: the runtime, the Steam sign-in and the settings start fresh.
+- **Downloads**: session logs go to `Download/DroidDeck/`; the switch files are `droiddeck-env`, `-osc`, `-driver`, `-tu-debug`, `-no-pad`, `-pad-log`, `-no-hud`, `-wlr-renderer`. The old `steamdeck-*` names are not read.
+- **Inside the runtime**: `droiddeck-desktop`, Firefox's `droiddeck.js`, `~/.droiddeck-desktop-debug`, `~/.cache/droiddeck`, the shortcuts tag `droiddeck-app`, `X-DroidDeck-AppId`, the `droiddeck-rumble` socket. "Desktop installed" now tests for `usr/bin/labwc` (it tested for the launcher, which the app stages itself).
+- **Kept on purpose** - Valve's Steam Deck: the `-steamdeck` flag, `steamdeck_publicbeta`/`steamdeck_stable`, "Steam Deck mode", `steamdeck-packages.steamos.cloud`. And names inside the hosted desktop package: `steamdeck.png`, `steamdeck-steam(.desktop)`, `steamdeck-bigpicture.desktop` (renaming them means re-hosting it).
+- CI artifact `droiddeck-apk`; a stray committed `__pycache__/*.pyc` removed.
 
 ## 2026-09-23 (afternoon) - main `90c7574`: first-run onboarding, Desktop & apps page, 4:3 display
 

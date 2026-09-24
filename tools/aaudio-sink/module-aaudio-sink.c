@@ -1,5 +1,5 @@
 /*
- * module-aaudio-sink: a PulseAudio 13 sink on Android's AAudio, for the SteamDeck app.
+ * module-aaudio-sink: a PulseAudio 13 sink on Android's AAudio, for the DroidDeck app.
  *
  * The daemon's IO thread pulls rendered audio from the sink one burst at a time and hands it to
  * a blocking AAudio output stream; the stream's own buffer paces the thread, and the latency the
