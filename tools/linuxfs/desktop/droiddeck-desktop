@@ -14,9 +14,37 @@ export QT_QPA_PLATFORMTHEME=lxqt
 # The prefs for this are only advisory and a profile can override them; the environment is not.
 export MOZ_DISABLE_CONTENT_SANDBOX=1 MOZ_DISABLE_GMP_SANDBOX=1 MOZ_DISABLE_RDD_SANDBOX=1
 export MOZ_DISABLE_SOCKET_PROCESS_SANDBOX=1 MOZ_DISABLE_UTILITY_SANDBOX=1
-# wlroots allocates through gbm on a real DRM node, which the KGSL stand-in is not: pixman
-# (software, shm) is what boots here. BL_WLR_RENDERER=vulkan/gles2 tries acceleration.
-export WLR_RENDERER=${BL_WLR_RENDERER:-pixman}
+# pixman composites in software and gives programs shm buffers only, so a Vulkan program on it
+# fails at its swapchain. vulkan (or gles2) composite on the GPU and give programs DMA-BUFs, but
+# stock wlroots allocates through gbm on a real DRM node and the KGSL stand-in is not one ("unable
+# to create allocator"): they need the app's patched wlroots (tools/wlroots), whose Vulkan
+# allocator exports the buffers instead. BL_WLR_RENDERER picks; see the fallback at the end.
+export WLR_RENDERER=${BL_WLR_RENDERER:-vulkan}
+WLROOTS_DIR=/usr/local/lib/droiddeck-wlroots
+BASE_LD_LIBRARY_PATH=${LD_LIBRARY_PATH:-}
+use_renderer() {
+  export WLR_RENDERER=$1
+  if [ "$1" != pixman ] && [ -f "$WLROOTS_DIR/libwlroots-0.20.so" ]; then
+    export LD_LIBRARY_PATH=$WLROOTS_DIR${BASE_LD_LIBRARY_PATH:+:$BASE_LD_LIBRARY_PATH}
+  elif [ -n "$BASE_LD_LIBRARY_PATH" ]; then
+    export LD_LIBRARY_PATH=$BASE_LD_LIBRARY_PATH
+  else
+    unset LD_LIBRARY_PATH
+  fi
+}
+use_renderer "$WLR_RENDERER"
+# A GPU renderer that failed to start here is not tried again on every desktop start (each try costs
+# up to 20 s): the failure is kept with what it failed on - the renderer, the patched wlroots and the
+# Linux driver - so an app update or a different driver retries, and so does picking a renderer
+# again in the app's settings (which deletes the file).
+FAILED_FILE=$HOME/.droiddeck-renderer-failed
+renderer_key() {
+  echo "$WLR_RENDERER $(md5sum "$WLROOTS_DIR/libwlroots-0.20.so" 2>/dev/null | cut -d' ' -f1) ${BL_VK_DRIVER:-runtime}"
+}
+if [ "$WLR_RENDERER" != pixman ] && [ "$(cat "$FAILED_FILE" 2>/dev/null)" = "$(renderer_key)" ]; then
+  echo "== droiddeck-desktop: $WLR_RENDERER failed to start here before; using pixman (choose a renderer in the settings to retry)"
+  use_renderer pixman
+fi
 # The desktop's own log, beside the session's, so labwc and the programs on it can be read apart
 # from the session that started them. The session log keeps the milestones either way.
 if [ -n "${BL_DEBUG_DIR:-}" ]; then
@@ -85,12 +113,86 @@ export BL_DESKTOP=1
 ln -sf /usr/local/bin/bannerlator-steam-launch /usr/local/bin/steamdeck-steam 2>/dev/null
 ln -sf /usr/local/bin/bannerlator-steam-shim /usr/local/bin/steam 2>/dev/null
 python3 /usr/local/bin/bannerlator-desktop-games 2>&1 | sed 's/^/[games] /'
+# Player 1 on the controller in every emulator that has no profile of its own yet - now, and again
+# every half minute: an emulator started for the first time writes its own config, which is then
+# given the controller for its next start without waiting for the next desktop.
+python3 /usr/local/bin/bannerlator-pad-defaults 2>&1 | sed 's/^/[pads] /'
+( while sleep 30; do python3 /usr/local/bin/bannerlator-pad-defaults 2>&1 | sed 's/^/[pads] /'; done ) &
+# Games and emulators from the menu run through droiddeck-gpu (their own gamescope on the app's
+# compositor) while the desktop is on pixman, where they could not draw with the GPU.
+# BL_DESKTOP_GPU=on/off overrides; each entry keeps "Run in a desktop window" either way.
+gpu_entries() { python3 /usr/local/bin/droiddeck-desktop-gpu 2>&1 | sed 's/^/[gpu] /'; }
+gpu_entries
 
-echo "== droiddeck-desktop: labwc ($WLR_RENDERER) on $WAYLAND_DISPLAY"
-# ~/.droiddeck-desktop-debug: labwc's own debug log (views and layer surfaces mapping) too.
-DEBUG=; [ -f "$HOME/.droiddeck-desktop-debug" ] && DEBUG=-d
-# A session bus: the panel's menus, the file manager and the portal all expect one.
-if command -v dbus-run-session >/dev/null 2>&1; then
-  exec dbus-run-session -- labwc $DEBUG -C "$HOME/.config/labwc"
+# ~/.droiddeck-desktop-debug: labwc's own debug log (views and layer surfaces mapping) too. The GPU
+# renderers are experimental and always log in full, so a desktop that does not come up says why.
+DEBUG=; { [ -f "$HOME/.droiddeck-desktop-debug" ] || [ "$WLR_RENDERER" != pixman ]; } && DEBUG=-d
+run_labwc() {
+  echo "== droiddeck-desktop: labwc ($WLR_RENDERER${LD_LIBRARY_PATH:+, wlroots from $WLROOTS_DIR}) on $WAYLAND_DISPLAY"
+  # A session bus: the panel's menus, the file manager and the portal all expect one.
+  if command -v dbus-run-session >/dev/null 2>&1; then
+    dbus-run-session -- labwc $DEBUG -C "$HOME/.config/labwc"
+  else
+    labwc $DEBUG -C "$HOME/.config/labwc"
+  fi
+}
+pids_named() {
+  local p
+  for p in /proc/[0-9]*; do
+    [ "$(cat "$p/comm" 2>/dev/null)" = "$1" ] && echo "${p#/proc/}"
+  done
+}
+# labwc answers on its own socket (the one beside the app's wayland-0) once its event loop runs; a
+# labwc stuck on the GPU never does.
+labwc_answers() {
+  local sock
+  for sock in "$XDG_RUNTIME_DIR"/wayland-*; do
+    case $sock in *.lock|*/wayland-0) continue ;; esac
+    [ -S "$sock" ] || continue
+    WAYLAND_DISPLAY=${sock##*/} timeout 3 wayland-info >/dev/null 2>&1 && return 0
+  done
+  return 1
+}
+if [ "$WLR_RENDERER" = pixman ]; then
+  run_labwc
+  exit $?
 fi
-exec labwc $DEBUG -C "$HOME/.config/labwc"
+# A GPU renderer this device cannot start either ends the desktop at once or leaves it hanging on
+# the loading screen. Either way the desktop comes up on pixman instead, and the log says why.
+started=$(date +%s)
+run_labwc &
+labwc_job=$!
+answered=
+while kill -0 "$labwc_job" 2>/dev/null; do
+  if labwc_answers; then answered=1; break; fi
+  [ $(( $(date +%s) - started )) -ge 20 ] && break
+  sleep 1
+done
+if [ -n "$answered" ]; then
+  echo "== droiddeck-desktop: labwc on $WLR_RENDERER is up after $(( $(date +%s) - started )) s"
+  wait "$labwc_job"
+  exit $?
+fi
+if kill -0 "$labwc_job" 2>/dev/null; then
+  echo "== droiddeck-desktop: labwc on $WLR_RENDERER did not answer in 20 s; stopping it"
+  kill -TERM $(pids_named labwc) 2>/dev/null
+  sleep 2
+  kill -KILL $(pids_named labwc) 2>/dev/null
+  for prog in lxqt-panel pcmanfm-qt swaybg Xwayland; do kill -KILL $(pids_named "$prog") 2>/dev/null; done
+  wait "$labwc_job" 2>/dev/null
+  rc=124
+else
+  wait "$labwc_job"
+  rc=$?
+fi
+if [ "$rc" -ne 0 ] && [ $(( $(date +%s) - started )) -lt 40 ]; then
+  echo "== droiddeck-desktop: labwc on $WLR_RENDERER failed at start (exit $rc); starting on pixman instead"
+  renderer_key > "$FAILED_FILE"
+  use_renderer pixman
+  DEBUG=; [ -f "$HOME/.droiddeck-desktop-debug" ] && DEBUG=-d
+  find "$XDG_RUNTIME_DIR" -mindepth 1 -maxdepth 1 ! -name 'wayland-0*' ! -name 'keymap.xkb' -exec rm -rf {} + 2>/dev/null
+  gpu_entries
+  run_labwc
+  rc=$?
+fi
+exit $rc
