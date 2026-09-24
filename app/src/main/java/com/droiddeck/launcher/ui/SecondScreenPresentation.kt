@@ -44,6 +44,7 @@ class SecondScreenPresentation(
     private val sendWheel: (steps: Int) -> Unit,
     private val onSteamMenu: () -> Unit,
     private val onQam: () -> Unit,
+    private val onClose: () -> Unit,
 ) : Presentation(sessionActivity, display) {
     private val root = LinearLayout(context).apply {
         orientation = LinearLayout.VERTICAL
@@ -124,6 +125,12 @@ class SecondScreenPresentation(
             setPadding(dp(12), dp(8), dp(12), dp(8))
             setBackgroundColor(0xE6191E24.toInt())
         }
+        controls.addView(Button(context).apply {
+            text = "×"
+            contentDescription = "Close second-screen controls"
+            minWidth = dp(48)
+            setOnClickListener { onClose() }
+        })
         controls.addView(TextView(context).apply {
             text = "Trackpad"
             textSize = 14f
@@ -169,6 +176,12 @@ class SecondScreenPresentation(
             setPadding(dp(8), dp(4), dp(8), dp(4))
             setBackgroundColor(Color.rgb(27, 32, 38))
         }
+        bar.addView(Button(context).apply {
+            text = "×"
+            contentDescription = "Close second-screen controls"
+            minWidth = dp(48)
+            setOnClickListener { onClose() }
+        })
         bar.addView(TextView(context).apply {
             text = "Linux terminal"
             textSize = 14f

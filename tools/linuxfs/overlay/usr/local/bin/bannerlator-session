@@ -347,6 +347,22 @@ case $mode in
     # moments later, so the seeder has only that gap to mark the redistributables as already run.
     # It stamps each prefix it has covered and skips it thereafter, so the extra passes cost
     # almost nothing.
+    # The drawer's "Stretch games to fill the screen" works live: the app writes its choice to
+    # ~/.droiddeck-fill, and each change goes to gamescope as GAMESCOPE_FORCE_WINDOWS_FULLSCREEN on
+    # the root window, which it watches. What gamescope was started with is where this begins.
+    (
+      last=${BL_GAMESCOPE_FORCE_FULLSCREEN:-1}
+      while :; do
+        sleep 1
+        want=$(cat "$HOME/.droiddeck-fill" 2>/dev/null) || continue
+        case $want in 0|1) ;; *) continue ;; esac
+        [ "$want" = "$last" ] && continue
+        if xprop -root -f GAMESCOPE_FORCE_WINDOWS_FULLSCREEN 32c -set GAMESCOPE_FORCE_WINDOWS_FULLSCREEN "$want" 2>/dev/null; then
+          echo "== stretch games to fill the screen: $want (live)"
+          last=$want
+        fi
+      done
+    ) &
     (
       beat=0
       for _ in $(seq 1 720); do

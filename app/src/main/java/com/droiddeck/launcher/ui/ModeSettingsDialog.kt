@@ -46,6 +46,8 @@ class ModeSettings(
     val suspendPolicy: String,
     /** Steam only. */
     val oscMode: String?,
+    /** Steam only: whether single and double Back actions are swapped. */
+    val backActionsInverted: Boolean = false,
     val directAudio: Boolean?,
     val clientDirectAudio: Boolean = false,
     val mic: Boolean?,
@@ -53,6 +55,8 @@ class ModeSettings(
     val gameStorage: String? = null,
     val storageOptions: List<Pair<String, String>> = emptyList(),
     val fexPreset: String? = null,
+    /** Steam only: games are stretched to fill the screen (null = not a Steam page). */
+    val forceFullscreen: Boolean? = null,
     /** Steam only: the client branch forced on the command line. */
     val steamChannel: String? = null,
     /** Steam only: the user's own games folder and what was found in it. */
@@ -91,6 +95,7 @@ class ModeSettingsActions(
     val onTouch: (String) -> Unit,
     val onSuspendPolicy: (String) -> Unit,
     val onOsc: (String) -> Unit,
+    val onBackActionsInverted: (Boolean) -> Unit = {},
     val onDirectAudio: (Boolean) -> Unit,
     val onClientDirectAudio: (Boolean) -> Unit = {},
     val onMic: (Boolean) -> Unit,
@@ -98,6 +103,7 @@ class ModeSettingsActions(
     val onGameStorage: (path: String, label: String) -> Unit = { _, _ -> },
     val onPickGameStorageFolder: () -> Unit = {},
     val onFexPreset: (String) -> Unit = {},
+    val onForceFullscreen: (Boolean) -> Unit = {},
     val onSteamChannel: (String) -> Unit = {},
     val onPickAddedGamesDir: () -> Unit = {},
     val onForgetAddedGamesDir: (path: String) -> Unit = {},
@@ -226,6 +232,13 @@ fun ModeSettingsPage(s: ModeSettings, a: ModeSettingsActions) {
                 ), s.oscMode,
                 note = "Auto shows all controls without a controller. Steam + QAM shows only those buttons.", onPick = a.onOsc,
             )
+            if (steam) ChoiceRow(
+                host, "back-actions", "Back", SessionPrefs.backActionsOrder(s.backActionsInverted),
+                listOf(
+                    false to SessionPrefs.BACK_MENU_THEN_QAM,
+                    true to SessionPrefs.BACK_QAM_THEN_MENU,
+                ), s.backActionsInverted, onPick = a.onBackActionsInverted,
+            )
         }
         SettingsGroup("Session") {
             ChoiceRow(
@@ -280,6 +293,11 @@ fun ModeSettingsPage(s: ModeSettings, a: ModeSettingsActions) {
                 FexPreset.all.map { it.id to it.label }, s.fexPreset,
                 note = FexPreset.byId(s.fexPreset).detail, onPick = a.onFexPreset,
             )
+            if (s.forceFullscreen != null) ToggleRow(
+                host, "fill", "Stretch games to fill the screen",
+                "Keeps games that resize their own window (FlatOut) full screen. Turn it off if a game shows up small in a corner (Quake 3). Applies next session.",
+                s.forceFullscreen, onChange = a.onForceFullscreen,
+            )
         }
         if (steam && s.directAudio != null && s.mic != null) SettingsGroup("Audio") {
             ToggleRow(host, "da", "DirectAudio for games", "Bypasses PulseAudio for lower latency in games.", s.directAudio, onChange = a.onDirectAudio)
@@ -309,10 +327,12 @@ fun ModeSettingsPage(s: ModeSettings, a: ModeSettingsActions) {
                     AnchoredMenu(
                         open, onDismiss = { if (host.open == "storage") host.open = null }, title = "Second library",
                         note = "Games that stream assets from SD or shared storage may stutter. Keep them internal.",
-                    ) {
-                        for ((path, label) in options) MenuItem(label, checked = path == s.gameStorage) {
-                            a.onGameStorage(path, if (path.isEmpty() || path == "off") "" else label.substringBefore(" ·"))
-                            host.open = null
+                    ) { firstItemFocus ->
+                        options.forEachIndexed { index, (path, label) ->
+                            MenuItem(label, checked = path == s.gameStorage, focusRequester = if (index == 0) firstItemFocus else null) {
+                                a.onGameStorage(path, if (path.isEmpty() || path == "off") "" else label.substringBefore(" ·"))
+                                host.open = null
+                            }
                         }
                         MenuItem("Choose a folder…", checked = false) { host.open = null; a.onPickGameStorageFolder() }
                     }

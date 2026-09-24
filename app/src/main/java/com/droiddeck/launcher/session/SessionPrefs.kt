@@ -13,12 +13,25 @@ object SessionPrefs {
     const val OSC_STEAM_QAM = "steam-qam"
     const val OSC_NEVER = "never"
 
+    const val BACK_MENU_THEN_QAM = "1: menu 2: QAM"
+    const val BACK_QAM_THEN_MENU = "1: QAM 2: menu"
+
+    fun backActionsOrder(inverted: Boolean): String =
+        if (inverted) BACK_QAM_THEN_MENU else BACK_MENU_THEN_QAM
+
     private fun prefs(context: Context) = context.getSharedPreferences("session", Context.MODE_PRIVATE)
 
     fun hudEnabled(context: Context): Boolean = prefs(context).getBoolean("hud", true)
 
     fun setHudEnabled(context: Context, on: Boolean) {
         prefs(context).edit().putBoolean("hud", on).apply()
+    }
+
+    /** When enabled, a single Back opens Steam QAM and a double Back opens the session menu. */
+    fun backActionsInverted(context: Context): Boolean = prefs(context).getBoolean("backActionsInverted", false)
+
+    fun setBackActionsInverted(context: Context, inverted: Boolean) {
+        prefs(context).edit().putBoolean("backActionsInverted", inverted).apply()
     }
 
     const val TOUCH_AUTO = "auto"
@@ -85,6 +98,32 @@ object SessionPrefs {
 
     fun setClientDirectAudio(context: Context, on: Boolean) {
         prefs(context).edit().putBoolean("clientDirectAudio", on).apply()
+    }
+
+    /**
+     * Steam only: gamescope makes every game window the size of the screen. A game that resizes
+     * its own window when it loses focus (FlatOut) otherwise comes back smaller, drawn in a
+     * corner; a game that sets its own resolution and never looks at its window again (Quake 3)
+     * instead draws small in the bottom-left of the stretched one. On unless turned off.
+     */
+    fun forceFullscreen(context: Context): Boolean = prefs(context).getBoolean("forceFullscreen", true)
+
+    fun setForceFullscreen(context: Context, on: Boolean) {
+        prefs(context).edit().putBoolean("forceFullscreen", on).apply()
+        writeForceFullscreenFlag(context)
+    }
+
+    /**
+     * The same choice as a file the running session watches, so the drawer can change it live:
+     * the session hands every change to gamescope, which reads GAMESCOPE_FORCE_WINDOWS_FULLSCREEN
+     * off its root window whenever it changes. Written again at every session start so a file left
+     * by an earlier session never disagrees with the setting.
+     */
+    fun writeForceFullscreenFlag(context: Context) {
+        runCatching {
+            java.io.File(com.droiddeck.launcher.runtime.LinuxRuntime.rootDir(context), "root/.droiddeck-fill")
+                .writeText(if (forceFullscreen(context)) "1\n" else "0\n")
+        }
     }
 
     /**

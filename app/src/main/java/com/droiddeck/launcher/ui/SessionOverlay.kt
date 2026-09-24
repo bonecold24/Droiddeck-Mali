@@ -1,8 +1,11 @@
 package com.droiddeck.launcher.ui
 
+import android.view.Display
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.focusGroup
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.material3.ButtonDefaults
@@ -30,7 +33,9 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.res.painterResource
@@ -51,6 +56,7 @@ import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.border
 import androidx.compose.foundation.hoverable
+import androidx.compose.foundation.focusGroup
 import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.foundation.interaction.collectIsHoveredAsState
 import androidx.compose.foundation.layout.Arrangement
@@ -62,8 +68,13 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.InputMode
+import androidx.compose.ui.platform.LocalInputModeManager
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
@@ -121,6 +132,11 @@ fun LoadingOverlay(step: String, percent: Int, elapsed: String, hint: String, en
 @Composable
 fun SessionPausedOverlay(onResume: () -> Unit) {
     val interactionSource = remember { MutableInteractionSource() }
+    val resumeFocus = remember { FocusRequester() }
+    LaunchedEffect(Unit) {
+        androidx.compose.runtime.withFrameNanos { }
+        runCatching { resumeFocus.requestFocus() }
+    }
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -132,7 +148,10 @@ fun SessionPausedOverlay(onResume: () -> Unit) {
             horizontalAlignment = Alignment.CenterHorizontally,
             modifier = Modifier.padding(32.dp),
         ) {
-            OutlinedButton(onClick = onResume) {
+            OutlinedButton(
+                onClick = onResume,
+                modifier = Modifier.focusRequester(resumeFocus).controllerConfirm(onClick = onResume),
+            ) {
                 Text("Resume session")
             }
         }
@@ -151,10 +170,13 @@ class DrawerActions(
     val frameGenMultiplier: Int,
     val lsfgReady: Boolean,
     val oscMode: String,
+    val backActionsInverted: Boolean,
     val touchMode: String,
     val touchAuto: String,
     val shapeMode: String,
     val fexPreset: String,
+    /** Steam only: games stretched to the screen's size, changed live (null = not Steam). */
+    val fillScreen: Boolean? = null,
     val secondScreenMode: SecondScreenMode,
     val secondScreenDisplays: List<SecondScreenDisplay>,
     val selectedSecondScreenDisplay: Int,
@@ -167,32 +189,47 @@ class DrawerActions(
     val onSteamMenu: (() -> Unit)?,
     val onQam: (() -> Unit)?,
     val onOsc: (String) -> Unit,
+    val onBackActionsInverted: (Boolean) -> Unit,
     val onTouch: (String) -> Unit,
     val onShape: (String) -> Unit,
     val onFexPreset: (String) -> Unit,
+    val onFillScreen: (Boolean) -> Unit = {},
     val onSecondScreenMode: (SecondScreenMode) -> Unit,
     val onSecondScreenDisplay: (Int) -> Unit,
-    val onLaunchAndroidApp: (HomeApp.LaunchableApp) -> Unit,
+    val onLaunchAndroidApp: (HomeApp.LaunchableApp, Int?) -> Unit,
     val onBackground: () -> Unit,
     val onStop: () -> Unit,
     val onClose: () -> Unit,
 )
 
+@OptIn(ExperimentalComposeUiApi::class)
 @Composable
 fun SessionDrawer(open: Boolean, a: DrawerActions) {
     val colors = MaterialTheme.colorScheme
     val pal = LocalPalette.current
     val host = rememberMenuHost()
     var androidAppsExpanded by rememberSaveable { mutableStateOf(false) }
+    var appToChooseDisplay by remember { mutableStateOf<HomeApp.LaunchableApp?>(null) }
     val veil by animateFloatAsState(if (open) 1f else 0f, Motion.tw(260), label = "veil")
     // A controller starts on the drawer's first control, highlighted, as on the app's main screen:
     // the STEAM button, or in a desktop session the first setting.
     val firstFocus = remember { androidx.compose.ui.focus.FocusRequester() }
+    var firstControlFocused by remember { mutableStateOf(false) }
+    val inputModeManager = LocalInputModeManager.current
     val steamButtons = a.onSteamMenu != null && a.onQam != null
+    BackHandler(enabled = open) {
+        if (host.open != null) host.open = null else a.onClose()
+    }
     LaunchedEffect(open) {
         if (open) {
-            androidx.compose.runtime.withFrameNanos { }
-            runCatching { firstFocus.requestFocus() }
+            inputModeManager.requestInputMode(InputMode.Keyboard)
+            var attempts = 0
+            while (attempts < 24 && !firstControlFocused) {
+                firstFocus.requestFocus()
+                androidx.compose.runtime.withFrameNanos { }
+                attempts++
+            }
+            if (!firstControlFocused) android.util.Log.w("SessionDrawer", "first controller focus request did not focus a control")
         }
     }
     if (open || veil > 0.01f) Box(
@@ -211,6 +248,10 @@ fun SessionDrawer(open: Boolean, a: DrawerActions) {
                     .width(340.dp)
                     .background(pal.background.copy(alpha = 0.97f))
                     .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) {}
+                    .focusGroup()
+                    .controllerBack {
+                        if (host.open != null) host.open = null else a.onClose()
+                    }
                     .verticalScroll(rememberScrollState())
                     .padding(horizontal = 14.dp, vertical = 16.dp),
             ) {
@@ -241,7 +282,14 @@ fun SessionDrawer(open: Boolean, a: DrawerActions) {
                         OutlinedButton(
                             onClick = { host.open = null; a.onSteamMenu.invoke() },
                             interactionSource = steamSrc,
-                            modifier = Modifier.weight(1f).height(48.dp).focusRequester(firstFocus),
+                            modifier = Modifier.weight(1f).height(48.dp).focusRequester(firstFocus)
+                                .onFocusChanged {
+                                    firstControlFocused = it.isFocused
+                                    android.util.Log.i("SessionDrawer", "first control focused=${it.isFocused}")
+                                }.controllerConfirm {
+                                host.open = null
+                                a.onSteamMenu.invoke()
+                            },
                             shape = RoundedCornerShape(12.dp),
                             border = BorderStroke(if (steamHot) 2.dp else 1.dp, if (steamHot) pal.signal else colors.outline),
                             colors = ButtonDefaults.outlinedButtonColors(containerColor = if (steamHot) pal.signal.copy(alpha = 0.16f) else Color.Transparent),
@@ -255,7 +303,10 @@ fun SessionDrawer(open: Boolean, a: DrawerActions) {
                                 qamStartedOnPress = false
                             },
                             interactionSource = qamInteraction,
-                            modifier = Modifier.weight(1f).height(48.dp).semantics { contentDescription = "Open Quick Access Menu" },
+                            modifier = Modifier.weight(1f).height(48.dp).semantics { contentDescription = "Open Quick Access Menu" }.controllerConfirm {
+                                host.open = null
+                                a.onQam.invoke()
+                            },
                             shape = RoundedCornerShape(12.dp),
                             border = BorderStroke(if (qamHot) 2.dp else 1.dp, if (qamHot) pal.signal else colors.outline),
                             colors = ButtonDefaults.outlinedButtonColors(containerColor = if (qamHot) pal.signal.copy(alpha = 0.16f) else Color.Transparent),
@@ -287,7 +338,11 @@ fun SessionDrawer(open: Boolean, a: DrawerActions) {
                                             )
                                         }
                                     },
-                                ) { a.onLaunchAndroidApp(app) }
+                                ) {
+                                    host.open = null
+                                    if (a.secondScreenDisplays.isEmpty()) a.onLaunchAndroidApp(app, null)
+                                    else appToChooseDisplay = app
+                                }
                             }
                         }
                     }
@@ -296,7 +351,12 @@ fun SessionDrawer(open: Boolean, a: DrawerActions) {
                 SettingsGroup("Now") {
                     ToggleRow(
                         host, "hud", "Performance HUD", null, a.hudOn,
-                        chipModifier = if (steamButtons) Modifier else Modifier.focusRequester(firstFocus), onChange = a.onHud,
+                        chipModifier = if (steamButtons) Modifier else Modifier.focusRequester(firstFocus)
+                            .onFocusChanged { firstControlFocused = it.isFocused }, onChange = a.onHud,
+                    )
+                    if (a.fillScreen != null) ToggleRow(
+                        host, "fill", "Stretch games to fill the screen",
+                        "Off for a game that shows up small in a corner (Quake 3).", a.fillScreen, onChange = a.onFillScreen,
                     )
                     val fgOpen = host.open == "fg"
                     val fgLabel = when (a.frameGenEngine) {
@@ -307,9 +367,9 @@ fun SessionDrawer(open: Boolean, a: DrawerActions) {
                     SettingsRow("Frame generation", null, highlighted = fgOpen) {
                         Box {
                             ValueChip(fgLabel, fgOpen) { host.open = if (fgOpen) null else "fg" }
-                            AnchoredMenu(fgOpen, onDismiss = { if (host.open == "fg") host.open = null }, title = "Frame generation") {
+                            AnchoredMenu(fgOpen, onDismiss = { if (host.open == "fg") host.open = null }, title = "Frame generation") { firstItemFocus ->
                                 val need = if (a.lsfgReady) null else "install Lossless Scaling in Steam"
-                                MenuItem("Off", checked = a.frameGenEngine == FrameGen.ENGINE_OFF) { a.onFrameGenPick(FrameGen.ENGINE_OFF, 2); host.open = null }
+                                MenuItem("Off", checked = a.frameGenEngine == FrameGen.ENGINE_OFF, focusRequester = firstItemFocus) { a.onFrameGenPick(FrameGen.ENGINE_OFF, 2); host.open = null }
                                 for (m in 2..4) MenuItem("Win-FG ${m}×", checked = a.frameGenEngine == FrameGen.ENGINE_WINFG && a.frameGenMultiplier == m) { a.onFrameGenPick(FrameGen.ENGINE_WINFG, m); host.open = null }
                                 for (m in 2..4) MenuItem("LSFG ${m}×", checked = a.frameGenEngine == FrameGen.ENGINE_LSFG && a.frameGenMultiplier == m, enabled = a.lsfgReady, detail = need) { a.onFrameGenPick(FrameGen.ENGINE_LSFG, m); host.open = null }
                             }
@@ -326,6 +386,13 @@ fun SessionDrawer(open: Boolean, a: DrawerActions) {
                         else listOf(SessionPrefs.OSC_AUTO to "Auto", SessionPrefs.OSC_ALWAYS to "Always", SessionPrefs.OSC_NEVER to "Never"),
                         a.oscMode,
                         onPick = a.onOsc,
+                    )
+                    if (a.steam) ChoiceRow(
+                        host, "back-actions", "Back", SessionPrefs.backActionsOrder(a.backActionsInverted),
+                        listOf(
+                            false to SessionPrefs.BACK_MENU_THEN_QAM,
+                            true to SessionPrefs.BACK_QAM_THEN_MENU,
+                        ), a.backActionsInverted, onPick = a.onBackActionsInverted,
                     )
                     SettingsRow("Keyboard", null) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -373,6 +440,24 @@ fun SessionDrawer(open: Boolean, a: DrawerActions) {
             }
         }
     }
+
+    appToChooseDisplay?.let { app ->
+        val secondaryDisplay = a.secondScreenDisplays.firstOrNull { it.id == a.selectedSecondScreenDisplay }
+            ?: a.secondScreenDisplays.firstOrNull()
+        ChooseAppDisplayDialog(
+            app = app,
+            secondaryDisplay = secondaryDisplay,
+            onPrimary = {
+                appToChooseDisplay = null
+                a.onLaunchAndroidApp(app, Display.DEFAULT_DISPLAY)
+            },
+            onSecondary = {
+                appToChooseDisplay = null
+                secondaryDisplay?.let { a.onLaunchAndroidApp(app, it.id) }
+            },
+            onDismiss = { appToChooseDisplay = null },
+        )
+    }
 }
 
 @Composable
@@ -384,6 +469,7 @@ private fun DangerButton(text: String, onClick: () -> Unit) {
     Box(
         modifier = Modifier.clip(RoundedCornerShape(12.dp)).background(fill).border(1.dp, colors.error.copy(alpha = if (hot) 0.9f else 0.5f), RoundedCornerShape(12.dp))
             .hoverable(src).clickable(interactionSource = src, indication = LocalIndication.current, onClick = onClick)
+            .controllerConfirm(onClick = onClick)
             .padding(horizontal = 16.dp, vertical = 11.dp),
     ) { Text(text, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 0.5.sp, color = colors.error, maxLines = 1) }
 }

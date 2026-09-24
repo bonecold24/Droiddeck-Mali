@@ -1,8 +1,18 @@
 package com.droiddeck.launcher.ui
 
+import androidx.compose.runtime.staticCompositionLocalOf
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.ui.ExperimentalComposeUiApi
+import androidx.compose.foundation.focusGroup
+import androidx.compose.ui.focus.FocusDirection
+import androidx.compose.ui.focus.focusProperties
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.onFocusChanged
 import android.graphics.Bitmap
 import android.os.Build
 import android.provider.Settings
+import android.view.Display
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
@@ -54,6 +64,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -64,6 +75,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
@@ -76,6 +88,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.snapshotFlow
+import kotlinx.coroutines.flow.first
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -97,7 +111,14 @@ import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalWindowInfo
+import androidx.compose.ui.platform.LocalInputModeManager
+import androidx.compose.ui.input.InputMode
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
@@ -106,8 +127,11 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
 import coil.compose.AsyncImage
 import com.droiddeck.launcher.R
+import com.droiddeck.launcher.HomeApp
 import com.droiddeck.launcher.frontend.Library
 import com.droiddeck.launcher.gpu.FrameGen
+import com.droiddeck.launcher.input.SecondScreenDisplay
+import com.droiddeck.launcher.session.SessionPrefs
 import java.io.File
 import kotlin.math.roundToInt
 
@@ -134,13 +158,16 @@ class FrontEndState(
     val theme: String = Themes.PAPER,
     val isHomeApp: Boolean = false,
     val defaultHomeLabel: String? = null,
-    val androidApps: List<com.droiddeck.launcher.HomeApp.LaunchableApp> = emptyList(),
+    val androidApps: List<HomeApp.LaunchableApp> = emptyList(),
+    val secondScreenDisplays: List<SecondScreenDisplay> = emptyList(),
     val packages: List<PackageRow>? = null,
     val packageCatalogLoading: Boolean = false,
     val packageBusyId: String? = null,
     val packageStage: String? = null,
     val packagePercent: Int = -1,
     val sessionRunning: Boolean = false,
+    val backActionsInverted: Boolean = false,
+    val buildLabel: String = "local",
 )
 
 class FrontEndActions(
@@ -168,7 +195,9 @@ class FrontEndActions(
     val onPageBack: () -> Unit = {},
     val onTheme: (String) -> Unit = {},
     val onHomeApp: () -> Unit = {},
-    val onAndroidApp: (com.droiddeck.launcher.HomeApp.LaunchableApp) -> Unit = {},
+    val onAndroidApp: (HomeApp.LaunchableApp, Int?) -> Unit = { _, _ -> },
+    val onBackActionsInverted: (Boolean) -> Unit = {},
+    val onCheckLatestBuild: () -> Unit = {},
 )
 
 
@@ -227,9 +256,82 @@ private fun Modifier.shine(trigger: Boolean, strength: Float = 0.22f): Modifier 
 }
 
 
+/**
+ * Controller focus on the front end: each rail item's requester and the page's main button (Play,
+ * Open desktop, Open <emulator>, Launch...). The pane leaves, to the left, for the selected rail
+ * item - whatever tile or button it leaves from - and remembers that control, so coming back in
+ * lands on it again; a page not yet visited enters on its main button.
+ */
+private class FrontFocus {
+    val rail = HashMap<String, FocusRequester>()
+    val primary = FocusRequester()
+    var primaryAttached by mutableStateOf(0)
+    var railFocused by mutableStateOf(false)
+    fun railFor(key: String): FocusRequester = rail.getOrPut(key) { FocusRequester() }
+    // The pane's controls by id (a tile's key, a button's label), how many of each are on screen,
+    // and the last one focused.
+    val items = HashMap<String, FocusRequester>()
+    val attached = HashMap<String, Int>()
+    var last: String? = null
+    // The first tile of the page's grid: Down from the page's buttons goes to it, not to whichever
+    // tile happens to sit under the button.
+    val firstTile = FocusRequester()
+    var firstTileAttached = 0
+    fun paneEntry(): FocusRequester {
+        val id = last
+        return when {
+            id == PRIMARY && primaryAttached > 0 -> primary
+            id != null && id != PRIMARY && (attached[id] ?: 0) > 0 -> items.getValue(id)
+            primaryAttached > 0 -> primary
+            else -> FocusRequester.Default
+        }
+    }
+    companion object { const val PRIMARY = "\u0000primary" }
+}
+
+/** Down from this button goes to the first tile of the page's grid, when there is one. */
+@Composable
+private fun Modifier.downToFirstTile(): Modifier {
+    val ff = LocalFrontFocus.current ?: return this
+    return this.focusProperties { down = if (ff.firstTileAttached > 0) ff.firstTile else FocusRequester.Default }
+}
+
+/** Marks the first tile of the page's grid. */
+@Composable
+private fun Modifier.firstTile(): Modifier {
+    val ff = LocalFrontFocus.current ?: return this
+    DisposableEffect(Unit) {
+        ff.firstTileAttached++
+        onDispose { ff.firstTileAttached-- }
+    }
+    return this.focusRequester(ff.firstTile)
+}
+
+/** Lets the pane come back to this control: it is remembered when focused. */
+@Composable
+private fun Modifier.paneItem(id: String): Modifier {
+    val ff = LocalFrontFocus.current ?: return this
+    val req = remember(id) { ff.items.getOrPut(id) { FocusRequester() } }
+    DisposableEffect(id) {
+        ff.attached[id] = (ff.attached[id] ?: 0) + 1
+        onDispose { ff.attached[id] = (ff.attached[id] ?: 1) - 1 }
+    }
+    return this.focusRequester(req).onFocusChanged { if (it.isFocused) ff.last = id }
+}
+
+private val LocalFrontFocus = staticCompositionLocalOf<FrontFocus?> { null }
+
 @Composable
 fun FrontEndScreen(s: FrontEndState, a: FrontEndActions, page: (@Composable () -> Unit)? = null) {
+    val frontFocus = remember { FrontFocus() }
+    CompositionLocalProvider(LocalFrontFocus provides frontFocus) { FrontEndScreenBody(s, a, page, frontFocus) }
+}
+
+@OptIn(ExperimentalComposeUiApi::class)
+@Composable
+private fun FrontEndScreenBody(s: FrontEndState, a: FrontEndActions, page: (@Composable () -> Unit)?, frontFocus: FrontFocus) {
     var selected by rememberSaveable { mutableStateOf("steam") }
+    var appToChooseDisplay by remember { mutableStateOf<HomeApp.LaunchableApp?>(null) }
     val colors = MaterialTheme.colorScheme
     val ctx = LocalContext.current
     BackHandler(enabled = s.pageKey != null && page != null) { a.onPageBack() }
@@ -248,7 +350,8 @@ fun FrontEndScreen(s: FrontEndState, a: FrontEndActions, page: (@Composable () -
     LaunchedEffect(s.isHomeApp) { if (!s.isHomeApp && selected == "android-apps") selected = "steam" }
     remember { Motion.scale = Settings.Global.getFloat(ctx.contentResolver, Settings.Global.ANIMATOR_DURATION_SCALE, 1f); true }
 
-    BoxWithConstraints(modifier = Modifier.fillMaxSize().background(colors.background).systemBarsPadding()) {
+    var anyFocused by remember { mutableStateOf(false) }
+    BoxWithConstraints(modifier = Modifier.fillMaxSize().background(colors.background).systemBarsPadding().onFocusChanged { anyFocused = it.hasFocus }) {
         val wide = maxWidth >= 640.dp
         val railSelection = when {
             s.pageKey == "performance" || s.pageKey == "protons" -> "setup"
@@ -269,9 +372,66 @@ fun FrontEndScreen(s: FrontEndState, a: FrontEndActions, page: (@Composable () -
                 modifier = if (wide) Modifier.width(236.dp).fillMaxHeight() else Modifier.fillMaxWidth().height(maxHeight * 0.42f),
             )
         }
-        val content: @Composable (Modifier) -> Unit = { m -> Pane(s, selected, a, page, m) { selected = it } }
+        // The app opens with the selected rail item focused, so a controller sees where it is. An
+        // app starts in touch mode, where clickables refuse focus, so leave it first (a touch goes
+        // straight back to it); a request before the window has focus is dropped, so wait for
+        // that and retry until it sticks.
+        val window = LocalWindowInfo.current
+        val inputMode = LocalInputModeManager.current
+        LaunchedEffect(Unit) {
+            snapshotFlow { window.isWindowFocused }.first { it }
+            repeat(20) {
+                if (frontFocus.railFocused) return@LaunchedEffect
+                if (inputMode.inputMode != InputMode.Keyboard) inputMode.requestInputMode(InputMode.Keyboard)
+                runCatching { frontFocus.railFor(railSelection).requestFocus() }
+                kotlinx.coroutines.delay(100)
+            }
+        }
+        // A tile or button that opens a page goes away with the page it was on, and focus with it;
+        // the pad then had nothing to move from (a press landed back on the rail's first item). So
+        // once the new page is in, a controller lands on its main button.
+        val inputModeManager = LocalInputModeManager.current
+        LaunchedEffect(selected, s.pageKey) {
+            kotlinx.coroutines.delay(450)
+            if (!anyFocused && inputModeManager.inputMode == InputMode.Keyboard) runCatching {
+                if (frontFocus.primaryAttached > 0) frontFocus.primary.requestFocus()
+                else frontFocus.railFor(railSelection).requestFocus()
+            }
+        }
+        val back = if (wide) FocusDirection.Left else FocusDirection.Up
+        val paneFocus = Modifier
+            .focusProperties {
+                enter = { frontFocus.paneEntry() }
+                exit = { dir ->
+                    if (dir == back) frontFocus.rail[railSelection] ?: FocusRequester.Default else FocusRequester.Default
+                }
+            }
+            .focusGroup()
+        val content: @Composable (Modifier) -> Unit = { m ->
+            Pane(s, selected, a, page, m.then(paneFocus), { selected = it }) { app ->
+                if (s.secondScreenDisplays.isEmpty()) a.onAndroidApp(app, null)
+                else appToChooseDisplay = app
+            }
+        }
         if (wide) Row(modifier = Modifier.fillMaxSize()) { rail(); content(Modifier.weight(1f).fillMaxHeight()) }
         else Column(modifier = Modifier.fillMaxSize()) { rail(); content(Modifier.weight(1f).fillMaxWidth()) }
+
+        appToChooseDisplay?.let { app ->
+            val secondaryDisplay = s.secondScreenDisplays.firstOrNull()
+            ChooseAppDisplayDialog(
+                app = app,
+                secondaryDisplay = secondaryDisplay,
+                onPrimary = {
+                    appToChooseDisplay = null
+                    a.onAndroidApp(app, Display.DEFAULT_DISPLAY)
+                },
+                onSecondary = {
+                    appToChooseDisplay = null
+                    secondaryDisplay?.let { a.onAndroidApp(app, it.id) }
+                },
+                onDismiss = { appToChooseDisplay = null },
+            )
+        }
     }
 }
 
@@ -283,82 +443,89 @@ private fun Rail(
 ) {
     val colors = MaterialTheme.colorScheme
     Column(
-        modifier = modifier.background(colors.surface).verticalScroll(rememberScrollState()).padding(horizontal = 10.dp, vertical = 12.dp),
-        verticalArrangement = Arrangement.spacedBy(2.dp),
+        modifier = modifier.background(colors.surface).padding(horizontal = 10.dp, vertical = 12.dp),
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(start = 8.dp, bottom = 10.dp)) {
-            Image(painterResource(R.drawable.logo), null, modifier = Modifier.size(30.dp))
-            Spacer(Modifier.width(10.dp))
-            Column {
-                Text("DroidDeck", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = colors.onBackground)
-                val status = when {
-                    s.busy -> if (s.percent >= 0) "${s.stage} ${s.percent}%" else s.stage
-                    !s.ready -> "runtime not installed"
-                    s.available != null && s.available != s.installed -> "runtime update available"
-                    else -> null
+        Column(
+            modifier = Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()),
+            verticalArrangement = Arrangement.spacedBy(2.dp),
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(start = 8.dp, bottom = 10.dp)) {
+                Image(painterResource(R.drawable.logo), null, modifier = Modifier.size(30.dp))
+                Spacer(Modifier.width(10.dp))
+                Column {
+                    Text("DroidDeck", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = colors.onBackground)
+                    val status = when {
+                        s.busy -> if (s.percent >= 0) "${s.stage} ${s.percent}%" else s.stage
+                        !s.ready -> "runtime not installed"
+                        s.available != null && s.available != s.installed -> "runtime update available"
+                        else -> null
+                    }
+                    if (status != null) Text(status, fontSize = 11.sp, color = colors.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
-                if (status != null) Text(status, fontSize = 11.sp, color = colors.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
-        }
-        AnimatedVisibility(s.busy, enter = expandVertically() + fadeIn(), exit = shrinkVertically() + fadeOut()) {
-            LinearProgressIndicator(modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp))
-        }
+            AnimatedVisibility(s.busy, enter = expandVertically() + fadeIn(), exit = shrinkVertically() + fadeOut()) {
+                LinearProgressIndicator(modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp))
+            }
 
-        var lastRunning by remember { mutableStateOf("") }
-        if (s.running != null) lastRunning = s.running
-        AnimatedVisibility(
-            s.running != null,
-            enter = expandVertically(Motion.sp(0.75f)) + fadeIn(Motion.tw(300)) + slideInVertically(Motion.sp(0.6f)) { -it / 2 },
-            exit = shrinkVertically(Motion.tw(220)) + fadeOut(Motion.tw(180)),
-        ) { RunningTile(lastRunning, a.onResume) }
+            var lastRunning by remember { mutableStateOf("") }
+            if (s.running != null) lastRunning = s.running
+            AnimatedVisibility(
+                s.running != null,
+                enter = expandVertically(Motion.sp(0.75f)) + fadeIn(Motion.tw(300)) + slideInVertically(Motion.sp(0.6f)) { -it / 2 },
+                exit = shrinkVertically(Motion.tw(220)) + fadeOut(Motion.tw(180)),
+            ) { RunningTile(lastRunning, a.onResume) }
 
-        val pal = LocalPalette.current
-        var navOrigin by remember { mutableStateOf(Offset.Zero) }
-        val positions = remember { mutableStateMapOf<String, Rect>() }
-        Box(modifier = Modifier.fillMaxWidth().onGloballyPositioned { val o = it.positionInRoot(); if (o != navOrigin) navOrigin = o }) {
-            val target = positions[selected]?.translate(-navOrigin)
-            val y by animateFloatAsState(target?.top ?: 0f, Motion.sp(0.72f, Spring.StiffnessLow), label = "indY")
-            val x by animateFloatAsState(target?.left ?: 0f, Motion.sp(0.9f), label = "indX")
-            val h by animateFloatAsState(target?.height ?: 0f, Motion.sp(1f, Spring.StiffnessMediumLow), label = "indH")
-            val w by animateFloatAsState(target?.width ?: 0f, Motion.sp(1f, Spring.StiffnessMediumLow), label = "indW")
-            val alpha by animateFloatAsState(if (target != null) 1f else 0f, Motion.tw(250), label = "indA")
-            val density = LocalDensity.current
-            Box(
-                modifier = Modifier
-                    .offset { IntOffset(x.roundToInt(), y.roundToInt()) }
-                    .width(with(density) { w.toDp() }).height(with(density) { h.toDp() })
-                    .alpha(alpha)
-                    .graphicsLayer { shadowElevation = 6.dp.toPx(); shape = Shape10; clip = false; ambientShadowColor = pal.signal; spotShadowColor = pal.signal }
-                    .clip(Shape10)
-                    .background(Brush.linearGradient(listOf(colors.primary, pal.primary2))),
+            val pal = LocalPalette.current
+            var navOrigin by remember { mutableStateOf(Offset.Zero) }
+            val positions = remember { mutableStateMapOf<String, Rect>() }
+            Box(modifier = Modifier.fillMaxWidth().onGloballyPositioned { val o = it.positionInRoot(); if (o != navOrigin) navOrigin = o }) {
+                val target = positions[selected]?.translate(-navOrigin)
+                val y by animateFloatAsState(target?.top ?: 0f, Motion.sp(0.72f, Spring.StiffnessLow), label = "indY")
+                val x by animateFloatAsState(target?.left ?: 0f, Motion.sp(0.9f), label = "indX")
+                val h by animateFloatAsState(target?.height ?: 0f, Motion.sp(1f, Spring.StiffnessMediumLow), label = "indH")
+                val w by animateFloatAsState(target?.width ?: 0f, Motion.sp(1f, Spring.StiffnessMediumLow), label = "indW")
+                val alpha by animateFloatAsState(if (target != null) 1f else 0f, Motion.tw(250), label = "indA")
+                val density = LocalDensity.current
+                Box(
+                    modifier = Modifier
+                        .offset { IntOffset(x.roundToInt(), y.roundToInt()) }
+                        .width(with(density) { w.toDp() }).height(with(density) { h.toDp() })
+                        .alpha(alpha)
+                        .graphicsLayer { shadowElevation = 6.dp.toPx(); shape = Shape10; clip = false; ambientShadowColor = pal.signal; spotShadowColor = pal.signal }
+                        .clip(Shape10)
+                        .background(Brush.linearGradient(listOf(colors.primary, pal.primary2))),
+                )
+                val register: (String, LayoutCoordinates) -> Unit = { key, c ->
+                    val o = c.positionInRoot(); val r = Rect(o.x, o.y, o.x + c.size.width, o.y + c.size.height)
+                    if (positions[key] != r) positions[key] = r
+                }
+                val unregister: (String) -> Unit = { positions.remove(it) }
+                Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    if (s.isHomeApp) {
+                        NavItem("Android apps", "android-apps", selected == "android-apps", count = s.androidApps.size,
+                            register = register, unregister = unregister) { onSelect("android-apps") }
+                    }
+                    NavItem("Steam", "steam", selected == "steam", count = s.steamGames.size, register = register, unregister = unregister) { onSelect("steam") }
+                    NavItem("Desktop", "desktop", selected == "desktop", count = s.emulators.count { it.installed }, register = register, unregister = unregister) { onSelect("desktop") }
+                    NavItem("Setup", "setup", selected == "setup", register = register, unregister = unregister) { onSelect("setup") }
+                    Spacer(Modifier.height(6.dp))
+                }
+            }
+
+            val creditsSrc = remember { MutableInteractionSource() }
+            val creditsHot = rememberHot(creditsSrc)
+            Text(
+                "credits", fontSize = 11.sp, color = if (creditsHot) LocalPalette.current.signal else colors.onSurfaceVariant,
+                modifier = Modifier.clip(Shape10)
+                    .border(2.dp, if (creditsHot) LocalPalette.current.signal else Color.Transparent, Shape10)
+                    .hoverable(creditsSrc).clickable(interactionSource = creditsSrc, indication = null, onClick = a.onCredits)
+                    .padding(horizontal = 10.dp, vertical = 8.dp),
             )
-            val register: (String, LayoutCoordinates) -> Unit = { key, c ->
-                val o = c.positionInRoot(); val r = Rect(o.x, o.y, o.x + c.size.width, o.y + c.size.height)
-                if (positions[key] != r) positions[key] = r
-            }
-            val unregister: (String) -> Unit = { positions.remove(it) }
-            Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                if (s.isHomeApp) {
-                    NavItem("Android apps", "android-apps", selected == "android-apps", count = s.androidApps.size,
-                        register = register, unregister = unregister) { onSelect("android-apps") }
-                }
-                NavItem("Steam", "steam", selected == "steam", count = s.steamGames.size, register = register, unregister = unregister) { onSelect("steam") }
-                NavItem("Desktop", "desktop", selected == "desktop", count = s.emulators.count { it.installed }, register = register, unregister = unregister) { onSelect("desktop") }
-                NavItem("Setup", "setup", selected == "setup", register = register, unregister = unregister) { onSelect("setup") }
-                Spacer(Modifier.height(6.dp))
-            }
         }
-
-        // Outlined when a controller is on it, like every other control; the ripple alone was
-        // a faint box on the dark rail.
-        val creditsSrc = remember { MutableInteractionSource() }
-        val creditsHot = rememberHot(creditsSrc)
-        Text(
-            "credits", fontSize = 11.sp, color = if (creditsHot) LocalPalette.current.signal else colors.onSurfaceVariant,
-            modifier = Modifier.clip(Shape10)
-                .border(2.dp, if (creditsHot) LocalPalette.current.signal else Color.Transparent, Shape10)
-                .hoverable(creditsSrc).clickable(interactionSource = creditsSrc, indication = null, onClick = a.onCredits)
-                .padding(horizontal = 10.dp, vertical = 8.dp),
+        BuildStatus(
+            label = s.buildLabel,
+            onCheckLatest = a.onCheckLatestBuild,
+            modifier = Modifier.align(Alignment.Start).padding(start = 8.dp, top = 4.dp, bottom = 2.dp),
         )
     }
 }
@@ -403,6 +570,9 @@ private fun NavItem(
     val colors = MaterialTheme.colorScheme
     val src = remember { MutableInteractionSource() }
     val focused by src.collectIsFocusedAsState()
+    val frontFocus = if (register != null && key != "x") LocalFrontFocus.current else null
+    val railRequester = frontFocus?.railFor(key)
+    if (frontFocus != null) LaunchedEffect(focused) { if (focused) frontFocus.railFocused = true }
     val hovered by src.collectIsHoveredAsState()
     val pressed by src.collectIsPressedAsState()
     val fg by animateColorAsState(if (current) colors.onPrimary else if (muted) colors.onSurfaceVariant else colors.onBackground, Motion.tw(280), label = "navFg")
@@ -415,6 +585,7 @@ private fun NavItem(
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier.fillMaxWidth()
             .then(if (register != null && key != "x") Modifier.onGloballyPositioned { register(key, it) } else Modifier)
+            .then(if (railRequester != null) Modifier.focusRequester(railRequester) else Modifier)
             .then(if (small && i >= 0 && register != null) Modifier.staggerIn(i) else Modifier)
             .graphicsLayer { scaleX = scale; scaleY = scale }
             .clip(Shape10)
@@ -441,7 +612,10 @@ private fun NavItem(
 
 
 @Composable
-private fun Pane(s: FrontEndState, selected: String, a: FrontEndActions, page: (@Composable () -> Unit)?, modifier: Modifier, onSelect: (String) -> Unit) {
+private fun Pane(
+    s: FrontEndState, selected: String, a: FrontEndActions, page: (@Composable () -> Unit)?, modifier: Modifier,
+    onSelect: (String) -> Unit, onAndroidAppClick: (HomeApp.LaunchableApp) -> Unit,
+) {
     Box(modifier = modifier) {
         val wash: Pair<File?, Float> = when {
             s.pageKey != null && page != null -> null to 250f
@@ -462,7 +636,48 @@ private fun Pane(s: FrontEndState, selected: String, a: FrontEndActions, page: (
                     .apply { targetContentZIndex = 1f }
             },
             label = "pane",
-        ) { key -> if (page != null && key == s.pageKey) page() else Content(s, key, a, Modifier.fillMaxSize(), onSelect) }
+        ) { key -> if (page != null && key == s.pageKey) page() else Content(s, key, a, Modifier.fillMaxSize(), onSelect, onAndroidAppClick) }
+    }
+}
+
+@Composable
+private fun BuildStatus(label: String, onCheckLatest: () -> Unit, modifier: Modifier = Modifier) {
+    val colors = MaterialTheme.colorScheme
+    val pal = LocalPalette.current
+    val interaction = remember { MutableInteractionSource() }
+    val hot = rememberHot(interaction)
+    val contextDivider = label.indexOf(" · ")
+    val context = if (contextDivider >= 0) label.substring(0, contextDivider) else ""
+    val identity = if (contextDivider >= 0) label.substring(contextDivider + 3) else label
+    val identityDivider = identity.lastIndexOf(" at ")
+    val branch = (if (identityDivider >= 0) identity.substring(0, identityDivider) else identity).substringAfterLast('/')
+    val commit = if (identityDivider >= 0) identity.substring(identityDivider + 4) else ""
+    Column(
+        verticalArrangement = Arrangement.spacedBy(1.dp),
+        modifier = modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(6.dp))
+            .semantics { contentDescription = "Build $label. Check for newest build." }
+            .hoverable(interaction)
+            .clickable(
+                interactionSource = interaction,
+                indication = LocalIndication.current,
+                role = Role.Button,
+                onClick = onCheckLatest,
+            )
+            .heightIn(min = 44.dp)
+            .padding(horizontal = 4.dp, vertical = 3.dp),
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(5.dp),
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Text(branch, modifier = Modifier.weight(1f), fontSize = 9.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Medium, color = if (hot) colors.onSurfaceVariant else colors.onSurfaceVariant.copy(alpha = 0.82f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+            if (commit.isNotEmpty()) Text("@$commit", fontSize = 8.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Medium, color = colors.onSurfaceVariant.copy(alpha = 0.82f), maxLines = 1)
+            Icon(Icons.Filled.Refresh, contentDescription = null, tint = if (hot) pal.signal else colors.onSurfaceVariant.copy(alpha = 0.82f), modifier = Modifier.size(12.dp))
+        }
+        if (context.isNotEmpty()) Text(context, fontSize = 8.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Medium, color = colors.onSurfaceVariant.copy(alpha = 0.82f), maxLines = 1)
     }
 }
 
@@ -491,7 +706,10 @@ private fun romFor(s: FrontEndState, selected: String): Pair<Library.Emulator, L
 }
 
 @Composable
-private fun Content(s: FrontEndState, selected: String, a: FrontEndActions, modifier: Modifier, onSelect: (String) -> Unit) {
+private fun Content(
+    s: FrontEndState, selected: String, a: FrontEndActions, modifier: Modifier,
+    onSelect: (String) -> Unit, onAndroidAppClick: (HomeApp.LaunchableApp) -> Unit,
+) {
     val colors = MaterialTheme.colorScheme
     Column(modifier = modifier.padding(horizontal = 22.dp, vertical = 18.dp)) {
         when {
@@ -507,7 +725,7 @@ private fun Content(s: FrontEndState, selected: String, a: FrontEndActions, modi
                             null,
                             null,
                             "android:${app.packageName}",
-                            onClick = { a.onAndroidApp(app) },
+                            onClick = { onAndroidAppClick(app) },
                             iconBitmap = app.icon,
                         )
                     })
@@ -518,7 +736,7 @@ private fun Content(s: FrontEndState, selected: String, a: FrontEndActions, modi
                 Rise(3) {
                     Actions {
                         // Enabled without a runtime: the session's loading screen installs it first.
-                        PrimaryButton("Play", enabled = !s.busy, onClick = a.onPlay)
+                        PrimaryButton("Play", enabled = !s.busy, main = true, onClick = a.onPlay)
                         SecondaryButton("Steam Desktop UI", enabled = !s.busy, onClick = a.onPlayDesktopUi)
                         Cog(a.onSteamSettings)
                     }
@@ -544,7 +762,7 @@ private fun Content(s: FrontEndState, selected: String, a: FrontEndActions, modi
                         Row {
                             Column(modifier = Modifier.weight(1f)) {
                                 Actions {
-                                    PrimaryButton("Launch", enabled = s.ready && !s.busy) { a.onSteamGame(g) }
+                                    PrimaryButton("Launch", enabled = s.ready && !s.busy, main = true) { a.onSteamGame(g) }
                                     Cog(a.onSteamSettings)
                                     Chip(if (s.ready) "● ready" else "runtime missing", ok = s.ready)
                                 }
@@ -564,7 +782,7 @@ private fun Content(s: FrontEndState, selected: String, a: FrontEndActions, modi
                 Rise(3) {
                     Actions {
                         // Enabled without a runtime or the desktop: the session's loading screen installs them first.
-                        PrimaryButton(if (s.desktopInstalled) "Open desktop" else "Install & open desktop", enabled = !s.busy, onClick = a.onDesktop)
+                        PrimaryButton(if (s.desktopInstalled) "Open desktop" else "Install & open desktop", enabled = !s.busy, main = true, onClick = a.onDesktop)
                         Cog(a.onDesktopSettings)
                     }
                 }
@@ -590,7 +808,7 @@ private fun Content(s: FrontEndState, selected: String, a: FrontEndActions, modi
                         Rise(3) {
                             Actions {
                                 Image(painterResource(e.iconRes), null, modifier = Modifier.size(40.dp))
-                                PrimaryButton("Open ${e.name}", enabled = s.ready && !s.busy) { a.onEmulator(e) }
+                                PrimaryButton("Open ${e.name}", enabled = s.ready && !s.busy, main = true) { a.onEmulator(e) }
                                 SecondaryButton("ROMs folder", onClick = a.onRoms)
                                 if (pkg != null) SecondaryButton(
                                     if (pkg.kind == "appimage") "Remove" else "Forget",
@@ -667,7 +885,7 @@ private fun Content(s: FrontEndState, selected: String, a: FrontEndActions, modi
                                 Spacer(Modifier.height(14.dp))
                                 Actions {
                                     Image(painterResource(e.iconRes), null, modifier = Modifier.size(40.dp))
-                                    PrimaryButton("Launch in ${e.name}", enabled = s.ready && !s.busy) { a.onRom(g) }
+                                    PrimaryButton("Launch in ${e.name}", enabled = s.ready && !s.busy, main = true) { a.onRom(g) }
                                     Chip(g.hostPath.extension.uppercase().ifEmpty { "folder" }, ok = false)
                                 }
                             }
@@ -711,12 +929,19 @@ private fun SetupPanel(s: FrontEndState, a: FrontEndActions) {
                     ActionRow("ROMs folder", s.romsDir ?: "Choose where emulator games are stored", "Choose", a.onRoms)
                 }
                 SettingsGroup("Session") {
+                    ChoiceRow(
+                        host, "back-actions", "Back", SessionPrefs.backActionsOrder(s.backActionsInverted),
+                        listOf(
+                            false to SessionPrefs.BACK_MENU_THEN_QAM,
+                            true to SessionPrefs.BACK_QAM_THEN_MENU,
+                        ), s.backActionsInverted, onPick = a.onBackActionsInverted,
+                    )
                     SettingsRow("Frame generation", "Select the frame generation mode") {
                         Box {
                             ValueChip(s.frameGenLabel, host.open == "fg") { host.open = if (host.open == "fg") null else "fg" }
-                            AnchoredMenu(host.open == "fg", onDismiss = { if (host.open == "fg") host.open = null }, title = "Frame generation") {
+                            AnchoredMenu(host.open == "fg", onDismiss = { if (host.open == "fg") host.open = null }, title = "Frame generation") { firstItemFocus ->
                                 val need = if (s.lsfgReady) null else "Install Lossless Scaling in Steam"
-                                MenuItem("Off", checked = s.frameGenEngine == FrameGen.ENGINE_OFF) { a.onFrameGenPick(FrameGen.ENGINE_OFF, 2); host.open = null }
+                                MenuItem("Off", checked = s.frameGenEngine == FrameGen.ENGINE_OFF, focusRequester = firstItemFocus) { a.onFrameGenPick(FrameGen.ENGINE_OFF, 2); host.open = null }
                                 for (m in 2..4) MenuItem("Win-FG ${m}×", checked = s.frameGenEngine == FrameGen.ENGINE_WINFG && s.frameGenMultiplier == m) { a.onFrameGenPick(FrameGen.ENGINE_WINFG, m); host.open = null }
                                 for (m in 2..4) MenuItem("LSFG ${m}×", checked = s.frameGenEngine == FrameGen.ENGINE_LSFG && s.frameGenMultiplier == m, enabled = s.lsfgReady, detail = need) { a.onFrameGenPick(FrameGen.ENGINE_LSFG, m); host.open = null }
                             }
@@ -737,8 +962,13 @@ private fun SetupPanel(s: FrontEndState, a: FrontEndActions) {
                     SettingsRow("Theme", "Choose the launcher appearance") {
                         Box {
                             ValueChip(Themes.byId(s.theme).label, host.open == "theme") { host.open = if (host.open == "theme") null else "theme" }
-                            AnchoredMenu(host.open == "theme", onDismiss = { if (host.open == "theme") host.open = null }, title = "Theme") {
-                                for (t in Themes.all) MenuItem(t.label, checked = s.theme == t.id) { a.onTheme(t.id); host.open = null }
+                            AnchoredMenu(host.open == "theme", onDismiss = { if (host.open == "theme") host.open = null }, title = "Theme") { firstItemFocus ->
+                                Themes.all.forEachIndexed { index, theme ->
+                                    MenuItem(theme.label, checked = s.theme == theme.id, focusRequester = if (index == 0) firstItemFocus else null) {
+                                        a.onTheme(theme.id)
+                                        host.open = null
+                                    }
+                                }
                             }
                         }
                     }
@@ -793,9 +1023,16 @@ private fun Chip(t: String, ok: Boolean) {
 private fun rememberHot(src: MutableInteractionSource): Boolean = src.collectIsFocusedAsState().value || src.collectIsHoveredAsState().value
 
 @Composable
-private fun PrimaryButton(text: String, enabled: Boolean = true, onClick: () -> Unit) {
+private fun PrimaryButton(text: String, enabled: Boolean = true, main: Boolean = false, onClick: () -> Unit) {
     val colors = MaterialTheme.colorScheme
     val pal = LocalPalette.current
+    // The page's main button is where the pane is entered from the rail.
+    val frontFocus = if (main) LocalFrontFocus.current else null
+    if (frontFocus != null) DisposableEffect(Unit) {
+        frontFocus.primaryAttached++
+        onDispose { frontFocus.primaryAttached-- }
+    }
+    val track = (if (frontFocus == null) Modifier.paneItem("btn:$text") else Modifier).downToFirstTile()
     val src = remember { MutableInteractionSource() }
     val hot = rememberHot(src) && enabled
     val pressed by src.collectIsPressedAsState()
@@ -803,7 +1040,8 @@ private fun PrimaryButton(text: String, enabled: Boolean = true, onClick: () -> 
     val lift by animateFloatAsState(if (hot) 14f else 6f, Motion.tw(300), label = "btnLift")
     Row(
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp),
-        modifier = Modifier
+        modifier = track
+            .then(if (frontFocus != null) Modifier.focusRequester(frontFocus.primary).onFocusChanged { if (it.isFocused) frontFocus.last = FrontFocus.PRIMARY } else Modifier)
             .graphicsLayer { scaleX = scale; scaleY = scale; shadowElevation = if (enabled) lift.dp.toPx() else 0f; shape = Shape12; clip = false; ambientShadowColor = pal.signal; spotShadowColor = pal.signal }
             .clip(Shape12)
             .background(if (enabled) Brush.linearGradient(listOf(colors.primary, pal.primary2)) else Brush.linearGradient(listOf(colors.surfaceVariant, colors.surfaceVariant)))
@@ -829,9 +1067,10 @@ internal fun SecondaryButton(text: String, enabled: Boolean = true, onClick: () 
     val edge by animateColorAsState(if (hot) pal.signal else pal.line2, Motion.tw(250), label = "secEdge")
     val fill by animateColorAsState(if (hot) pal.signal.copy(alpha = 0.14f) else Color.White.copy(alpha = 0.03f), Motion.tw(250), label = "secFill")
     Box(
-        modifier = Modifier.graphicsLayer { scaleX = scale; scaleY = scale }.clip(Shape12).background(fill).border(1.dp, edge, Shape12)
+        modifier = Modifier.paneItem("btn:$text").downToFirstTile().graphicsLayer { scaleX = scale; scaleY = scale }.clip(Shape12).background(fill).border(1.dp, edge, Shape12)
             .alpha(if (enabled) 1f else 0.5f)
             .hoverable(src).clickable(interactionSource = src, indication = LocalIndication.current, enabled = enabled, onClick = onClick)
+            .controllerConfirm(enabled = enabled, onClick = onClick)
             .padding(horizontal = 16.dp, vertical = 11.dp),
     ) { Text(text, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 0.5.sp, color = colors.onBackground, maxLines = 1) }
 }
@@ -846,7 +1085,7 @@ private fun Cog(onClick: () -> Unit) {
     val edge by animateColorAsState(if (hot) pal.signal else pal.line2, Motion.tw(250), label = "cogEdge")
     Box(
         contentAlignment = Alignment.Center,
-        modifier = Modifier.size(42.dp).clip(Shape12).background(Color.White.copy(alpha = 0.03f)).border(1.dp, edge, Shape12)
+        modifier = Modifier.paneItem("cog").downToFirstTile().size(42.dp).clip(Shape12).background(Color.White.copy(alpha = 0.03f)).border(1.dp, edge, Shape12)
             .hoverable(src).clickable(interactionSource = src, indication = LocalIndication.current, onClick = onClick),
     ) { Icon(Icons.Filled.Settings, "Settings", tint = if (hot) pal.signal else colors.onBackground, modifier = Modifier.size(18.dp).rotate(rot)) }
 }
@@ -887,7 +1126,8 @@ private fun ArtGrid(tiles: List<Tile>, wide: Boolean = false) {
                     for (t in row) key(t.key) {
                         val src = remember { MutableInteractionSource() }
                         val hot = rememberHot(src)
-                        Box(modifier = Modifier.width(tileWidth).zIndex(if (hot) 1f else 0f)) { GameTile(t, wide, square, src, hot) }
+                        val track = Modifier.paneItem("tile:" + t.key).then(if (t === tiles.first()) Modifier.firstTile() else Modifier)
+                        Box(modifier = Modifier.width(tileWidth).zIndex(if (hot) 1f else 0f)) { GameTile(t, wide, square, src, hot, track) }
                     }
                 }
             }
@@ -896,7 +1136,7 @@ private fun ArtGrid(tiles: List<Tile>, wide: Boolean = false) {
 }
 
 @Composable
-private fun GameTile(t: Tile, wide: Boolean, square: Boolean, src: MutableInteractionSource, hot: Boolean) {
+private fun GameTile(t: Tile, wide: Boolean, square: Boolean, src: MutableInteractionSource, hot: Boolean, track: Modifier) {
     val colors = MaterialTheme.colorScheme
     val pressed by src.collectIsPressedAsState()
     val scale by animateFloatAsState(if (pressed) 0.97f else if (hot) 1.04f else 1f, Motion.sp(0.55f, Spring.StiffnessMedium), label = "tileScale")
@@ -905,7 +1145,7 @@ private fun GameTile(t: Tile, wide: Boolean, square: Boolean, src: MutableIntera
     val pal = LocalPalette.current
     val ring by animateColorAsState(if (hot) pal.signal else Color.Transparent, Motion.tw(220), label = "tileRing")
     Column(
-        modifier = Modifier
+        modifier = track
             .graphicsLayer { scaleX = scale; scaleY = scale; translationY = lift.dp.toPx(); shadowElevation = elev.dp.toPx(); shape = Shape12; clip = false; ambientShadowColor = if (hot) pal.signal else Color.Black; spotShadowColor = if (hot) pal.signal else Color.Black; transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0.5f, 0.9f) }
             .clip(Shape12)
             .background(colors.surface)

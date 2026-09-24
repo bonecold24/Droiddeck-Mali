@@ -1,0 +1,105 @@
+name: Sign APKs
+
+# Called, never run by itself: turns a "Build APK" apk into packages signed with DroidDeck's own key,
+# one matrix job per package in tools/release/variants.txt (tools/release/sign-apk.sh does the work
+# and checks it). The key lives only in the GitHub environment named by the caller:
+#   signing-main    builds of main
+#   signing-branch  builds of any other branch - waits for the owner's approval
+#   release         release.yml - main only, waits for the owner's approval
+# Pull requests never get here (build.yml skips this for pull_request), so code from a pull
+# request can never be signed with the key or come near it.
+
+on:
+  workflow_call:
+    inputs:
+      environment:
+        type: string
+        required: true
+      variants:
+        description: JSON array of names from tools/release/variants.txt
+        type: string
+        required: true
+      run_id:
+        description: The Build APK run whose apk to sign; empty for the calling run's own
+        type: string
+        default: ''
+      label:
+        description: Goes in the file names (a version); empty for <branch>-<short sha>
+        type: string
+        default: ''
+      artifact:
+        type: string
+        default: droiddeck-signed
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  sign:
+    name: sign ${{ matrix.variant }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    environment: ${{ inputs.environment }}
+    strategy:
+      fail-fast: false
+      matrix:
+        variant: ${{ fromJSON(inputs.variants) }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: The apk (this run's build)
+        if: inputs.run_id == ''
+        uses: actions/download-artifact@v4
+        with:
+          name: droiddeck-apk
+          path: in
+
+      - name: The apk (a main build)
+        if: inputs.run_id != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN: ${{ inputs.run_id }}
+        run: gh run download "$RUN" -R "$GITHUB_REPOSITORY" -n droiddeck-apk -D in
+
+      - name: Sign
+        env:
+          RELEASE_KEYSTORE_B64: ${{ secrets.RELEASE_KEYSTORE_B64 }}
+          RELEASE_STORE_PASSWORD: ${{ secrets.RELEASE_STORE_PASSWORD }}
+          # The alias is not a secret (and as one, GitHub would mask 'droiddeck' all over the logs).
+          RELEASE_KEY_ALIAS: droiddeck
+          ENVIRONMENT: ${{ inputs.environment }}
+          VARIANT: ${{ matrix.variant }}
+          LABEL: ${{ inputs.label }}
+        run: |
+          set -euo pipefail
+          if [ -z "$RELEASE_KEYSTORE_B64" ]; then
+            echo "::error::environment '$ENVIRONMENT' has no signing key: run tools/release/make-release-key.sh once"
+            exit 1
+          fi
+          export RELEASE_KEYSTORE="$RUNNER_TEMP/release.p12"
+          ( umask 077; base64 -d <<<"$RELEASE_KEYSTORE_B64" > "$RELEASE_KEYSTORE" )
+          BUILD_TOOLS=$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -n1)
+          export BUILD_TOOLS
+          [ -n "$LABEL" ] || LABEL="${GITHUB_REF_NAME//\//-}-${GITHUB_SHA::7}"
+          suffix=$(awk -v v="$VARIANT" '!/^#/ && $1 == v { print $3 }' tools/release/variants.txt)
+          [ "$suffix" = - ] && suffix=
+          apks=(in/*.apk)
+          [ ${#apks[@]} = 1 ] && [ -f "${apks[0]}" ] || { echo "::error::expected one apk in the build"; exit 1; }
+          mkdir -p out
+          out="out/DroidDeck-$LABEL$suffix.apk"
+          tools/release/sign-apk.sh "${apks[0]}" "$VARIANT" "$out"
+          ( cd out && sha256sum -- *.apk > "SHA256SUMS-$VARIANT.txt" && cat "SHA256SUMS-$VARIANT.txt" )
+          echo "- \`$(basename "$out")\` - $(cut -c1-16 "out/SHA256SUMS-$VARIANT.txt")…" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Forget the key
+        if: always()
+        run: rm -f "$RUNNER_TEMP/release.p12"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ inputs.artifact }}-${{ matrix.variant }}
+          path: out/*
+          if-no-files-found: error

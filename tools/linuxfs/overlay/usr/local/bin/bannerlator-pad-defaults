@@ -180,9 +180,131 @@ SmallMotor = SDL-0/SmallMotor
 """
 
 
+def ini_get(path, section, key):
+    try:
+        with open(path, encoding="utf-8", errors="replace") as f:
+            lines = f.read().splitlines()
+    except OSError:
+        return None
+    span = ini_section(lines, section)
+    if not span:
+        return None
+    for l in lines[span[0]:span[1]]:
+        if "=" in l and l.split("=", 1)[0].strip() == key:
+            return l.split("=", 1)[1].strip()
+    return None
+
+
+def ini_set(path, section, key, value):
+    """Sets one key (the first of that name) in [section], adding either as needed."""
+    with open(path, encoding="utf-8", errors="replace") as f:
+        lines = f.read().splitlines()
+    span = ini_section(lines, section)
+    if span is None:
+        lines += ["", f"[{section}]", f"{key} = {value}"]
+    else:
+        for i in range(span[0], span[1]):
+            if "=" in lines[i] and lines[i].split("=", 1)[0].strip() == key:
+                lines[i] = f"{key} = {value}"
+                break
+        else:
+            end = span[1]
+            while end > span[0] and not lines[end - 1].strip():
+                end -= 1
+            lines.insert(end, f"{key} = {value}")
+    with open(path + ".tmp", "w", encoding="utf-8") as f:
+        f.write("\n".join(lines) + "\n")
+    os.replace(path + ".tmp", path)
+
+
+def drop_line(path, line):
+    with open(path, encoding="utf-8", errors="replace") as f:
+        lines = f.read().splitlines()
+    kept = [l for l in lines if l.replace(" ", "") != line.replace(" ", "")]
+    if len(kept) != len(lines):
+        with open(path + ".tmp", "w", encoding="utf-8") as f:
+            f.write("\n".join(kept) + "\n")
+        os.replace(path + ".tmp", path)
+
+
+def system_folder(names, default):
+    for name in names:
+        for cand in (name, name.upper()):
+            d = os.path.join(ROMS, cand)
+            if os.path.isdir(d):
+                return d
+    return os.path.join(ROMS, default)
+
+
+def bios_folder(base):
+    for name in ("bios", "BIOS", "firmware"):
+        d = os.path.join(base, name)
+        if os.path.isdir(d):
+            return d
+    d = os.path.join(base, "bios")
+    if os.path.isdir(ROMS):
+        try:
+            os.makedirs(d, exist_ok=True)  # where the user is told to put their BIOS
+        except OSError:
+            pass
+    return d
+
+
+# DuckStation (PS1) - set up like ARMSX2: users bring their own BIOS and games, in the ROMs folder.
+# Front-end runs use -batch -bigpicture -fullscreen, so the guide button is the pause menu
+# (Hotkeys OpenPauseMenu, src/core/hotkeys.cpp), not the analog toggle. Keys from
+# src/core/settings.cpp: [BIOS] SearchDirectory, [GPU] Renderer ("Vulkan"), [Main]
+# SetupWizardIncomplete (src/duckstation-qt/qthost.cpp).
+DUCKSTATION_PAD1_GUIDE_FREE = "\n".join(l for l in DUCKSTATION_PAD1.splitlines() if not l.startswith("Analog ")) + "\n"
+
+
 def duckstation():
-    for d in (os.path.join(CONFIG, "duckstation"), os.path.join(HOME, ".local/share/duckstation")):
-        patch_ini_section(os.path.join(d, "settings.ini"), "Pad1", DUCKSTATION_PAD1, "DuckStation")
+    ps1 = system_folder(("psx", "ps1"), "psx")
+    d = os.path.join(CONFIG, "duckstation")
+    ini = os.path.join(d, "settings.ini")
+    legacy = os.path.join(HOME, ".local/share/duckstation/settings.ini")
+    if not os.path.isfile(ini) and os.path.isfile(legacy):
+        ini = legacy
+    if not os.path.isfile(ini):
+        # A new player: everything DuckStation's first-time setup asks is answered here (it finds
+        # the BIOS in its folder by itself), so a game from the front end boots straight away.
+        bios = bios_folder(ps1)
+        seed(ini, "[Main]\nSetupWizardIncomplete = false\nInhibitScreensaver = false\n\n"
+                  f"[BIOS]\nSearchDirectory = {bios}\n\n"
+                  f"[GameList]\nRecursivePaths = {ps1}\n\n"
+                  "[GPU]\nRenderer = Vulkan\n\n"
+                  "[Hotkeys]\nOpenPauseMenu = Keyboard/Escape\nOpenPauseMenu = SDL-0/Guide\n\n"
+                  "[Pad1]\n" + DUCKSTATION_PAD1_GUIDE_FREE, "DuckStation", "first-time setup, BIOS from " + bios)
+        return
+    patch_ini_section(ini, "Pad1", DUCKSTATION_PAD1_GUIDE_FREE, "DuckStation")
+    drop_line(ini, "Analog = SDL-0/Guide")
+    patch_ini_section(ini, "Hotkeys", "OpenPauseMenu = SDL-0/Guide\n", "DuckStation", needle="SDL-0/Guide",
+                      done="the guide button opens the pause menu")
+    patch_ini_section(ini, "GameList", f"RecursivePaths = {ps1}\n", "DuckStation", needle=ROMS,
+                      done="games listed from the ROMs folder")
+    # One set up by an earlier build still has its first-time setup pending, in the way of a game.
+    if ini_get(ini, "Main", "SetupWizardIncomplete") == "true":
+        ini_set(ini, "Main", "SetupWizardIncomplete", "false")
+        print("bannerlator-pad-defaults: DuckStation: first-time setup already done here")
+    # Keeping the screen awake goes through org.freedesktop.ScreenSaver, which nothing in the session
+    # provides (Android decides when the screen sleeps): DuckStation only warns it failed, every game.
+    if (ini_get(ini, "Main", "InhibitScreensaver") or "true") == "true":
+        ini_set(ini, "Main", "InhibitScreensaver", "false")
+        print("bannerlator-pad-defaults: DuckStation: no screensaver inhibit (no such service here)")
+    # Once, for a DuckStation set up before this: its own empty BIOS folder moves to the ROMs folder,
+    # and Automatic becomes Vulkan. A later choice in DuckStation's settings is kept.
+    marker = os.path.join(os.path.dirname(ini), ".droiddeck-setup")
+    if os.path.exists(marker):
+        return
+    current = ini_get(ini, "BIOS", "SearchDirectory") or "bios"
+    own = current if os.path.isabs(current) else os.path.join(os.path.dirname(ini), current)
+    if not (os.path.isdir(own) and os.listdir(own)):
+        ini_set(ini, "BIOS", "SearchDirectory", bios_folder(ps1))
+        print(f"bannerlator-pad-defaults: DuckStation: BIOS from {bios_folder(ps1)}")
+    if (ini_get(ini, "GPU", "Renderer") or "Automatic") == "Automatic":
+        ini_set(ini, "GPU", "Renderer", "Vulkan")
+        print("bannerlator-pad-defaults: DuckStation: renderer Vulkan")
+    open(marker, "w").close()
 
 
 # PCSX2: FaceSouth/... names (pcsx2/Input/SDLInputSource.cpp), keys from SIO/Pad/PadDualshock2.cpp.
@@ -331,17 +453,18 @@ def armsx2():
                 shutil.copytree(src, os.path.join(root, sub), dirs_exist_ok=True)
         print(f"bannerlator-pad-defaults: ARMSX2: settings and memory cards copied from PCSX2 ({root})")
     elif not os.path.isfile(ini):
-        # A new player: ARMSX2's own first-time setup still runs (SetupWizardIncomplete) to pick the
-        # BIOS, but looking in the ROMs folder, with the ps2 folder as its game list and the
-        # controller already on Player 1.
+        # A new player: everything ARMSX2's first-time setup asks is answered here - the BIOS
+        # folder in the ROMs folder, the ps2 folder as its game list, the controller on Player 1 -
+        # and the BIOS file itself is picked below once one is there.
         bios, games = ps2_bios_folder(), ps2_folder()
-        seed(ini, "[UI]\nSettingsVersion = 1\nSetupWizardIncomplete = true\n\n"
+        seed(ini, "[UI]\nSettingsVersion = 1\nSetupWizardIncomplete = false\n\n"
                   f"[Folders]\nBios = {bios}\n\n"
                   f"[GameList]\nRecursivePaths = {games}\n\n"
                   # Vulkan outright rather than Auto's pick: the renderer every other path here uses.
                   "[EmuCore/GS]\nRenderer = 14\n\n"
                   "[Hotkeys]\nOpenPauseMenu = Keyboard/Escape\nOpenPauseMenu = SDL-0/Guide\n\n"
                   "[Pad1]\n" + ARMSX2_PAD1, "ARMSX2", "first-time setup, BIOS from " + bios)
+        armsx2_bios(ini)
         return
     patch_ini_section(ini, "Pad1", ARMSX2_PAD1, "ARMSX2", require="SettingsVersion")
     # The guide button is the pause menu here; PCSX2's profile (ours, copied over) had it as the
@@ -357,6 +480,34 @@ def armsx2():
                       require="SettingsVersion", done="the guide button opens the pause menu")
     patch_ini_section(ini, "GameList", f"RecursivePaths = {ps2_folder()}\n", "ARMSX2", needle=ROMS,
                       require="SettingsVersion", done="games listed from the ROMs folder")
+    if ini_get(ini, "UI", "SetupWizardIncomplete") == "true":
+        ini_set(ini, "UI", "SetupWizardIncomplete", "false")
+        print("bannerlator-pad-defaults: ARMSX2: first-time setup already done here")
+    armsx2_bios(ini)
+
+
+def armsx2_bios(ini):
+    """PCSX2 boots the one BIOS file named in [Filenames] BIOS (inside [Folders] Bios); its first-time
+    setup is what names it. With that skipped, the first dump in the folder is named here - a US one
+    first - while none is named or the named one is gone. A choice made in ARMSX2 is kept."""
+    folder = ini_get(ini, "Folders", "Bios") or ps2_bios_folder()
+    if not os.path.isabs(folder):
+        folder = os.path.join(os.path.dirname(os.path.dirname(ini)), folder)
+    current = ini_get(ini, "Filenames", "BIOS")
+    if current and os.path.isfile(os.path.join(folder, current)):
+        return
+    try:
+        # A PS2 BIOS dump is 4 MiB (a few are 8); the .nvm/.mec files beside it are not dumps.
+        dumps = sorted(f for f in os.listdir(folder)
+                       if os.path.isfile(os.path.join(folder, f)) and 4 << 20 <= os.path.getsize(os.path.join(folder, f)) <= 8 << 20)
+    except OSError:
+        return
+    if not dumps:
+        return
+    us = [f for f in dumps if any(t in f.lower() for t in ("usa", "(us)", "(us,", "ntsc-u"))]
+    pick = (us or dumps)[0]
+    ini_set(ini, "Filenames", "BIOS", pick)
+    print(f"bannerlator-pad-defaults: ARMSX2: BIOS {pick}")
 
 
 def dolphin():
