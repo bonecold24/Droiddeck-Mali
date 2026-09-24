@@ -233,6 +233,18 @@ fun FrontEndScreen(s: FrontEndState, a: FrontEndActions, page: (@Composable () -
     val colors = MaterialTheme.colorScheme
     val ctx = LocalContext.current
     BackHandler(enabled = s.pageKey != null && page != null) { a.onPageBack() }
+    // Back (and B) from a game or an emulator steps out one level, as its "‹" link does, instead
+    // of leaving the app: a game -> its emulator (or Steam), an emulator -> Desktop.
+    BackHandler(
+        enabled = (s.pageKey == null || page == null) &&
+            (selected.startsWith("app:") || selected.startsWith("emu:") || selected.startsWith("rom:")),
+    ) {
+        selected = when {
+            selected.startsWith("app:") -> "steam"
+            selected.startsWith("emu:") -> "desktop"
+            else -> "emu:" + selected.removePrefix("rom:").substringBefore(':')
+        }
+    }
     LaunchedEffect(s.isHomeApp) { if (!s.isHomeApp && selected == "android-apps") selected = "steam" }
     remember { Motion.scale = Settings.Global.getFloat(ctx.contentResolver, Settings.Global.ANIMATOR_DURATION_SCALE, 1f); true }
 
