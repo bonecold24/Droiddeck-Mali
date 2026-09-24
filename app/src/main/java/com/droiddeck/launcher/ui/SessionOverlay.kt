@@ -1,5 +1,6 @@
 package com.droiddeck.launcher.ui
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -54,6 +55,7 @@ import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.border
 import androidx.compose.foundation.hoverable
+import androidx.compose.foundation.focusGroup
 import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.foundation.interaction.collectIsHoveredAsState
 import androidx.compose.foundation.layout.Arrangement
@@ -65,6 +67,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.InputMode
@@ -126,6 +130,11 @@ fun LoadingOverlay(step: String, percent: Int, elapsed: String, hint: String, en
 @Composable
 fun SessionPausedOverlay(onResume: () -> Unit) {
     val interactionSource = remember { MutableInteractionSource() }
+    val resumeFocus = remember { FocusRequester() }
+    LaunchedEffect(Unit) {
+        androidx.compose.runtime.withFrameNanos { }
+        runCatching { resumeFocus.requestFocus() }
+    }
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -137,7 +146,10 @@ fun SessionPausedOverlay(onResume: () -> Unit) {
             horizontalAlignment = Alignment.CenterHorizontally,
             modifier = Modifier.padding(32.dp),
         ) {
-            OutlinedButton(onClick = onResume) {
+            OutlinedButton(
+                onClick = onResume,
+                modifier = Modifier.focusRequester(resumeFocus).controllerConfirm(onClick = onResume),
+            ) {
                 Text("Resume session")
             }
         }
@@ -199,6 +211,9 @@ fun SessionDrawer(open: Boolean, a: DrawerActions) {
     var firstControlFocused by remember { mutableStateOf(false) }
     val inputModeManager = LocalInputModeManager.current
     val steamButtons = a.onSteamMenu != null && a.onQam != null
+    BackHandler(enabled = open) {
+        if (host.open != null) host.open = null else a.onClose()
+    }
     LaunchedEffect(open) {
         if (open) {
             inputModeManager.requestInputMode(InputMode.Keyboard)
@@ -228,6 +243,9 @@ fun SessionDrawer(open: Boolean, a: DrawerActions) {
                     .background(pal.background.copy(alpha = 0.97f))
                     .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) {}
                     .focusGroup()
+                    .controllerBack {
+                        if (host.open != null) host.open = null else a.onClose()
+                    }
                     .verticalScroll(rememberScrollState())
                     .padding(horizontal = 14.dp, vertical = 16.dp),
             ) {
@@ -259,7 +277,10 @@ fun SessionDrawer(open: Boolean, a: DrawerActions) {
                             onClick = { host.open = null; a.onSteamMenu.invoke() },
                             interactionSource = steamSrc,
                             modifier = Modifier.weight(1f).height(48.dp).focusRequester(firstFocus)
-                                .onFocusChanged { firstControlFocused = it.isFocused },
+                                .onFocusChanged { firstControlFocused = it.isFocused }.controllerConfirm {
+                                host.open = null
+                                a.onSteamMenu.invoke()
+                            },
                             shape = RoundedCornerShape(12.dp),
                             border = BorderStroke(if (steamHot) 2.dp else 1.dp, if (steamHot) pal.signal else colors.outline),
                             colors = ButtonDefaults.outlinedButtonColors(containerColor = if (steamHot) pal.signal.copy(alpha = 0.16f) else Color.Transparent),
@@ -273,7 +294,10 @@ fun SessionDrawer(open: Boolean, a: DrawerActions) {
                                 qamStartedOnPress = false
                             },
                             interactionSource = qamInteraction,
-                            modifier = Modifier.weight(1f).height(48.dp).semantics { contentDescription = "Open Quick Access Menu" },
+                            modifier = Modifier.weight(1f).height(48.dp).semantics { contentDescription = "Open Quick Access Menu" }.controllerConfirm {
+                                host.open = null
+                                a.onQam.invoke()
+                            },
                             shape = RoundedCornerShape(12.dp),
                             border = BorderStroke(if (qamHot) 2.dp else 1.dp, if (qamHot) pal.signal else colors.outline),
                             colors = ButtonDefaults.outlinedButtonColors(containerColor = if (qamHot) pal.signal.copy(alpha = 0.16f) else Color.Transparent),
@@ -410,6 +434,7 @@ private fun DangerButton(text: String, onClick: () -> Unit) {
     Box(
         modifier = Modifier.clip(RoundedCornerShape(12.dp)).background(fill).border(1.dp, colors.error.copy(alpha = if (hot) 0.9f else 0.5f), RoundedCornerShape(12.dp))
             .hoverable(src).clickable(interactionSource = src, indication = LocalIndication.current, onClick = onClick)
+            .controllerConfirm(onClick = onClick)
             .padding(horizontal = 16.dp, vertical = 11.dp),
     ) { Text(text, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 0.5.sp, color = colors.error, maxLines = 1) }
 }

@@ -94,6 +94,7 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
     private var drawerDirectionDownTime = 0L
     private var drawerDirectionLastRepeat = 0L
     private var drawerDirectionDeviceId = -1
+    private val resumeKeysDown = mutableSetOf<Pair<Int, Int>>()
 
     // Compose reads these; the activity writes them.
     private var drawerOpen by mutableStateOf(false)
@@ -675,8 +676,18 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
             KeyEvent.KEYCODE_VOLUME_UP, KeyEvent.KEYCODE_VOLUME_DOWN, KeyEvent.KEYCODE_VOLUME_MUTE ->
                 return super.dispatchKeyEvent(event)
         }
-        // Keep keys in the Android/Compose focus tree while the drawer is open. Its Back key and
-        // controller B always dismiss the drawer; directional and confirm keys stay with the UI.
+        val fromController = PadBridge.isFromController(event.device)
+        val resumeKey = event.keyCode == KeyEvent.KEYCODE_BUTTON_A || event.keyCode == KeyEvent.KEYCODE_BUTTON_START
+        val resumeKeyId = event.deviceId to event.keyCode
+        if (fromController && resumeKey && (SessionState.suspended || resumeKeyId in resumeKeysDown)) {
+            if (event.action == KeyEvent.ACTION_DOWN) {
+                resumeKeysDown.add(resumeKeyId)
+                if (event.repeatCount == 0 && SessionState.suspended) SessionService.resume(this)
+            } else if (event.action == KeyEvent.ACTION_UP) {
+                resumeKeysDown.remove(resumeKeyId)
+            }
+            return true
+        }
         if (drawerOpen) {
             if (event.keyCode == KeyEvent.KEYCODE_BACK || event.keyCode == KeyEvent.KEYCODE_BUTTON_B) {
                 if (event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0) drawerOpen = false

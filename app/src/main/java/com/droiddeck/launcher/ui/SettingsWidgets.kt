@@ -1,5 +1,6 @@
 package com.droiddeck.launcher.ui
 
+import android.view.KeyEvent
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
@@ -52,6 +53,7 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -68,6 +70,26 @@ import androidx.compose.ui.window.PopupProperties
 
 private val RowShape = RoundedCornerShape(12.dp)
 private val GroupShape = RoundedCornerShape(14.dp)
+
+internal fun Modifier.controllerConfirm(enabled: Boolean = true, onClick: () -> Unit): Modifier = onPreviewKeyEvent { event ->
+    val keyEvent = event.nativeKeyEvent
+    if (keyEvent.keyCode != KeyEvent.KEYCODE_BUTTON_A) {
+        false
+    } else {
+        if (enabled && keyEvent.action == KeyEvent.ACTION_DOWN && keyEvent.repeatCount == 0) onClick()
+        true
+    }
+}
+
+internal fun Modifier.controllerBack(onBack: () -> Unit): Modifier = onPreviewKeyEvent { event ->
+    val keyEvent = event.nativeKeyEvent
+    if (keyEvent.keyCode != KeyEvent.KEYCODE_BUTTON_B && keyEvent.keyCode != KeyEvent.KEYCODE_BACK) {
+        false
+    } else {
+        if (keyEvent.action == KeyEvent.ACTION_DOWN && keyEvent.repeatCount == 0) onBack()
+        true
+    }
+}
 
 class MenuHost {
     var open by mutableStateOf<String?>(null)
@@ -114,6 +136,7 @@ fun AnchoredMenu(open: Boolean, onDismiss: () -> Unit, title: String? = null, no
                     .clip(RowShape)
                     .background(pal.surfaceVariant.copy(alpha = 0.95f))
                     .border(1.dp, pal.signal.copy(alpha = 0.22f), RowShape)
+                    .controllerBack(onDismiss)
                     .padding(6.dp),
             ) {
                 if (title != null) Text(
@@ -149,6 +172,7 @@ fun MenuItem(
             .background(if (hot && enabled) Color.White.copy(alpha = 0.07f) else Color.Transparent)
             .alpha(if (enabled) 1f else 0.4f)
             .hoverable(src).clickable(interactionSource = src, indication = LocalIndication.current, enabled = enabled, onClick = onClick)
+            .controllerConfirm(enabled = enabled, onClick = onClick)
             .padding(horizontal = 10.dp, vertical = 9.dp),
     ) {
         Text("✓", fontSize = 12.sp, color = pal.signal, modifier = Modifier.width(18.dp).alpha(if (checked) 1f else 0f))
@@ -181,6 +205,7 @@ fun ValueChip(text: String, open: Boolean, enabled: Boolean = true, modifier: Mo
             .border(1.dp, edge, RoundedCornerShape(10.dp))
             .alpha(if (enabled) 1f else 0.5f)
             .hoverable(src).clickable(interactionSource = src, indication = LocalIndication.current, enabled = enabled, onClick = onClick)
+            .controllerConfirm(enabled = enabled, onClick = onClick)
             .padding(horizontal = 12.dp, vertical = 8.dp),
     ) {
         AnimatedContent(

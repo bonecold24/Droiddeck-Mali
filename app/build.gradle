@@ -30,7 +30,6 @@ if (buildLabel == null || buildLabel.trim().isEmpty()) {
                 buildLabel = "pr${pullRequest.number} at ${pullRequest.head.sha.take(7)}"
             }
         } catch (Exception ignored) {
-            // Local builds and unusual CI events can omit the pull-request payload.
         }
     }
     if (buildLabel == null || buildLabel.trim().isEmpty()) {
