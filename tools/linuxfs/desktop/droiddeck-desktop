@@ -107,8 +107,9 @@ python3 /usr/local/bin/bannerlator-desktop-games 2>&1 | sed 's/^/[games] /'
 gpu_entries() { python3 /usr/local/bin/droiddeck-desktop-gpu 2>&1 | sed 's/^/[gpu] /'; }
 gpu_entries
 
-# ~/.droiddeck-desktop-debug: labwc's own debug log (views and layer surfaces mapping) too.
-DEBUG=; [ -f "$HOME/.droiddeck-desktop-debug" ] && DEBUG=-d
+# ~/.droiddeck-desktop-debug: labwc's own debug log (views and layer surfaces mapping) too. The GPU
+# renderers are experimental and always log in full, so a desktop that does not come up says why.
+DEBUG=; { [ -f "$HOME/.droiddeck-desktop-debug" ] || [ "$WLR_RENDERER" != pixman ]; } && DEBUG=-d
 run_labwc() {
   echo "== droiddeck-desktop: labwc ($WLR_RENDERER${LD_LIBRARY_PATH:+, wlroots from $WLROOTS_DIR}) on $WAYLAND_DISPLAY"
   # A session bus: the panel's menus, the file manager and the portal all expect one.
@@ -118,18 +119,59 @@ run_labwc() {
     labwc $DEBUG -C "$HOME/.config/labwc"
   fi
 }
+pids_named() {
+  local p
+  for p in /proc/[0-9]*; do
+    [ "$(cat "$p/comm" 2>/dev/null)" = "$1" ] && echo "${p#/proc/}"
+  done
+}
+# labwc answers on its own socket (the one beside the app's wayland-0) once its event loop runs; a
+# labwc stuck on the GPU never does.
+labwc_answers() {
+  local sock
+  for sock in "$XDG_RUNTIME_DIR"/wayland-*; do
+    case $sock in *.lock|*/wayland-0) continue ;; esac
+    [ -S "$sock" ] || continue
+    WAYLAND_DISPLAY=${sock##*/} timeout 3 wayland-info >/dev/null 2>&1 && return 0
+  done
+  return 1
+}
 if [ "$WLR_RENDERER" = pixman ]; then
   run_labwc
   exit $?
 fi
-# A GPU renderer this device cannot start ends the desktop within a second or two; rather than a
-# session that closes at once, the desktop comes up on pixman and the log says why.
+# A GPU renderer this device cannot start either ends the desktop at once or leaves it hanging on
+# the loading screen. Either way the desktop comes up on pixman instead, and the log says why.
 started=$(date +%s)
-run_labwc
-rc=$?
-if [ "$rc" -ne 0 ] && [ $(( $(date +%s) - started )) -lt 15 ]; then
-  echo "== droiddeck-desktop: labwc on $WLR_RENDERER stopped at start (exit $rc); starting on pixman instead"
+run_labwc &
+labwc_job=$!
+answered=
+while kill -0 "$labwc_job" 2>/dev/null; do
+  if labwc_answers; then answered=1; break; fi
+  [ $(( $(date +%s) - started )) -ge 20 ] && break
+  sleep 1
+done
+if [ -n "$answered" ]; then
+  echo "== droiddeck-desktop: labwc on $WLR_RENDERER is up after $(( $(date +%s) - started )) s"
+  wait "$labwc_job"
+  exit $?
+fi
+if kill -0 "$labwc_job" 2>/dev/null; then
+  echo "== droiddeck-desktop: labwc on $WLR_RENDERER did not answer in 20 s; stopping it"
+  kill -TERM $(pids_named labwc) 2>/dev/null
+  sleep 2
+  kill -KILL $(pids_named labwc) 2>/dev/null
+  for prog in lxqt-panel pcmanfm-qt swaybg Xwayland; do kill -KILL $(pids_named "$prog") 2>/dev/null; done
+  wait "$labwc_job" 2>/dev/null
+  rc=124
+else
+  wait "$labwc_job"
+  rc=$?
+fi
+if [ "$rc" -ne 0 ] && [ $(( $(date +%s) - started )) -lt 40 ]; then
+  echo "== droiddeck-desktop: labwc on $WLR_RENDERER failed at start (exit $rc); starting on pixman instead"
   use_renderer pixman
+  DEBUG=; [ -f "$HOME/.droiddeck-desktop-debug" ] && DEBUG=-d
   find "$XDG_RUNTIME_DIR" -mindepth 1 -maxdepth 1 ! -name 'wayland-0*' ! -name 'keymap.xkb' -exec rm -rf {} + 2>/dev/null
   gpu_entries
   run_labwc
