@@ -6,7 +6,7 @@ name: Sign APKs
 #   signing-main    builds of main
 #   signing-branch  builds of any other branch - waits for the owner's approval
 #   release         release.yml - main only, waits for the owner's approval
-# Pull requests never get here (build.yml skips this for pull_request_target), so code from a pull
+# Pull requests never get here (build.yml skips this for pull_request), so code from a pull
 # request can never be signed with the key or come near it.
 
 on:

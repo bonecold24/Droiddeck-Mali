@@ -1,5 +1,5 @@
 name: Build APK
-run-name: ${{ github.event_name == 'pull_request_target' && format('building pr {0} on {1}', github.event.pull_request.number, github.event.pull_request.head.sha) || format('building {0} on {1}', github.ref_name, github.sha) }}
+run-name: ${{ github.event_name == 'pull_request' && format('building pr {0} on {1}', github.event.pull_request.number, github.event.pull_request.head.sha) || format('building {0} on {1}', github.ref_name, github.sha) }}
 
 # One job: the two glibc preload libraries the session needs, then the app around them.
 # Nothing is built on a developer machine - this workflow is the only thing that produces an apk.
@@ -22,10 +22,15 @@ on:
   # A pull request against main builds by itself: the contributor's branch, as it would be once
   # merged onto main, comes back as an apk on the run without anyone here pressing a button.
   # Every push to the pull request rebuilds it and cancels the build it replaces; a draft waits
-  # until it is marked ready. pull_request_target rather than pull_request: GitHub does not run
-  # the latter at all while a pull request conflicts with main, and saying what conflicts is the
-  # point. The workflow file is always main's; the pull request's own code is checked out below.
-  pull_request_target:
+  # until it is marked ready.
+  #
+  # pull_request, NOT pull_request_target. The _target form runs a pull request's code with main's
+  # context: its caches are main's caches, so a hostile pull request could leave a poisoned
+  # Gradle/CMake cache that main's next build - which is signed with DroidDeck's key - picks up.
+  # Under pull_request a fork's run has a read-only token, no secrets, and caches of its own that
+  # main never reads. The price: GitHub does not run pull_request while a pull request conflicts
+  # with main, so a conflicting one gets no build (the pull request page still shows the conflict).
+  pull_request:
     branches: [ main ]
     types: [ opened, synchronize, reopened, ready_for_review ]
     paths-ignore:
@@ -50,7 +55,7 @@ env:
 
 jobs:
   build:
-    if: ${{ github.event_name != 'pull_request_target' || !github.event.pull_request.draft }}
+    if: ${{ github.event_name != 'pull_request' || !github.event.pull_request.draft }}
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
@@ -59,7 +64,7 @@ jobs:
       # the next step is to say so and show where.
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.event_name == 'pull_request_target' && github.event.pull_request.head.sha || github.sha }}
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
           # Full history: the merge below needs it (a shallow clone refuses to merge at all).
           fetch-depth: 0
 
@@ -79,7 +84,7 @@ jobs:
           fi
 
       - name: Merge onto main, or say what conflicts
-        if: github.event_name == 'pull_request_target'
+        if: github.event_name == 'pull_request'
         run: |
           set -uo pipefail
           git config user.name "ci"
@@ -427,7 +432,7 @@ jobs:
       # build failed, the compiler's own errors with paths made short. Fork pull requests carry a
       # read-only token and cannot comment; the same text is in the run summary either way.
       - name: Report on the pull request
-        if: always() && github.event_name == 'pull_request_target'
+        if: always() && github.event_name == 'pull_request'
         continue-on-error: true
         env:
           GH_TOKEN: ${{ github.token }}
@@ -447,7 +452,7 @@ jobs:
               success)
                 echo "###  Build passed"
                 echo
-                echo "The apk is the \`droiddeck-apk\` artifact on [this run]($RUN_URL) (signed with the same test key as every build, so it installs over any other)."
+                echo "The apk is the \`droiddeck-apk\` artifact on [this run]($RUN_URL) A pull request's build is signed only with the public test key: it installs on a phone without an official DroidDeck. To install it over one, sign it with DroidDeck's key or ask for a test build of the branch."
                 ;;
               failure)
                 echo "### ERROR: Build failed"
@@ -499,7 +504,7 @@ jobs:
   # the job that would hold the key never runs for it. The testkey apk above is unaffected.
   sign:
     needs: build
-    if: github.event_name != 'pull_request_target'
+    if: github.event_name != 'pull_request'
     # What sign.yml asks for; a called workflow never gets more than its caller gives it.
     permissions:
       contents: read
