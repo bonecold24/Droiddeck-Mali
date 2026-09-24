@@ -20,7 +20,8 @@ import java.net.URLEncoder
  * (USA)"), first exactly and then loosely (tags dropped, the same region preferred) against the
  * collection's list of names; then the disc's own ID, read from the image - PS2 serials against
  * xlenore/ps2-covers (what PCSX2 and ARMSX2 download from), GameCube/Wii IDs against GameTDB (what
- * Dolphin uses). A cover is downloaded once into files/covers; a game none of them has is not
+ * Dolphin uses). A PS3 disc image gives its own PS3_GAME/ICON0.PNG first: the libretro PS3
+ * collection is small. A cover is downloaded once into files/covers; a game none of them has is not
  * asked about again for a few days.
  */
 object CoverArt {
@@ -69,8 +70,15 @@ object CoverArt {
         for (rom in roms) {
             if (!wanted(context, rom)) continue
             if (++tries > MAX_PER_PASS) break
-            val url = try { findUrl(context, rom) } catch (e: Exception) { Log.w(TAG, "${rom.name}: $e"); null }
             val target = coverFile(context, rom)
+            // A PS3 disc carries its own cover (PS3_GAME/ICON0.PNG, not encrypted): no download.
+            if (rom.emulatorId == "rpcs3" && try { copyPs3Icon(rom.hostPath, target) } catch (e: Exception) { false }) {
+                Log.i(TAG, "${rom.name}: ICON0.PNG from the disc")
+                missFile(context, rom).delete()
+                found = true
+                continue
+            }
+            val url = try { findUrl(context, rom) } catch (e: Exception) { Log.w(TAG, "${rom.name}: $e"); null }
             if (url != null && download(url, target)) {
                 Log.i(TAG, "${rom.name}: $url")
                 missFile(context, rom).delete()
@@ -155,33 +163,56 @@ object CoverArt {
 
     // ---- disc IDs ------------------------------------------------------------------------------
 
-    /** "SLUS-21065" from a PS2 .iso's SYSTEM.CNF (BOOT2 = cdrom0:\SLUS_210.65;1), or null. */
-    private fun ps2Serial(file: File): String? {
+    /**
+     * A file's bytes from an ISO 9660 image by path ("PS3_GAME/ICON0.PNG"), or null. Primary volume
+     * names only (upper case, ";1" suffix), which is what PS2 and PS3 discs use.
+     */
+    private fun isoFile(file: File, path: String, maxSize: Int): ByteArray? {
         if (!file.name.endsWith(".iso", ignoreCase = true)) return null
         RandomAccessFile(file, "r").use { f ->
-            fun sector(lba: Long, length: Int): ByteArray = ByteArray(length).also { f.seek(lba * 2048); f.readFully(it) }
-            val pvd = sector(16, 2048)
-            if (String(pvd, 1, 5, Charsets.US_ASCII) != "CD001") return null
+            fun read(lba: Long, length: Int): ByteArray = ByteArray(length).also { f.seek(lba * 2048); f.readFully(it) }
             fun le32(b: ByteArray, at: Int) = (b[at].toLong() and 0xff) or ((b[at + 1].toLong() and 0xff) shl 8) or
                 ((b[at + 2].toLong() and 0xff) shl 16) or ((b[at + 3].toLong() and 0xff) shl 24)
-            val rootLba = le32(pvd, 156 + 2)
-            val rootSize = le32(pvd, 156 + 10).toInt().coerceAtMost(64 * 1024)
-            val dir = sector(rootLba, rootSize)
-            var at = 0
-            while (at < dir.size) {
-                val len = dir[at].toInt() and 0xff
-                if (len == 0) { at = (at / 2048 + 1) * 2048; continue }
-                val nameLen = dir[at + 32].toInt() and 0xff
-                val name = String(dir, at + 33, nameLen, Charsets.US_ASCII)
-                if (name.startsWith("SYSTEM.CNF", ignoreCase = true)) {
-                    val cnf = String(sector(le32(dir, at + 2), le32(dir, at + 10).toInt().coerceAtMost(4096)), Charsets.US_ASCII)
-                    val m = Regex("BOOT2\\s*=\\s*cdrom0:\\\\?([A-Z]{4})_(\\d{3})\\.(\\d{2})").find(cnf) ?: return null
-                    return "${m.groupValues[1]}-${m.groupValues[2]}${m.groupValues[3]}"
+            val pvd = read(16, 2048)
+            if (String(pvd, 1, 5, Charsets.US_ASCII) != "CD001") return null
+            var lba = le32(pvd, 156 + 2)
+            var size = le32(pvd, 156 + 10)
+            val parts = path.split('/')
+            for ((i, part) in parts.withIndex()) {
+                val dir = read(lba, size.toInt().coerceAtMost(256 * 1024))
+                var at = 0
+                var hit = false
+                while (at < dir.size) {
+                    val len = dir[at].toInt() and 0xff
+                    if (len == 0) { at = (at / 2048 + 1) * 2048; continue }
+                    val name = String(dir, at + 33, dir[at + 32].toInt() and 0xff, Charsets.US_ASCII).substringBefore(';')
+                    if (name.equals(part, ignoreCase = true)) {
+                        lba = le32(dir, at + 2); size = le32(dir, at + 10); hit = true; break
+                    }
+                    at += len
                 }
-                at += len
+                if (!hit) return null
+                if (i == parts.lastIndex) return if (size in 1..maxSize) read(lba, size.toInt()) else null
             }
         }
         return null
+    }
+
+    private fun copyPs3Icon(file: File, target: File): Boolean {
+        val png = isoFile(file, "PS3_GAME/ICON0.PNG", 4 * 1024 * 1024) ?: return false
+        target.parentFile?.mkdirs()
+        val tmp = File(target.path + ".part")
+        tmp.writeBytes(png)
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        BitmapFactory.decodeFile(tmp.path, bounds)
+        return if (bounds.outWidth > 0 && tmp.renameTo(target)) true else { tmp.delete(); false }
+    }
+
+    /** "SLUS-21065" from a PS2 .iso's SYSTEM.CNF (BOOT2 = cdrom0:\SLUS_210.65;1), or null. */
+    private fun ps2Serial(file: File): String? {
+        val cnf = String(isoFile(file, "SYSTEM.CNF", 4096) ?: return null, Charsets.US_ASCII)
+        val m = Regex("BOOT2\\s*=\\s*cdrom0:\\\\?([A-Z]{4})_(\\d{3})\\.(\\d{2})").find(cnf) ?: return null
+        return "${m.groupValues[1]}-${m.groupValues[2]}${m.groupValues[3]}"
     }
 
     /** The six-character ID of a GameCube/Wii disc image (.iso/.gcm, or .wbfs), or null. */
