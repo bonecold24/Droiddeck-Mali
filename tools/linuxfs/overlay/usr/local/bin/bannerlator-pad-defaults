@@ -338,6 +338,8 @@ def armsx2():
         seed(ini, "[UI]\nSettingsVersion = 1\nSetupWizardIncomplete = true\n\n"
                   f"[Folders]\nBios = {bios}\n\n"
                   f"[GameList]\nRecursivePaths = {games}\n\n"
+                  # Vulkan outright rather than Auto's pick: the renderer every other path here uses.
+                  "[EmuCore/GS]\nRenderer = 14\n\n"
                   "[Hotkeys]\nOpenPauseMenu = Keyboard/Escape\nOpenPauseMenu = SDL-0/Guide\n\n"
                   "[Pad1]\n" + ARMSX2_PAD1, "ARMSX2", "first-time setup, BIOS from " + bios)
         return
