@@ -71,6 +71,14 @@ object Library {
         Spec("ppsspp", "PPSSPP", "PSP", "/usr/bin/PPSSPPSDL", listOf("psp"), setOf("iso", "cso", "pbp", "chd")),
         Spec("retroarch", "RetroArch", "many systems", "/usr/bin/retroarch", emptyList(), emptySet()),
     )
+    /**
+     * A dump's file name as a title: its tags - (USA), (En,Fr,Es,Pt), [!], (v1.01) - identify the
+     * file and are dropped for reading ("Tomb Raider (USA) (En,Fr,Es,Pt)" -> "Tomb Raider"). The
+     * file keeps them, and the cover lookup still uses them.
+     */
+    private fun displayTitle(name: String): String =
+        name.replace(Regex("\\s*[(\\[][^)\\]]*[)\\]]"), "").trim().ifEmpty { name }
+
     /** Every system folder name the specs claim, so a loose-file scan of the root skips them. */
     private val systemFolders: Set<String> by lazy { specs.flatMap { it.folders }.toSet() }
     private val installedIds = mapOf(
@@ -104,7 +112,7 @@ object Library {
                     // A PS3 disc dump is a folder with PS3_GAME in it; RPCS3 boots the folder.
                     if (spec.id == "rpcs3" && File(dir, "PS3_GAME").isDirectory) {
                         val rel = dir.relativeTo(romsRoot).path
-                        games.add(Rom(dir.name, dir, "/root/ROMs/$rel", spec.id,
+                        games.add(Rom(displayTitle(dir.name), dir, "/root/ROMs/$rel", spec.id,
                             // The dump carries its own art, as an installed package does.
                             art = File(dir, "PS3_GAME/ICON0.PNG").takeIf { it.isFile }))
                         continue
@@ -114,7 +122,7 @@ object Library {
                         // A .bin beside a .cue is a track, not a game.
                         if (f.isFile && ext in spec.exts && !(ext == "bin" && File(dir, f.nameWithoutExtension + ".cue").isFile)) {
                             val rel = f.relativeTo(romsRoot).path
-                            games.add(Rom(f.nameWithoutExtension.removeSuffix(".dec"), f, "/root/ROMs/$rel", spec.id))
+                            games.add(Rom(displayTitle(f.nameWithoutExtension.removeSuffix(".dec")), f, "/root/ROMs/$rel", spec.id))
                         }
                     }
                 }
