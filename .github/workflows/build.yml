@@ -149,6 +149,12 @@ jobs:
           BUILD_REF: ${{ github.ref_name }}
           BUILD_SHA: ${{ github.sha }}
         run: |
+          if [[ -n "$(git status --porcelain)" ]]; then
+            tree_state=dirty
+          else
+            tree_state=clean
+          fi
+          echo "DROIDDECK_BUILD_TREE_STATE=$tree_state" >> "$GITHUB_ENV"
           if [[ -n "$PR_NUMBER" ]]; then
             label="pr${PR_NUMBER} at ${PR_HEAD_SHA:0:7}"
           else
