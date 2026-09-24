@@ -158,7 +158,10 @@ class DrawerActions(
     val selectedSecondScreenDisplay: Int,
     val onHud: (Boolean) -> Unit,
     val onFrameGenPick: (engine: String, multiplier: Int) -> Unit,
+    /** The Android keyboard (text, turned into key presses). */
     val onKeyboard: () -> Unit,
+    /** The on-screen PC keyboard: real keys, Esc, F1-F12, Ctrl, Alt... */
+    val onHardwareKeyboard: () -> Unit,
     val onSteamMenu: (() -> Unit)?,
     val onQam: (() -> Unit)?,
     val onOsc: (String) -> Unit,
@@ -320,7 +323,13 @@ fun SessionDrawer(open: Boolean, a: DrawerActions) {
                         listOf(SessionPrefs.OSC_AUTO to "Auto", SessionPrefs.OSC_ALWAYS to "Always", SessionPrefs.OSC_STEAM_QAM to "Steam + QAM", SessionPrefs.OSC_NEVER to "Never"), a.oscMode,
                         onPick = a.onOsc,
                     )
-                    ActionRow("Keyboard", null, "Show") { host.open = null; a.onKeyboard() }
+                    SettingsRow("Keyboard", null) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            SecondaryButton("Hardware") { host.open = null; a.onHardwareKeyboard() }
+                            Spacer(Modifier.width(8.dp))
+                            SecondaryButton("Android") { host.open = null; a.onKeyboard() }
+                        }
+                    }
                 }
 
                 if (a.steam && a.secondScreenDisplays.isNotEmpty()) SettingsGroup("Second screen") {

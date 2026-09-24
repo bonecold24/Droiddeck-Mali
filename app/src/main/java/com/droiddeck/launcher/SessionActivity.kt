@@ -88,6 +88,8 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
 
     // Compose reads these; the activity writes them.
     private var drawerOpen by mutableStateOf(false)
+    /** The on-screen PC keyboard (ui/PcKeyboard): real key presses, Esc and F1 included. */
+    private var pcKeyboardOpen by mutableStateOf(false)
     private var hudOn by mutableStateOf(true)
     private var frameGenLabel by mutableStateOf("Off")
     private var frameGenEngine by mutableStateOf(FrameGen.ENGINE_OFF)
@@ -181,6 +183,13 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
                     if (loading.visible) LoadingOverlay(loading.step, loading.percent, loading.elapsed, loading.hint, loading.ended)
                     // Opening the drawer takes the controller away from the game: release its pad.
                     androidx.compose.runtime.LaunchedEffect(drawerOpen) { if (drawerOpen) padBridge?.releaseAll() }
+                    // The PC keyboard takes it too, for moving over the keys; the drawer opens over it.
+                    androidx.compose.runtime.LaunchedEffect(pcKeyboardOpen) { if (pcKeyboardOpen) padBridge?.releaseAll() }
+                    if (pcKeyboardOpen) com.droiddeck.launcher.ui.PcKeyboard(
+                        sendKey = { code, down -> if (CompositorHost.isStarted) WaylandCompositor.nativeSendKey(code, if (down) 1 else 0) },
+                        onAndroidKeyboard = { pcKeyboardOpen = false; keyboard?.toggle() },
+                        onClose = { pcKeyboardOpen = false },
+                    )
                     SessionDrawer(drawerOpen, DrawerActions(
                         steam = SessionState.mode == SessionService.MODE_STEAM,
                         isHomeApp = isHomeApp,
@@ -200,7 +209,8 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
                             readPrefs()
                             applyFrameGen()
                         },
-                        onKeyboard = { drawerOpen = false; keyboard?.toggle() },
+                        onKeyboard = { drawerOpen = false; pcKeyboardOpen = false; keyboard?.toggle() },
+                        onHardwareKeyboard = { drawerOpen = false; pcKeyboardOpen = !pcKeyboardOpen },
                         onSteamMenu = if (SessionState.mode == SessionService.MODE_STEAM) ({ sendSteamGuide() }) else null,
                         onQam = if (SessionState.mode == SessionService.MODE_STEAM) ({
                             drawerOpen = false
@@ -247,7 +257,8 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
         // from a button a game might also be reading.
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() {
-                drawerOpen = !drawerOpen
+                // The PC keyboard closes first (B on a controller), then Back is the drawer again.
+                if (pcKeyboardOpen && !drawerOpen) pcKeyboardOpen = false else drawerOpen = !drawerOpen
             }
         })
         watchSession()
@@ -612,7 +623,7 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
         // With the drawer open the controller drives the drawer, not the game: Android's own
         // handling moves focus with the d-pad and stick, and its fallbacks make A select and B Back
         // (which closes the drawer) - the same as on the app's main screen.
-        if (drawerOpen && event.device != null && PadBridge.isFromController(event.device)) return super.dispatchKeyEvent(event)
+        if ((drawerOpen || pcKeyboardOpen) && event.device != null && PadBridge.isFromController(event.device)) return super.dispatchKeyEvent(event)
         if (event.keyCode != KeyEvent.KEYCODE_BACK && padBridge?.onKeyEvent(event) == true) return true
         // A hardware keyboard, forwarded to the compositor's wl_keyboard. Back is left to the
         // activity, which opens the drawer.
@@ -654,7 +665,7 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
     }
 
     override fun dispatchGenericMotionEvent(event: MotionEvent): Boolean {
-        if (drawerOpen && event.device != null && PadBridge.isFromController(event.device)) return super.dispatchGenericMotionEvent(event)
+        if ((drawerOpen || pcKeyboardOpen) && event.device != null && PadBridge.isFromController(event.device)) return super.dispatchGenericMotionEvent(event)
         if (padBridge?.onMotionEvent(event) == true) return true
         if (event.isFromSource(android.view.InputDevice.SOURCE_MOUSE) && !drawerOpen && onMouse(event)) return true
         return super.dispatchGenericMotionEvent(event)
