@@ -268,7 +268,7 @@ def duckstation():
     if not os.path.isfile(ini):
         # A new player: DuckStation's own first-time setup still runs, looking in the ROMs folder.
         bios = bios_folder(ps1)
-        seed(ini, "[Main]\nSetupWizardIncomplete = true\n\n"
+        seed(ini, "[Main]\nSetupWizardIncomplete = true\nInhibitScreensaver = false\n\n"
                   f"[BIOS]\nSearchDirectory = {bios}\n\n"
                   f"[GameList]\nRecursivePaths = {ps1}\n\n"
                   "[GPU]\nRenderer = Vulkan\n\n"
@@ -281,6 +281,11 @@ def duckstation():
                       done="the guide button opens the pause menu")
     patch_ini_section(ini, "GameList", f"RecursivePaths = {ps1}\n", "DuckStation", needle=ROMS,
                       done="games listed from the ROMs folder")
+    # Keeping the screen awake goes through org.freedesktop.ScreenSaver, which nothing in the session
+    # provides (Android decides when the screen sleeps): DuckStation only warns it failed, every game.
+    if (ini_get(ini, "Main", "InhibitScreensaver") or "true") == "true":
+        ini_set(ini, "Main", "InhibitScreensaver", "false")
+        print("bannerlator-pad-defaults: DuckStation: no screensaver inhibit (no such service here)")
     # Once, for a DuckStation set up before this: its own empty BIOS folder moves to the ROMs folder,
     # and Automatic becomes Vulkan. A later choice in DuckStation's settings is kept.
     marker = os.path.join(os.path.dirname(ini), ".droiddeck-setup")
