@@ -275,6 +275,7 @@ struct surface {
     int sub_x, sub_y, sub_pending_x, sub_pending_y, sub_pending;
     int below_parent;
     int fullscreen;                         /* xdg_toplevel.set_fullscreen: no client decorations */
+    int toplevel_committed;                 /* the toplevel's initial commit was answered */
 
     char *title;                            /* xdg_toplevel title, for the session log */
     int announced_vulkan;                   /* logged its first dmabuf frame */
@@ -892,6 +893,15 @@ static void surface_commit(struct wl_client *c, struct wl_resource *r) {
     struct surface *s = wl_resource_get_user_data(r);
     struct surface *child;
 
+    /* xdg-shell: the initial commit of a toplevel is answered with a configure. One is also sent
+     * at get_toplevel, which Wine's driver has always had; a client that waits for the reply to its
+     * commit on a queue of its own (wlroots' Wayland backend - the desktop's labwc) can read that
+     * early one onto the wrong queue and would wait for ever. */
+    if (s->xdg_toplevel && !s->toplevel_committed) {
+        s->toplevel_committed = 1;
+        send_toplevel_configure(s);
+    }
+
     if (s->pending_src_set) {
         s->src_set = s->pending_src[2] > 0;
         memcpy(s->src, s->pending_src, sizeof(s->src));
@@ -1302,6 +1312,7 @@ static void xdg_toplevel_resource_destroy(struct wl_resource *r) {
     struct surface *s = wl_resource_get_user_data(r);
     if (!s) return;
     s->xdg_toplevel = NULL;
+    s->toplevel_committed = 0;
     unmap_toplevel(s);
     s->placed = 0;
     s->hwnd = 0;
