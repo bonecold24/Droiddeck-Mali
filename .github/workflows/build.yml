@@ -66,6 +66,18 @@ jobs:
       # The pull request as it would be once merged onto main is what gets built. When it cannot
       # be merged, the conflicting files and the conflicting hunks go into the run summary and the
       # pull-request comment, and the job stops here: there is nothing coherent to build.
+      # DroidDeck's signing key lives only in GitHub environment secrets (see sign.yml). A key file
+      # committed by mistake would be in the history for good: stop at the first one. The AOSP
+      # testkey is public and meant to be here.
+      - name: No private key in the tree
+        run: |
+          set -euo pipefail
+          keys=$(git ls-files | grep -iE '\.(jks|keystore|p12|pfx|pk8|pem|key)$' | grep -vx 'keystore/testkey.p12' || true)
+          if [ -n "$keys" ]; then
+            echo "::error::a private key is committed - remove it from the history and make a new one: $keys"
+            exit 1
+          fi
+
       - name: Merge onto main, or say what conflicts
         if: github.event_name == 'pull_request_target'
         run: |
@@ -480,3 +492,15 @@ jobs:
           retention-days: 30
           # An apk is a zip already; compressing it again buys nothing and costs seconds.
           compression-level: 0
+
+  # The apk signed with DroidDeck's own key (tools/release), so a test build installs over a release
+  # and keeps its data. Main's builds sign straight away (signing-main); any other branch's wait for
+  # the owner's approval (signing-branch). A pull request's never: its code is not ours to sign, and
+  # the job that would hold the key never runs for it. The testkey apk above is unaffected.
+  sign:
+    needs: build
+    if: github.event_name != 'pull_request_target'
+    uses: ./.github/workflows/sign.yml
+    with:
+      environment: ${{ github.ref == 'refs/heads/main' && 'signing-main' || 'signing-branch' }}
+      variants: '["standard"]'
