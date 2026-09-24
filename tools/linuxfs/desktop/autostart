@@ -36,3 +36,18 @@ swaybg -m fill -i /usr/share/backgrounds/steamdeck.png &
 run pcmanfm-qt pcmanfm-qt --desktop --profile lxqt
 run lxqt-panel lxqt-panel
 /usr/lib/xdg-desktop-portal-wlr >/dev/null 2>&1 &
+# Remote runs, for driving the desktop from a debugger: with ~/.droiddeck-remote-run present (only
+# the app or root can create it), each script dropped into ~/.cache/droiddeck/run/ is run once,
+# inside the session with its environment, its output tagged into the desktop log.
+if [ -f "$HOME/.droiddeck-remote-run" ]; then
+  mkdir -p "$HOME/.cache/droiddeck/run"
+  (
+    while sleep 1; do
+      for f in "$HOME"/.cache/droiddeck/run/*.sh; do
+        [ -f "$f" ] || continue
+        mv -f "$f" "$f.running" || continue
+        ( echo "[run] $(basename "$f") started"; bash "$f.running" 2>&1 | sed "s/^/[run] /"; echo "[run] $(basename "$f") exited"; rm -f "$f.running" ) &
+      done
+    done
+  ) &
+fi

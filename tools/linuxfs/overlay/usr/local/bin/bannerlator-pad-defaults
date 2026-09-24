@@ -1,0 +1,457 @@
+#!/usr/bin/python3
+# Player 1 on the session's controller, for every emulator that would otherwise start on the
+# keyboard. The session's pad is an Xbox 360 controller (libfakeinput's identity outside Steam) that
+# SDL maps by itself; what an emulator lacks is a profile that points Player 1 at it. One is
+# written only where the emulator has none yet - a profile the user made is never touched.
+# Run at every desktop start and before every program from the rail.
+import os
+
+HOME = os.environ.get("HOME", "/root")
+CONFIG = os.environ.get("XDG_CONFIG_HOME", os.path.join(HOME, ".config"))
+
+
+def seed(path, text, what, done="Player 1 on the controller"):
+    if os.path.exists(path):
+        return False
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path + ".tmp", "w", encoding="utf-8") as f:
+        f.write(text)
+    os.replace(path + ".tmp", path)
+    print(f"bannerlator-pad-defaults: {what}: {done} ({path})")
+    return True
+
+
+# RPCS3: its global input configuration (rpcs3::utils::get_input_config_dir() + "Default.yml").
+# Without one it adds the keyboard pad handler (pad_config.cpp, cfg_input::load). SDL handler
+# names from rpcs3/Input/sdl_pad_handler.cpp (button_list, init_config); the device is
+# "<SDL gamepad name> <n>" (sdl_pad_handler::enumerate_devices).
+RPCS3_PLAYER1 = """Player 1 Input:
+  Handler: SDL
+  Device: Xbox 360 Controller 1
+  Config:
+    Left Stick Left: LS X-
+    Left Stick Down: LS Y-
+    Left Stick Right: LS X+
+    Left Stick Up: LS Y+
+    Right Stick Left: RS X-
+    Right Stick Down: RS Y-
+    Right Stick Right: RS X+
+    Right Stick Up: RS Y+
+    Start: Start
+    Select: Back
+    PS Button: Guide
+    Square: West
+    Cross: South
+    Circle: East
+    Triangle: North
+    Left: Left
+    Down: Down
+    Right: Right
+    Up: Up
+    R1: RB
+    R2: RT
+    R3: RS
+    L1: LB
+    L2: LT
+    L3: LS
+    Left Stick Deadzone: 8000
+    Right Stick Deadzone: 8000
+    Left Stick Anti-Deadzone: 4259
+    Right Stick Anti-Deadzone: 4259
+    Left Trigger Threshold: 0
+    Right Trigger Threshold: 0
+    Color Value B: 20
+    LED battery indicator brightness: 10
+  Buddy Device: ""
+"""
+
+
+def rpcs3():
+    seed(os.path.join(CONFIG, "rpcs3/input_configs/global/Default.yml"), RPCS3_PLAYER1, "RPCS3")
+    rpcs3_shader_mode()
+
+
+# RPCS3's default shader mode (Async Recompiler with Shader Interpreter) builds 6650 interpreter
+# pipelines at the start of every boot, minutes on an Adreno. The async recompiler compiles only
+# what a game draws, in the background, once. A new install starts with it (a config.yml that
+# holds only this is merged over RPCS3's defaults); an existing one still on the default is moved
+# once, and a marker keeps any later choice the user makes in RPCS3's own settings.
+RPCS3_INTERPRETER = "Async Recompiler with Shader Interpreter"
+RPCS3_RECOMPILER = "Async Recompiler (multi-threaded)"  # the GUI says "Async Shader Recompiler"; this is the value (system_config_types.cpp)
+
+
+def rpcs3_shader_mode():
+    d = os.path.join(CONFIG, "rpcs3")
+    marker = os.path.join(d, ".droiddeck-shader-mode")
+    if os.path.exists(marker):
+        return
+    cfg = os.path.join(d, "config.yml")
+    if not os.path.isfile(cfg):
+        if seed(cfg, f"Video:\n  Shader Mode: {RPCS3_RECOMPILER}\n", "RPCS3", f"shader mode {RPCS3_RECOMPILER}"):
+            open(marker, "w").close()
+        return
+    with open(cfg, encoding="utf-8", errors="replace") as f:
+        text = f.read()
+    if f"Shader Mode: {RPCS3_INTERPRETER}" in text:
+        text = text.replace(f"Shader Mode: {RPCS3_INTERPRETER}", f"Shader Mode: {RPCS3_RECOMPILER}", 1)
+        with open(cfg + ".tmp", "w", encoding="utf-8") as f:
+            f.write(text)
+        os.replace(cfg + ".tmp", cfg)
+        print(f"bannerlator-pad-defaults: RPCS3: shader mode {RPCS3_RECOMPILER} ({cfg})")
+    open(marker, "w").close()
+
+
+# ---- ini helpers (DuckStation and PCSX2 share one ini dialect, keys may repeat) -------------
+
+def ini_section(lines, name):
+    """(start, end) line indices of [name]'s body, or None."""
+    start = None
+    for i, l in enumerate(lines):
+        t = l.strip()
+        if t.startswith("[") and t.endswith("]"):
+            if start is not None:
+                return start, i
+            if t[1:-1].strip() == name:
+                start = i + 1
+    return (start, len(lines)) if start is not None else None
+
+
+def patch_ini_section(path, section, body, what, needle="SDL-", require=None):
+    """Add body's lines to [section] of an ini the emulator wrote itself, unless the section
+    already binds a controller (needle). Missing file: nothing - the emulator writes its own
+    defaults on first run and this runs again."""
+    if not os.path.isfile(path):
+        return
+    with open(path, encoding="utf-8", errors="replace") as f:
+        text = f.read()
+    if require and require not in text:
+        return
+    lines = text.splitlines()
+    span = ini_section(lines, section)
+    if span and any(needle in l for l in lines[span[0]:span[1]]):
+        return
+    new = body.strip("\n").splitlines()
+    if span:
+        # The controller type the emulator already wrote stays; only bindings are added.
+        have = {l.split("=", 1)[0].strip() for l in lines[span[0]:span[1]] if "=" in l}
+        new = [l for l in new if not (l.split("=", 1)[0].strip() == "Type" and "Type" in have)]
+        end = span[1]
+        while end > span[0] and not lines[end - 1].strip():
+            end -= 1
+        lines[end:end] = new
+    else:
+        lines += ["", f"[{section}]"] + new
+    with open(path + ".tmp", "w", encoding="utf-8") as f:
+        f.write("\n".join(lines) + "\n")
+    os.replace(path + ".tmp", path)
+    print(f"bannerlator-pad-defaults: {what}: Player 1 on the controller ({path})")
+
+
+# DuckStation: SDL-<n>/<name>, axes signed (src/util/sdl_input_source.cpp); Pad1 keys from
+# src/core/analog_controller.cpp. Its defaults bind the keyboard only (settings.cpp).
+DUCKSTATION_PAD1 = """Type = AnalogController
+Up = SDL-0/DPadUp
+Down = SDL-0/DPadDown
+Left = SDL-0/DPadLeft
+Right = SDL-0/DPadRight
+Cross = SDL-0/A
+Circle = SDL-0/B
+Square = SDL-0/X
+Triangle = SDL-0/Y
+Select = SDL-0/Back
+Start = SDL-0/Start
+Analog = SDL-0/Guide
+L1 = SDL-0/LeftShoulder
+R1 = SDL-0/RightShoulder
+L2 = SDL-0/+LeftTrigger
+R2 = SDL-0/+RightTrigger
+L3 = SDL-0/LeftStick
+R3 = SDL-0/RightStick
+LLeft = SDL-0/-LeftX
+LRight = SDL-0/+LeftX
+LUp = SDL-0/-LeftY
+LDown = SDL-0/+LeftY
+RLeft = SDL-0/-RightX
+RRight = SDL-0/+RightX
+RUp = SDL-0/-RightY
+RDown = SDL-0/+RightY
+LargeMotor = SDL-0/LargeMotor
+SmallMotor = SDL-0/SmallMotor
+"""
+
+
+def duckstation():
+    for d in (os.path.join(CONFIG, "duckstation"), os.path.join(HOME, ".local/share/duckstation")):
+        patch_ini_section(os.path.join(d, "settings.ini"), "Pad1", DUCKSTATION_PAD1, "DuckStation")
+
+
+# PCSX2: FaceSouth/... names (pcsx2/Input/SDLInputSource.cpp), keys from SIO/Pad/PadDualshock2.cpp.
+# An ini without [UI] SettingsVersion is thrown away and rebuilt, so only a complete one is patched.
+PCSX2_PAD1 = """Type = DualShock2
+Up = SDL-0/DPadUp
+Right = SDL-0/DPadRight
+Down = SDL-0/DPadDown
+Left = SDL-0/DPadLeft
+Triangle = SDL-0/FaceNorth
+Circle = SDL-0/FaceEast
+Cross = SDL-0/FaceSouth
+Square = SDL-0/FaceWest
+Select = SDL-0/Back
+Start = SDL-0/Start
+L1 = SDL-0/LeftShoulder
+R1 = SDL-0/RightShoulder
+L2 = SDL-0/+LeftTrigger
+R2 = SDL-0/+RightTrigger
+L3 = SDL-0/LeftStick
+R3 = SDL-0/RightStick
+Analog = SDL-0/Guide
+LUp = SDL-0/-LeftY
+LRight = SDL-0/+LeftX
+LDown = SDL-0/+LeftY
+LLeft = SDL-0/-LeftX
+RUp = SDL-0/-RightY
+RRight = SDL-0/+RightX
+RDown = SDL-0/+RightY
+RLeft = SDL-0/-RightX
+LargeMotor = SDL-0/LargeMotor
+SmallMotor = SDL-0/SmallMotor
+"""
+
+
+def pcsx2():
+    patch_ini_section(os.path.join(CONFIG, "PCSX2/inis/PCSX2.ini"), "Pad1", PCSX2_PAD1, "PCSX2",
+                      require="SettingsVersion")
+
+
+# Dolphin: SDL/<id>/<SDL gamepad name>; control names from InputCommon/.../SDL/SDLGamepad.h (Left Y+
+# is up). A section that exists is taken whole - keys it lacks are unbound - so both are complete.
+DOLPHIN_GC = """[GCPad1]
+Device = SDL/0/Xbox 360 Controller
+Buttons/A = `Button S`
+Buttons/B = `Button W`
+Buttons/X = `Button E`
+Buttons/Y = `Button N`
+Buttons/Z = `Shoulder R`
+Buttons/Start = `Start`
+Main Stick/Up = `Left Y+`
+Main Stick/Down = `Left Y-`
+Main Stick/Left = `Left X-`
+Main Stick/Right = `Left X+`
+C-Stick/Up = `Right Y+`
+C-Stick/Down = `Right Y-`
+C-Stick/Left = `Right X-`
+C-Stick/Right = `Right X+`
+Triggers/L = `Trigger L`
+Triggers/R = `Trigger R`
+Triggers/L-Analog = `Trigger L`
+Triggers/R-Analog = `Trigger R`
+D-Pad/Up = `Pad N`
+D-Pad/Down = `Pad S`
+D-Pad/Left = `Pad W`
+D-Pad/Right = `Pad E`
+Rumble/Motor = `Motor`
+"""
+DOLPHIN_WII = """[Wiimote1]
+Device = SDL/0/Xbox 360 Controller
+Source = 1
+Buttons/A = `Button S`
+Buttons/B = `Trigger R`
+Buttons/1 = `Button W`
+Buttons/2 = `Button N`
+Buttons/- = `Back`
+Buttons/+ = `Start`
+Buttons/Home = `Guide`
+D-Pad/Up = `Pad N`
+D-Pad/Down = `Pad S`
+D-Pad/Left = `Pad W`
+D-Pad/Right = `Pad E`
+IR/Up = `Right Y+`
+IR/Down = `Right Y-`
+IR/Left = `Right X-`
+IR/Right = `Right X+`
+Shake/X = `Button E`
+Shake/Y = `Button E`
+Shake/Z = `Button E`
+Rumble/Motor = `Motor`
+Extension = Nunchuk
+Nunchuk/Buttons/C = `Shoulder L`
+Nunchuk/Buttons/Z = `Trigger L`
+Nunchuk/Stick/Up = `Left Y+`
+Nunchuk/Stick/Down = `Left Y-`
+Nunchuk/Stick/Left = `Left X-`
+Nunchuk/Stick/Right = `Left X+`
+"""
+
+
+def dolphin():
+    d = os.path.join(CONFIG, "dolphin-emu")
+    seed(os.path.join(d, "GCPadNew.ini"), DOLPHIN_GC, "Dolphin (GameCube)")
+    seed(os.path.join(d, "WiimoteNew.ini"), DOLPHIN_WII, "Dolphin (Wii)")
+
+
+# Cemu: an SDLController profile for the GamePad. The uuid is "<index>_<SDL GUID>" and SDL's GUID
+# carries a CRC of the device name; this is the one SDL reports for the session's pad
+# ("Xbox 360 Controller (0)", 045e:028e - read from RPCS3's SDL log on the device). Mapping ids
+# from VPADController.h, values from Controller.h, Cemu's own SDL default layout plus Home.
+CEMU_MAP = [(1, 1), (2, 0), (3, 3), (4, 2), (5, 9), (6, 10), (7, 42), (8, 43), (9, 6), (10, 4),
+            (11, 11), (12, 12), (13, 13), (14, 14), (15, 7), (16, 8), (17, 45), (18, 39), (19, 44),
+            (20, 38), (21, 47), (22, 41), (23, 46), (24, 40), (27, 5)]
+CEMU_XML = """<?xml version="1.0" encoding="UTF-8"?>
+<emulated_controller>
+\t<type>Wii U GamePad</type>
+\t<toggle_display>0</toggle_display>
+\t<controller>
+\t\t<api>SDLController</api>
+\t\t<uuid>0_03005e615e0400008e02000010010000</uuid>
+\t\t<display_name>Xbox 360 Controller</display_name>
+\t\t<rumble>0.5</rumble>
+\t\t<mappings>
+""" + "".join(f"\t\t\t<entry>\n\t\t\t\t<mapping>{m}</mapping>\n\t\t\t\t<button>{b}</button>\n\t\t\t</entry>\n" for m, b in CEMU_MAP) + """\t\t</mappings>
+\t</controller>
+</emulated_controller>
+"""
+
+
+def cemu():
+    seed(os.path.join(CONFIG, "Cemu/controllerProfiles/controller0.xml"), CEMU_XML, "Cemu")
+
+
+# melonDS 1.x: raw SDL joystick indices. The session's pad has the kernel's Xbox 360 layout
+# (buttons A B X Y LB RB Back Start Guide LS RS = 0..10, hat 0 for the d-pad); the d-pad values
+# also take the left stick (EmuInstanceInput.cpp; encoding InputConfig/MapButton.h).
+MELONDS_JOY = """[Instance0.Joystick]
+A = 1
+B = 0
+X = 3
+Y = 2
+L = 4
+R = 5
+Select = 6
+Start = 7
+Up = 17891585
+Down = 16843012
+Left = 1114376
+Right = 65794
+"""
+
+
+def melonds():
+    path = os.path.join(CONFIG, "melonDS/melonDS.toml")
+    if not os.path.isfile(path):
+        seed(path, "[Instance0]\nJoystickID = 0\n\n" + MELONDS_JOY, "melonDS")
+        return
+    with open(path, encoding="utf-8", errors="replace") as f:
+        text = f.read()
+    try:
+        import tomllib
+        joy = tomllib.loads(text).get("Instance0", {}).get("Joystick", {})
+    except Exception:
+        return
+    if any(isinstance(v, int) and v != -1 for v in joy.values()):
+        return  # something is bound already
+    # Replace melonDS's own all-unbound table with ours (a TOML table can be defined only once).
+    out, skipping = [], False
+    for line in text.splitlines():
+        t = line.strip()
+        if t.startswith("["):
+            skipping = t == "[Instance0.Joystick]"
+        if not skipping:
+            out.append(line)
+    with open(path + ".tmp", "w", encoding="utf-8") as f:
+        f.write("\n".join(out).rstrip("\n") + "\n\n" + MELONDS_JOY)
+    os.replace(path + ".tmp", path)
+    print(f"bannerlator-pad-defaults: melonDS: Player 1 on the controller ({path})")
+
+
+# PPSSPP (SDL): its pad defaults leave the shoulders, the right stick and the triggers unbound on
+# SDL builds (SDLJoystick.cpp codes vs KeyMapDefaults.cpp); a [ControlMapping] that exists replaces
+# every default, so this one is complete, keyboard included (device 1 keyboard, 10 pad).
+PPSSPP_CONTROLS = """[ControlMapping]
+Up = 1-19,10-19
+Down = 1-20,10-20
+Left = 1-21,10-21
+Right = 1-22,10-22
+Cross = 1-54,10-189
+Circle = 1-52,10-190
+Square = 1-29,10-191
+Triangle = 1-47,10-188
+Start = 1-62,10-197
+Select = 1-66,10-196
+L = 1-45,10-193
+R = 1-51,10-192
+An.Up = 1-37,10-4003
+An.Down = 1-39,10-4002
+An.Left = 1-38,10-4001
+An.Right = 1-40,10-4000
+RightAn.Up = 10-4007
+RightAn.Down = 10-4006
+RightAn.Left = 10-4005
+RightAn.Right = 10-4004
+Pause = 1-111,10-4
+"""
+
+
+def ppsspp():
+    seed(os.path.join(CONFIG, "ppsspp/PSP/SYSTEM/controls.ini"), PPSSPP_CONTROLS, "PPSSPP")
+
+
+# RetroArch: the udev joypad driver finds nothing here (no udev database in the runtime); sdl2
+# does, and matches this profile by vendor/product (task_autodetect.c).
+RETROARCH_PROFILE = """input_driver = "sdl2"
+input_device = "Xbox 360 Controller"
+input_vendor_id = "1118"
+input_product_id = "654"
+input_b_btn = "0"
+input_a_btn = "1"
+input_y_btn = "2"
+input_x_btn = "3"
+input_select_btn = "4"
+input_menu_toggle_btn = "5"
+input_start_btn = "6"
+input_l3_btn = "7"
+input_r3_btn = "8"
+input_l_btn = "9"
+input_r_btn = "10"
+input_up_btn = "11"
+input_down_btn = "12"
+input_left_btn = "13"
+input_right_btn = "14"
+input_l2_axis = "+4"
+input_r2_axis = "+5"
+input_l_x_plus_axis = "+0"
+input_l_x_minus_axis = "-0"
+input_l_y_plus_axis = "+1"
+input_l_y_minus_axis = "-1"
+input_r_x_plus_axis = "+2"
+input_r_x_minus_axis = "-2"
+input_r_y_plus_axis = "+3"
+input_r_y_minus_axis = "-3"
+"""
+
+
+def retroarch():
+    d = os.path.join(CONFIG, "retroarch")
+    seed(os.path.join(d, "autoconfig/sdl2/Xbox 360 Controller.cfg"), RETROARCH_PROFILE, "RetroArch (profile)")
+    cfg = os.path.join(d, "retroarch.cfg")
+    if not os.path.isfile(cfg):
+        seed(cfg, 'input_joypad_driver = "sdl2"\ninput_autodetect_enable = "true"\n', "RetroArch")
+        return
+    with open(cfg, encoding="utf-8", errors="replace") as f:
+        lines = f.read().splitlines()
+    changed = False
+    for i, l in enumerate(lines):
+        if l.replace(" ", "").startswith('input_joypad_driver="udev"'):
+            lines[i] = 'input_joypad_driver = "sdl2"'
+            changed = True
+    if changed:
+        with open(cfg + ".tmp", "w", encoding="utf-8") as f:
+            f.write("\n".join(lines) + "\n")
+        os.replace(cfg + ".tmp", cfg)
+        print(f"bannerlator-pad-defaults: RetroArch: joypad driver udev -> sdl2 ({cfg})")
+
+
+for step in (rpcs3, duckstation, pcsx2, dolphin, cemu, melonds, ppsspp, retroarch):
+    try:
+        step()
+    except Exception as e:
+        print(f"bannerlator-pad-defaults: {step.__name__}: {e}")

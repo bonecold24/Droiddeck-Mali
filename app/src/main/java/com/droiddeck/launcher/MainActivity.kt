@@ -169,7 +169,7 @@ class MainActivity : ComponentActivity() {
     private var touchMode by mutableStateOf(SessionPrefs.TOUCH_AUTO)
     private var suspendPolicy by mutableStateOf(SessionPrefs.SUSPEND_MANUAL)
     private var oscMode by mutableStateOf(SessionPrefs.OSC_AUTO)
-    private var renderer by mutableStateOf("pixman")
+    private var renderer by mutableStateOf("vulkan")
     private var gameStorage by mutableStateOf("")
     private var storageOptions by mutableStateOf<List<Pair<String, String>>>(emptyList())
     private val pickGameStorage = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { r ->
