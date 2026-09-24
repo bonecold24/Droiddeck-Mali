@@ -97,6 +97,20 @@ object SessionPrefs {
 
     fun setForceFullscreen(context: Context, on: Boolean) {
         prefs(context).edit().putBoolean("forceFullscreen", on).apply()
+        writeForceFullscreenFlag(context)
+    }
+
+    /**
+     * The same choice as a file the running session watches, so the drawer can change it live:
+     * the session hands every change to gamescope, which reads GAMESCOPE_FORCE_WINDOWS_FULLSCREEN
+     * off its root window whenever it changes. Written again at every session start so a file left
+     * by an earlier session never disagrees with the setting.
+     */
+    fun writeForceFullscreenFlag(context: Context) {
+        runCatching {
+            java.io.File(com.droiddeck.launcher.runtime.LinuxRuntime.rootDir(context), "root/.droiddeck-fill")
+                .writeText(if (forceFullscreen(context)) "1\n" else "0\n")
+        }
     }
 
     /**

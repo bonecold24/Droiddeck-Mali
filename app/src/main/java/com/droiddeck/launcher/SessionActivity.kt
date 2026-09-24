@@ -91,6 +91,7 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
     /** The on-screen PC keyboard (ui/PcKeyboard): real key presses, Esc and F1 included. */
     private var pcKeyboardOpen by mutableStateOf(false)
     private var hudOn by mutableStateOf(true)
+    private var fillScreen by mutableStateOf(true)
     private var frameGenLabel by mutableStateOf("Off")
     private var frameGenEngine by mutableStateOf(FrameGen.ENGINE_OFF)
     private var frameGenMultiplier by mutableStateOf(2)
@@ -197,6 +198,7 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
                         isHomeApp = isHomeApp,
                         androidApps = androidApps,
                         hudOn = hudOn,
+                        fillScreen = if (SessionState.mode == SessionService.MODE_STEAM) fillScreen else null,
                         frameGenEngine = frameGenEngine, frameGenMultiplier = frameGenMultiplier,
                         lsfgReady = LsfgNative.isInstalled(this@SessionActivity),
                         oscMode = oscMode, touchMode = touchMode,
@@ -206,6 +208,7 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
                         secondScreenDisplays = secondScreenDisplays,
                         selectedSecondScreenDisplay = selectedSecondScreenDisplay,
                         onHud = { on -> SessionPrefs.setHudEnabled(this@SessionActivity, on); hudOn = on; hud.refresh() },
+                        onFillScreen = { on -> SessionPrefs.setForceFullscreen(this@SessionActivity, on); fillScreen = on },
                         onFrameGenPick = { engine, multiplier ->
                             FrameGen.set(this@SessionActivity, engine, multiplier)
                             readPrefs()
@@ -288,6 +291,7 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
 
     private fun readPrefs() {
         hudOn = SessionPrefs.hudEnabled(this)
+        fillScreen = SessionPrefs.forceFullscreen(this)
         touchMode = SessionPrefs.touchMode(this)
         frameGenLabel = FrameGen.label(this)
         frameGenEngine = FrameGen.engine(this)
