@@ -3,6 +3,7 @@ package com.droiddeck.launcher.ui
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.focusGroup
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.material3.ButtonDefaults
@@ -30,7 +31,9 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.res.painterResource
@@ -64,6 +67,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.InputMode
+import androidx.compose.ui.platform.LocalInputModeManager
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
@@ -151,6 +156,7 @@ class DrawerActions(
     val frameGenMultiplier: Int,
     val lsfgReady: Boolean,
     val oscMode: String,
+    val backActionsInverted: Boolean,
     val touchMode: String,
     val touchAuto: String,
     val shapeMode: String,
@@ -169,6 +175,7 @@ class DrawerActions(
     val onSteamMenu: (() -> Unit)?,
     val onQam: (() -> Unit)?,
     val onOsc: (String) -> Unit,
+    val onBackActionsInverted: (Boolean) -> Unit,
     val onTouch: (String) -> Unit,
     val onShape: (String) -> Unit,
     val onFexPreset: (String) -> Unit,
@@ -181,6 +188,7 @@ class DrawerActions(
     val onClose: () -> Unit,
 )
 
+@OptIn(ExperimentalComposeUiApi::class)
 @Composable
 fun SessionDrawer(open: Boolean, a: DrawerActions) {
     val colors = MaterialTheme.colorScheme
@@ -191,11 +199,19 @@ fun SessionDrawer(open: Boolean, a: DrawerActions) {
     // A controller starts on the drawer's first control, highlighted, as on the app's main screen:
     // the STEAM button, or in a desktop session the first setting.
     val firstFocus = remember { androidx.compose.ui.focus.FocusRequester() }
+    var firstControlFocused by remember { mutableStateOf(false) }
+    val inputModeManager = LocalInputModeManager.current
     val steamButtons = a.onSteamMenu != null && a.onQam != null
     LaunchedEffect(open) {
         if (open) {
-            androidx.compose.runtime.withFrameNanos { }
-            runCatching { firstFocus.requestFocus() }
+            inputModeManager.requestInputMode(InputMode.Keyboard)
+            var attempts = 0
+            while (attempts < 24 && !firstControlFocused) {
+                firstFocus.requestFocus()
+                androidx.compose.runtime.withFrameNanos { }
+                attempts++
+            }
+            if (!firstControlFocused) android.util.Log.w("SessionDrawer", "first controller focus request did not focus a control")
         }
     }
     if (open || veil > 0.01f) Box(
@@ -214,6 +230,7 @@ fun SessionDrawer(open: Boolean, a: DrawerActions) {
                     .width(340.dp)
                     .background(pal.background.copy(alpha = 0.97f))
                     .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) {}
+                    .focusGroup()
                     .verticalScroll(rememberScrollState())
                     .padding(horizontal = 14.dp, vertical = 16.dp),
             ) {
@@ -244,7 +261,8 @@ fun SessionDrawer(open: Boolean, a: DrawerActions) {
                         OutlinedButton(
                             onClick = { host.open = null; a.onSteamMenu.invoke() },
                             interactionSource = steamSrc,
-                            modifier = Modifier.weight(1f).height(48.dp).focusRequester(firstFocus),
+                            modifier = Modifier.weight(1f).height(48.dp).focusRequester(firstFocus)
+                                .onFocusChanged { firstControlFocused = it.isFocused },
                             shape = RoundedCornerShape(12.dp),
                             border = BorderStroke(if (steamHot) 2.dp else 1.dp, if (steamHot) pal.signal else colors.outline),
                             colors = ButtonDefaults.outlinedButtonColors(containerColor = if (steamHot) pal.signal.copy(alpha = 0.16f) else Color.Transparent),
@@ -299,7 +317,8 @@ fun SessionDrawer(open: Boolean, a: DrawerActions) {
                 SettingsGroup("Now") {
                     ToggleRow(
                         host, "hud", "Performance HUD", null, a.hudOn,
-                        chipModifier = if (steamButtons) Modifier else Modifier.focusRequester(firstFocus), onChange = a.onHud,
+                        chipModifier = if (steamButtons) Modifier else Modifier.focusRequester(firstFocus)
+                            .onFocusChanged { firstControlFocused = it.isFocused }, onChange = a.onHud,
                     )
                     if (a.fillScreen != null) ToggleRow(
                         host, "fill", "Stretch games to fill the screen",
@@ -333,6 +352,13 @@ fun SessionDrawer(open: Boolean, a: DrawerActions) {
                         else listOf(SessionPrefs.OSC_AUTO to "Auto", SessionPrefs.OSC_ALWAYS to "Always", SessionPrefs.OSC_NEVER to "Never"),
                         a.oscMode,
                         onPick = a.onOsc,
+                    )
+                    if (a.steam) ChoiceRow(
+                        host, "back-actions", "Back", SessionPrefs.backActionsOrder(a.backActionsInverted),
+                        listOf(
+                            false to SessionPrefs.BACK_MENU_THEN_QAM,
+                            true to SessionPrefs.BACK_QAM_THEN_MENU,
+                        ), a.backActionsInverted, onPick = a.onBackActionsInverted,
                     )
                     SettingsRow("Keyboard", null) {
                         Row(verticalAlignment = Alignment.CenterVertically) {

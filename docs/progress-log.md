@@ -197,7 +197,9 @@ State: **main = `90c7574`** (PR #14 merge), main build run 35895701784. No tag, 
 - Thor Pro: trackpad tap; the 1–2 min in-game crash once a `crash.log` arrives.
 - Xfce as a second desktop shell (Max's branch runs XFCE 4.20 on labwc) - a catalog package + a
   shell choice in the Desktop cog; comfort, not performance.
-- Quick Access Menu for non-Deck pads - no confirmed chord; needs research, not a guess.
+- Quick Access Menu for non-Deck pads - Back double-press (500 ms) now routes to the existing Guide+A
+  chord; the in-session menu, Steam settings, and Setup › Session can swap the single- and double-Back
+  actions. Device confirmation is still needed.
 - FlatOut shrink: try `vk_wsi_force_swapchain_to_current_extent=false` via `steamdeck-env`.
 - Max's stricter `winnative-directaudio` guards; `winnative-epic-launch` (a feature).
 - Rename before anything truly public: "SteamDeck" is Valve's mark.

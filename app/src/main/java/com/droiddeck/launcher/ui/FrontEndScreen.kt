@@ -108,6 +108,7 @@ import coil.compose.AsyncImage
 import com.droiddeck.launcher.R
 import com.droiddeck.launcher.frontend.Library
 import com.droiddeck.launcher.gpu.FrameGen
+import com.droiddeck.launcher.session.SessionPrefs
 import java.io.File
 import kotlin.math.roundToInt
 
@@ -141,6 +142,7 @@ class FrontEndState(
     val packageStage: String? = null,
     val packagePercent: Int = -1,
     val sessionRunning: Boolean = false,
+    val backActionsInverted: Boolean = false,
 )
 
 class FrontEndActions(
@@ -169,6 +171,7 @@ class FrontEndActions(
     val onTheme: (String) -> Unit = {},
     val onHomeApp: () -> Unit = {},
     val onAndroidApp: (com.droiddeck.launcher.HomeApp.LaunchableApp) -> Unit = {},
+    val onBackActionsInverted: (Boolean) -> Unit = {},
 )
 
 
@@ -711,6 +714,13 @@ private fun SetupPanel(s: FrontEndState, a: FrontEndActions) {
                     ActionRow("ROMs folder", s.romsDir ?: "Choose where emulator games are stored", "Choose", a.onRoms)
                 }
                 SettingsGroup("Session") {
+                    ChoiceRow(
+                        host, "back-actions", "Back", SessionPrefs.backActionsOrder(s.backActionsInverted),
+                        listOf(
+                            false to SessionPrefs.BACK_MENU_THEN_QAM,
+                            true to SessionPrefs.BACK_QAM_THEN_MENU,
+                        ), s.backActionsInverted, onPick = a.onBackActionsInverted,
+                    )
                     SettingsRow("Frame generation", "Select the frame generation mode") {
                         Box {
                             ValueChip(s.frameGenLabel, host.open == "fg") { host.open = if (host.open == "fg") null else "fg" }
