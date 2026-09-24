@@ -765,9 +765,9 @@ private fun SetupPanel(s: FrontEndState, a: FrontEndActions) {
                     SettingsRow("Frame generation", "Select the frame generation mode") {
                         Box {
                             ValueChip(s.frameGenLabel, host.open == "fg") { host.open = if (host.open == "fg") null else "fg" }
-                            AnchoredMenu(host.open == "fg", onDismiss = { if (host.open == "fg") host.open = null }, title = "Frame generation") {
+                            AnchoredMenu(host.open == "fg", onDismiss = { if (host.open == "fg") host.open = null }, title = "Frame generation") { firstItemFocus ->
                                 val need = if (s.lsfgReady) null else "Install Lossless Scaling in Steam"
-                                MenuItem("Off", checked = s.frameGenEngine == FrameGen.ENGINE_OFF) { a.onFrameGenPick(FrameGen.ENGINE_OFF, 2); host.open = null }
+                                MenuItem("Off", checked = s.frameGenEngine == FrameGen.ENGINE_OFF, focusRequester = firstItemFocus) { a.onFrameGenPick(FrameGen.ENGINE_OFF, 2); host.open = null }
                                 for (m in 2..4) MenuItem("Win-FG ${m}×", checked = s.frameGenEngine == FrameGen.ENGINE_WINFG && s.frameGenMultiplier == m) { a.onFrameGenPick(FrameGen.ENGINE_WINFG, m); host.open = null }
                                 for (m in 2..4) MenuItem("LSFG ${m}×", checked = s.frameGenEngine == FrameGen.ENGINE_LSFG && s.frameGenMultiplier == m, enabled = s.lsfgReady, detail = need) { a.onFrameGenPick(FrameGen.ENGINE_LSFG, m); host.open = null }
                             }
@@ -788,8 +788,13 @@ private fun SetupPanel(s: FrontEndState, a: FrontEndActions) {
                     SettingsRow("Theme", "Choose the launcher appearance") {
                         Box {
                             ValueChip(Themes.byId(s.theme).label, host.open == "theme") { host.open = if (host.open == "theme") null else "theme" }
-                            AnchoredMenu(host.open == "theme", onDismiss = { if (host.open == "theme") host.open = null }, title = "Theme") {
-                                for (t in Themes.all) MenuItem(t.label, checked = s.theme == t.id) { a.onTheme(t.id); host.open = null }
+                            AnchoredMenu(host.open == "theme", onDismiss = { if (host.open == "theme") host.open = null }, title = "Theme") { firstItemFocus ->
+                                Themes.all.forEachIndexed { index, theme ->
+                                    MenuItem(theme.label, checked = s.theme == theme.id, focusRequester = if (index == 0) firstItemFocus else null) {
+                                        a.onTheme(theme.id)
+                                        host.open = null
+                                    }
+                                }
                             }
                         }
                     }
