@@ -496,9 +496,8 @@ private fun BuildStatus(label: String, onCheckLatest: () -> Unit, modifier: Modi
     val identityDivider = identity.lastIndexOf(" at ")
     val branch = (if (identityDivider >= 0) identity.substring(0, identityDivider) else identity).substringAfterLast('/')
     val commit = if (identityDivider >= 0) identity.substring(identityDivider + 4) else ""
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(5.dp),
+    Column(
+        verticalArrangement = Arrangement.spacedBy(1.dp),
         modifier = modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(6.dp))
@@ -510,13 +509,19 @@ private fun BuildStatus(label: String, onCheckLatest: () -> Unit, modifier: Modi
                 role = Role.Button,
                 onClick = onCheckLatest,
             )
-            .heightIn(min = 40.dp)
-            .padding(horizontal = 4.dp),
+            .heightIn(min = 44.dp)
+            .padding(horizontal = 4.dp, vertical = 3.dp),
     ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(5.dp),
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Text(branch, modifier = Modifier.weight(1f), fontSize = 9.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Medium, color = if (hot) colors.onSurfaceVariant else colors.onSurfaceVariant.copy(alpha = 0.82f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+            if (commit.isNotEmpty()) Text("@$commit", fontSize = 8.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Medium, color = colors.onSurfaceVariant.copy(alpha = 0.82f), maxLines = 1)
+            Icon(Icons.Filled.Refresh, contentDescription = null, tint = if (hot) pal.signal else colors.onSurfaceVariant.copy(alpha = 0.82f), modifier = Modifier.size(12.dp))
+        }
         if (context.isNotEmpty()) Text(context, fontSize = 8.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Medium, color = colors.onSurfaceVariant.copy(alpha = 0.82f), maxLines = 1)
-        Text(branch, modifier = Modifier.weight(1f), fontSize = 9.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Medium, color = if (hot) colors.onSurfaceVariant else colors.onSurfaceVariant.copy(alpha = 0.82f), maxLines = 1, overflow = TextOverflow.Ellipsis)
-        if (commit.isNotEmpty()) Text("@$commit", fontSize = 8.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Medium, color = colors.onSurfaceVariant.copy(alpha = 0.82f), maxLines = 1)
-        Icon(Icons.Filled.Refresh, contentDescription = null, tint = if (hot) pal.signal else colors.onSurfaceVariant.copy(alpha = 0.82f), modifier = Modifier.size(12.dp))
     }
 }
 
