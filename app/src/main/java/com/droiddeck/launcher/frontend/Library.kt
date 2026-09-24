@@ -19,7 +19,7 @@ object Library {
     class Emulator(val id: String, val name: String, val system: String, val program: String, val installed: Boolean, val games: List<Rom>) {
         /** The emulator's own icon, bundled (the runtime keeps them as theme SVGs the app cannot draw). */
         val iconRes: Int get() = when (id) {
-            "rpcs3" -> R.drawable.emu_rpcs3; "pcsx2", "armsx2" -> R.drawable.emu_pcsx2; "dolphin" -> R.drawable.emu_dolphin
+            "rpcs3" -> R.drawable.emu_rpcs3; "armsx2" -> R.drawable.emu_pcsx2; "dolphin" -> R.drawable.emu_dolphin
             "duckstation" -> R.drawable.emu_duckstation; "melonds" -> R.drawable.emu_melonds; "cemu" -> R.drawable.emu_cemu
             "ppsspp" -> R.drawable.emu_ppsspp; else -> R.drawable.emu_retroarch
         }
@@ -61,8 +61,8 @@ object Library {
     private class Spec(val id: String, val name: String, val system: String, val program: String, val folders: List<String>, val exts: Set<String>)
     private val specs = listOf(
         Spec("rpcs3", "RPCS3", "PS3", "/opt/appimages/rpcs3.AppImage", listOf("ps3"), setOf("iso")),
-        Spec("pcsx2", "PCSX2", "PS2", "/opt/appimages/pcsx2.AppImage", listOf("ps2"), setOf("iso", "chd", "cso", "gz")),
-        // PCSX2 with ARM64 recompilers: upstream PCSX2 interprets the PS2's CPUs on ARM64.
+        // PS2: ARMSX2, the PCSX2 fork with ARM64 recompilers. Upstream PCSX2 interprets the PS2's
+        // CPUs on ARM64 (NFS Underground 2: 17 fps against ARMSX2's full 60), so it is not offered.
         Spec("armsx2", "ARMSX2", "PS2", "/opt/appimages/armsx2.AppImage", listOf("ps2"), setOf("iso", "chd", "cso", "gz")),
         Spec("dolphin", "Dolphin", "GameCube / Wii", "/opt/appimages/dolphin.AppImage", listOf("gc", "gamecube", "wii"), setOf("iso", "rvz", "gcz", "wbfs", "ciso")),
         Spec("duckstation", "DuckStation", "PS1", "/opt/appimages/duckstation.AppImage", listOf("ps1", "psx"), setOf("cue", "chd", "pbp", "iso", "bin", "img", "ecm", "m3u")),
@@ -72,7 +72,7 @@ object Library {
         Spec("retroarch", "RetroArch", "many systems", "/usr/bin/retroarch", emptyList(), emptySet()),
     )
     private val installedIds = mapOf(
-        "rpcs3" to "rpcs3", "pcsx2" to "pcsx2", "armsx2" to "armsx2", "dolphin" to "dolphin", "duckstation" to "duckstation",
+        "rpcs3" to "rpcs3", "armsx2" to "armsx2", "dolphin" to "dolphin", "duckstation" to "duckstation",
         "melonds" to "melonds", "cemu" to "cemu", "ppsspp" to "emulators", "retroarch" to "emulators",
     )
 
