@@ -14,3 +14,15 @@ app/src/main/assets/linuxfs/
 
 # Kotlin compiler session files (build-tool state, never source).
 .kotlin/
+
+# Signing keys never enter the repo (DroidDeck's lives in GitHub environment secrets; see
+# tools/release/make-release-key.sh). keystore/testkey.p12 is the public AOSP testkey.
+*.jks
+*.keystore
+*.p12
+*.pfx
+*.pk8
+*.pem
+!keystore/testkey.p12
+droiddeck-release-key/
+password.txt

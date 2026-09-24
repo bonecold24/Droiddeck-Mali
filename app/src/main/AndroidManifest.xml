@@ -123,5 +123,17 @@
                 android:name="android.support.FILE_PROVIDER_PATHS"
                 android:resource="@xml/log_share_paths" />
         </provider>
+        <!-- The app's data folder in Android's file picker ("Open from" > DroidDeck). Only the
+             system's documents UI may bind it; apps get a file only when the user picks it. -->
+        <provider
+            android:name=".files.AppFilesProvider"
+            android:authorities="${applicationId}.documents"
+            android:exported="true"
+            android:grantUriPermissions="true"
+            android:permission="android.permission.MANAGE_DOCUMENTS">
+            <intent-filter>
+                <action android:name="android.content.action.DOCUMENTS_PROVIDER" />
+            </intent-filter>
+        </provider>
     </application>
 </manifest>
