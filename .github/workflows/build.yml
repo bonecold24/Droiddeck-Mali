@@ -55,6 +55,7 @@ env:
 
 jobs:
   build:
+    name: Build APK
     if: ${{ github.event_name != 'pull_request' || !github.event.pull_request.draft }}
     runs-on: ubuntu-24.04
     timeout-minutes: 45
@@ -498,20 +499,18 @@ jobs:
           # An apk is a zip already; compressing it again buys nothing and costs seconds.
           compression-level: 0
 
-  # The apk signed with DroidDeck's own key (tools/release), so a test build installs over a release
-  # and keeps its data. Main's builds sign straight away (signing-main); any other branch's wait for
-  # the owner's approval (signing-branch). A pull request's never: its code is not ours to sign, and
-  # the job that would hold the key never runs for it. The testkey apk above is unaffected.
+  # Only main is signed with DroidDeck's private key. Pull requests and other branches keep the
+  # public AOSP testkey build, so unreviewed branch code never gets access to the release key.
   sign:
     needs: build
-    if: github.event_name != 'pull_request'
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
     # What sign.yml asks for; a called workflow never gets more than its caller gives it.
     permissions:
       contents: read
       actions: read
     uses: ./.github/workflows/sign.yml
     with:
-      environment: ${{ github.ref == 'refs/heads/main' && 'signing-main' || 'signing-branch' }}
+      environment: signing-main
       variants: '["standard"]'
     # The key is an environment secret; a called workflow sees secrets only when they are passed on.
     secrets: inherit

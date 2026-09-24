@@ -3,8 +3,8 @@
 #
 #   - The key is made on this device, in ~/droiddeck-release-key (outside the repo), with a long
 #     random password written beside it. Nothing secret is printed.
-#   - The key and password go to GitHub as secrets of the three signing environments
-#     (signing-main, signing-branch, release). GitHub never shows a secret again.
+#   - The key and password go to GitHub as secrets of the two signing environments
+#     (signing-main and release). Branch builds and pull requests keep using the public test key.
 #   - The key's certificate digest - public, not a secret - goes to keystore/release-signer.sha256,
 #     which CI checks every signed apk against. That file is the only thing to commit.
 #
@@ -12,8 +12,8 @@
 # Without it no update can ever be signed for the people who installed a signed build.
 set -euo pipefail
 
-REPO=The412Banner/DroidDeck
-ENVIRONMENTS=(signing-main signing-branch release)
+REPO=Droid-Deck/DroidDeck
+ENVIRONMENTS=(signing-main release)
 ALIAS=droiddeck
 OUT=${DROIDDECK_KEY_DIR:-$HOME/droiddeck-release-key}
 here=$(cd "$(dirname "$0")" && pwd)

@@ -4,10 +4,8 @@ name: Sign APKs
 # one matrix job per package in tools/release/variants.txt (tools/release/sign-apk.sh does the work
 # and checks it). The key lives only in the GitHub environment named by the caller:
 #   signing-main    builds of main
-#   signing-branch  builds of any other branch - waits for the owner's approval
-#   release         release.yml - main only, waits for the owner's approval
-# Pull requests never get here (build.yml skips this for pull_request), so code from a pull
-# request can never be signed with the key or come near it.
+#   release         manually dispatched release.yml from main
+# Pull requests and other branches never call this workflow with the release key.
 
 on:
   workflow_call:
