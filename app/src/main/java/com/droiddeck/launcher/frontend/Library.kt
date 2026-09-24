@@ -104,7 +104,9 @@ object Library {
                 // The root itself only one deep, for a file left loose there.
                 val systemDirs = romsRoot.listFiles { f -> f.isDirectory && f.name.lowercase() in spec.folders }.orEmpty().toList()
                 val dirs = LinkedHashSet<File>()
-                for (top in systemDirs) top.walkTopDown().maxDepth(3).filter { it.isDirectory }.forEach { dirs.add(it) }
+                // A BIOS folder holds the console's firmware, not games (psx/bios/SCPH1001.BIN).
+                for (top in systemDirs) top.walkTopDown().maxDepth(3).onEnter { it.name.lowercase() !in firmwareFolders }
+                    .filter { it.isDirectory }.forEach { dirs.add(it) }
                 dirs.add(romsRoot)
                 // ...and not into another system's folder: a PS3 .iso in ps3/ is not a PS2 game.
                 romsRoot.listFiles { f -> f.isDirectory && f.name.lowercase() !in systemFolders }?.forEach { dirs.add(it) }
@@ -117,10 +119,15 @@ object Library {
                             art = File(dir, "PS3_GAME/ICON0.PNG").takeIf { it.isFile }))
                         continue
                     }
-                    dir.listFiles()?.sortedBy { it.name.lowercase() }?.forEach { f ->
+                    val files = dir.listFiles()?.sortedBy { it.name.lowercase() }.orEmpty()
+                    // A disc sheet (.cue, .gdi) names its track files and a playlist (.m3u) its
+                    // discs: the sheet is the game, what it names is part of it. A .bin beside a
+                    // .cue of the same name is a track even when the sheet can't be read.
+                    val parts = files.filter { it.isFile && it.extension.lowercase() in sheetExts }.flatMap(::sheetParts).toSet()
+                    files.forEach { f ->
                         val ext = f.extension.lowercase()
-                        // A .bin beside a .cue is a track, not a game.
-                        if (f.isFile && ext in spec.exts && !(ext == "bin" && File(dir, f.nameWithoutExtension + ".cue").isFile)) {
+                        if (f.isFile && ext in spec.exts && f.name.lowercase() !in parts &&
+                            !(ext == "bin" && File(dir, f.nameWithoutExtension + ".cue").isFile)) {
                             val rel = f.relativeTo(romsRoot).path
                             games.add(Rom(displayTitle(f.nameWithoutExtension.removeSuffix(".dec")), f, "/root/ROMs/$rel", spec.id))
                         }
@@ -133,6 +140,25 @@ object Library {
             Emulator(spec.id, spec.name, spec.system, spec.program, installedPackage(installedIds.getValue(spec.id)), withArt)
         }
     }
+
+    private val firmwareFolders = setOf("bios", "firmware")
+    private val sheetExts = setOf("cue", "gdi", "m3u")
+
+    /** The file names (lower case) a .cue, .gdi or .m3u refers to, from its own folder. */
+    private fun sheetParts(sheet: File): List<String> = runCatching {
+        if (sheet.length() > 64 * 1024) return emptyList()
+        sheet.readLines().mapNotNull { line ->
+            val t = line.trim()
+            when (sheet.extension.lowercase()) {
+                // FILE "Tekken 3 (USA) (Track 1).bin" BINARY
+                "cue" -> Regex("^FILE\\s+\"([^\"]+)\"", RegexOption.IGNORE_CASE).find(t)?.groupValues?.get(1)
+                    ?: Regex("^FILE\\s+(\\S+)", RegexOption.IGNORE_CASE).find(t)?.groupValues?.get(1)
+                // 1 0 4 2352 "track01.bin" 0  /  1 0 4 2352 track01.bin 0
+                "gdi" -> Regex("\"([^\"]+)\"").find(t)?.groupValues?.get(1) ?: t.split(Regex("\\s+")).getOrNull(4)
+                else -> t.takeIf { it.isNotEmpty() && !it.startsWith("#") }
+            }
+        }.map { File(it.replace('\\', '/')).name.lowercase() }
+    }.getOrDefault(emptyList())
 
     /**
      * What RPCS3 has installed on its own HDD - packages (PSN games) land in dev_hdd0/game/<ID>
