@@ -8,6 +8,7 @@ import androidx.compose.ui.focus.FocusDirection
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.onFocusChanged
 import android.graphics.Bitmap
 import android.os.Build
 import android.provider.Settings
@@ -252,10 +253,36 @@ private fun Modifier.shine(trigger: Boolean, strength: Float = 0.22f): Modifier 
 private class FrontFocus {
     val rail = HashMap<String, FocusRequester>()
     val primary = FocusRequester()
-    val pane = FocusRequester()
     var primaryAttached by mutableStateOf(0)
     var railFocused by mutableStateOf(false)
     fun railFor(key: String): FocusRequester = rail.getOrPut(key) { FocusRequester() }
+    // The pane's controls by id (a tile's key, a button's label), how many of each are on screen,
+    // and the last one focused.
+    val items = HashMap<String, FocusRequester>()
+    val attached = HashMap<String, Int>()
+    var last: String? = null
+    fun paneEntry(): FocusRequester {
+        val id = last
+        return when {
+            id == PRIMARY && primaryAttached > 0 -> primary
+            id != null && id != PRIMARY && (attached[id] ?: 0) > 0 -> items.getValue(id)
+            primaryAttached > 0 -> primary
+            else -> FocusRequester.Default
+        }
+    }
+    companion object { const val PRIMARY = "\u0000primary" }
+}
+
+/** Lets the pane come back to this control: it is remembered when focused. */
+@Composable
+private fun Modifier.paneItem(id: String): Modifier {
+    val ff = LocalFrontFocus.current ?: return this
+    val req = remember(id) { ff.items.getOrPut(id) { FocusRequester() } }
+    DisposableEffect(id) {
+        ff.attached[id] = (ff.attached[id] ?: 0) + 1
+        onDispose { ff.attached[id] = (ff.attached[id] ?: 1) - 1 }
+    }
+    return this.focusRequester(req).onFocusChanged { if (it.isFocused) ff.last = id }
 }
 
 private val LocalFrontFocus = staticCompositionLocalOf<FrontFocus?> { null }
@@ -326,14 +353,9 @@ private fun FrontEndScreenBody(s: FrontEndState, a: FrontEndActions, page: (@Com
         }
         val back = if (wide) FocusDirection.Left else FocusDirection.Up
         val paneFocus = Modifier
-            .focusRequester(frontFocus.pane)
             .focusProperties {
-                enter = {
-                    if (frontFocus.pane.restoreFocusedChild()) FocusRequester.Cancel
-                    else if (frontFocus.primaryAttached > 0) frontFocus.primary else FocusRequester.Default
-                }
+                enter = { frontFocus.paneEntry() }
                 exit = { dir ->
-                    frontFocus.pane.saveFocusedChild()
                     if (dir == back) frontFocus.rail[railSelection] ?: FocusRequester.Default else FocusRequester.Default
                 }
             }
@@ -882,6 +904,7 @@ private fun PrimaryButton(text: String, enabled: Boolean = true, main: Boolean =
         frontFocus.primaryAttached++
         onDispose { frontFocus.primaryAttached-- }
     }
+    val track = if (frontFocus == null) Modifier.paneItem("btn:$text") else Modifier
     val src = remember { MutableInteractionSource() }
     val hot = rememberHot(src) && enabled
     val pressed by src.collectIsPressedAsState()
@@ -889,8 +912,8 @@ private fun PrimaryButton(text: String, enabled: Boolean = true, main: Boolean =
     val lift by animateFloatAsState(if (hot) 14f else 6f, Motion.tw(300), label = "btnLift")
     Row(
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp),
-        modifier = Modifier
-            .then(if (frontFocus != null) Modifier.focusRequester(frontFocus.primary) else Modifier)
+        modifier = track
+            .then(if (frontFocus != null) Modifier.focusRequester(frontFocus.primary).onFocusChanged { if (it.isFocused) frontFocus.last = FrontFocus.PRIMARY } else Modifier)
             .graphicsLayer { scaleX = scale; scaleY = scale; shadowElevation = if (enabled) lift.dp.toPx() else 0f; shape = Shape12; clip = false; ambientShadowColor = pal.signal; spotShadowColor = pal.signal }
             .clip(Shape12)
             .background(if (enabled) Brush.linearGradient(listOf(colors.primary, pal.primary2)) else Brush.linearGradient(listOf(colors.surfaceVariant, colors.surfaceVariant)))
@@ -916,7 +939,7 @@ internal fun SecondaryButton(text: String, enabled: Boolean = true, onClick: () 
     val edge by animateColorAsState(if (hot) pal.signal else pal.line2, Motion.tw(250), label = "secEdge")
     val fill by animateColorAsState(if (hot) pal.signal.copy(alpha = 0.14f) else Color.White.copy(alpha = 0.03f), Motion.tw(250), label = "secFill")
     Box(
-        modifier = Modifier.graphicsLayer { scaleX = scale; scaleY = scale }.clip(Shape12).background(fill).border(1.dp, edge, Shape12)
+        modifier = Modifier.paneItem("btn:$text").graphicsLayer { scaleX = scale; scaleY = scale }.clip(Shape12).background(fill).border(1.dp, edge, Shape12)
             .alpha(if (enabled) 1f else 0.5f)
             .hoverable(src).clickable(interactionSource = src, indication = LocalIndication.current, enabled = enabled, onClick = onClick)
             .padding(horizontal = 16.dp, vertical = 11.dp),
@@ -933,7 +956,7 @@ private fun Cog(onClick: () -> Unit) {
     val edge by animateColorAsState(if (hot) pal.signal else pal.line2, Motion.tw(250), label = "cogEdge")
     Box(
         contentAlignment = Alignment.Center,
-        modifier = Modifier.size(42.dp).clip(Shape12).background(Color.White.copy(alpha = 0.03f)).border(1.dp, edge, Shape12)
+        modifier = Modifier.paneItem("cog").size(42.dp).clip(Shape12).background(Color.White.copy(alpha = 0.03f)).border(1.dp, edge, Shape12)
             .hoverable(src).clickable(interactionSource = src, indication = LocalIndication.current, onClick = onClick),
     ) { Icon(Icons.Filled.Settings, "Settings", tint = if (hot) pal.signal else colors.onBackground, modifier = Modifier.size(18.dp).rotate(rot)) }
 }
@@ -974,7 +997,7 @@ private fun ArtGrid(tiles: List<Tile>, wide: Boolean = false) {
                     for (t in row) key(t.key) {
                         val src = remember { MutableInteractionSource() }
                         val hot = rememberHot(src)
-                        Box(modifier = Modifier.width(tileWidth).zIndex(if (hot) 1f else 0f)) { GameTile(t, wide, square, src, hot) }
+                        Box(modifier = Modifier.width(tileWidth).zIndex(if (hot) 1f else 0f)) { GameTile(t, wide, square, src, hot, Modifier.paneItem("tile:" + t.key)) }
                     }
                 }
             }
@@ -983,7 +1006,7 @@ private fun ArtGrid(tiles: List<Tile>, wide: Boolean = false) {
 }
 
 @Composable
-private fun GameTile(t: Tile, wide: Boolean, square: Boolean, src: MutableInteractionSource, hot: Boolean) {
+private fun GameTile(t: Tile, wide: Boolean, square: Boolean, src: MutableInteractionSource, hot: Boolean, track: Modifier) {
     val colors = MaterialTheme.colorScheme
     val pressed by src.collectIsPressedAsState()
     val scale by animateFloatAsState(if (pressed) 0.97f else if (hot) 1.04f else 1f, Motion.sp(0.55f, Spring.StiffnessMedium), label = "tileScale")
@@ -992,7 +1015,7 @@ private fun GameTile(t: Tile, wide: Boolean, square: Boolean, src: MutableIntera
     val pal = LocalPalette.current
     val ring by animateColorAsState(if (hot) pal.signal else Color.Transparent, Motion.tw(220), label = "tileRing")
     Column(
-        modifier = Modifier
+        modifier = track
             .graphicsLayer { scaleX = scale; scaleY = scale; translationY = lift.dp.toPx(); shadowElevation = elev.dp.toPx(); shape = Shape12; clip = false; ambientShadowColor = if (hot) pal.signal else Color.Black; spotShadowColor = if (hot) pal.signal else Color.Black; transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0.5f, 0.9f) }
             .clip(Shape12)
             .background(colors.surface)
