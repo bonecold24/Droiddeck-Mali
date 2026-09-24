@@ -101,8 +101,11 @@ export BL_DESKTOP=1
 ln -sf /usr/local/bin/bannerlator-steam-launch /usr/local/bin/steamdeck-steam 2>/dev/null
 ln -sf /usr/local/bin/bannerlator-steam-shim /usr/local/bin/steam 2>/dev/null
 python3 /usr/local/bin/bannerlator-desktop-games 2>&1 | sed 's/^/[games] /'
-# Player 1 on the controller in every emulator that has no profile of its own yet.
+# Player 1 on the controller in every emulator that has no profile of its own yet - now, and again
+# every half minute: an emulator started for the first time writes its own config, which is then
+# given the controller for its next start without waiting for the next desktop.
 python3 /usr/local/bin/bannerlator-pad-defaults 2>&1 | sed 's/^/[pads] /'
+( while sleep 30; do python3 /usr/local/bin/bannerlator-pad-defaults 2>&1 | sed 's/^/[pads] /'; done ) &
 # Games and emulators from the menu run through droiddeck-gpu (their own gamescope on the app's
 # compositor) while the desktop is on pixman, where they could not draw with the GPU.
 # BL_DESKTOP_GPU=on/off overrides; each entry keeps "Run in a desktop window" either way.

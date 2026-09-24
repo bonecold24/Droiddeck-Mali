@@ -143,19 +143,20 @@ fun PcKeyboard(
     }
     LaunchedEffect(Unit) { runCatching { firstKey.requestFocus() } }
 
-    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.BottomCenter) {
-        BoxWithConstraints(
+    BoxWithConstraints(Modifier.fillMaxSize(), contentAlignment = Alignment.BottomCenter) {
+        // Slightly under half the screen, header included, so the program stays in view above it:
+        // six rows share what is left of 47% after the header, the gaps and the padding.
+        val rowHeight = ((maxHeight * 0.47f - 24.dp - 3.dp * 6 - 10.dp) / 6).coerceIn(24.dp, 44.dp)
+        Box(
             Modifier.fillMaxWidth()
                 .background(Color(0xE6101418), RoundedCornerShape(topStart = 14.dp, topEnd = 14.dp))
                 .border(1.dp, pal.line2, RoundedCornerShape(topStart = 14.dp, topEnd = 14.dp))
                 // Touches on the keyboard stop here; the program underneath never sees them.
                 .pointerInput(Unit) { awaitEachGesture { awaitFirstDown().consume(); waitForUpOrCancellation()?.consume() } }
-                .padding(horizontal = 8.dp, vertical = 6.dp),
+                .padding(horizontal = 8.dp, vertical = 5.dp),
         ) {
-            // About half the screen on a phone-shaped panel: the program stays visible above it.
-            val rowHeight = (maxWidth / 26f).coerceIn(30.dp, 44.dp)
-            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().height(28.dp)) {
+            Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().height(24.dp)) {
                     Text("PC keyboard", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = colors.onSurfaceVariant)
                     Spacer(Modifier.weight(1f))
                     HeaderButton("Android keyboard", onAndroidKeyboard)
@@ -163,7 +164,7 @@ fun PcKeyboard(
                     HeaderButton("Hide  ✕", onClose)
                 }
                 ROWS.forEachIndexed { r, row ->
-                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp), modifier = Modifier.fillMaxWidth().height(rowHeight)) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(3.dp), modifier = Modifier.fillMaxWidth().height(rowHeight)) {
                         row.forEachIndexed { i, key ->
                             val state = mods[key.code] ?: MOD_OFF
                             val lit = state != MOD_OFF || (key.code == 58 && capsOn)
@@ -228,7 +229,7 @@ private fun RowScope.KeyCap(
             .focusable(interactionSource = src),
     ) {
         Text(
-            label, fontSize = if (label.length > 2) 12.sp else 16.sp, fontWeight = FontWeight.SemiBold,
+            label, fontSize = if (label.length > 2) 11.sp else 15.sp, fontWeight = FontWeight.SemiBold,
             color = Color.White, textAlign = TextAlign.Center, maxLines = 1,
         )
     }
