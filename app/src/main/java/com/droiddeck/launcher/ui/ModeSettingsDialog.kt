@@ -53,6 +53,8 @@ class ModeSettings(
     val gameStorage: String? = null,
     val storageOptions: List<Pair<String, String>> = emptyList(),
     val fexPreset: String? = null,
+    /** Steam only: games are stretched to fill the screen (null = not a Steam page). */
+    val forceFullscreen: Boolean? = null,
     /** Steam only: the client branch forced on the command line. */
     val steamChannel: String? = null,
     /** Steam only: the user's own games folder and what was found in it. */
@@ -98,6 +100,7 @@ class ModeSettingsActions(
     val onGameStorage: (path: String, label: String) -> Unit = { _, _ -> },
     val onPickGameStorageFolder: () -> Unit = {},
     val onFexPreset: (String) -> Unit = {},
+    val onForceFullscreen: (Boolean) -> Unit = {},
     val onSteamChannel: (String) -> Unit = {},
     val onPickAddedGamesDir: () -> Unit = {},
     val onForgetAddedGamesDir: (path: String) -> Unit = {},
@@ -279,6 +282,11 @@ fun ModeSettingsPage(s: ModeSettings, a: ModeSettingsActions) {
                 host, "fex", "FEX preset", "Applies on next game launch.",
                 FexPreset.all.map { it.id to it.label }, s.fexPreset,
                 note = FexPreset.byId(s.fexPreset).detail, onPick = a.onFexPreset,
+            )
+            if (s.forceFullscreen != null) ToggleRow(
+                host, "fill", "Stretch games to fill the screen",
+                "Keeps games that resize their own window (FlatOut) full screen. Turn it off if a game shows up small in a corner (Quake 3). Applies next session.",
+                s.forceFullscreen, onChange = a.onForceFullscreen,
             )
         }
         if (steam && s.directAudio != null && s.mic != null) SettingsGroup("Audio") {

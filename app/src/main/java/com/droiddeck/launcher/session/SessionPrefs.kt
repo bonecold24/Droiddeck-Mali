@@ -88,6 +88,18 @@ object SessionPrefs {
     }
 
     /**
+     * Steam only: gamescope makes every game window the size of the screen. A game that resizes
+     * its own window when it loses focus (FlatOut) otherwise comes back smaller, drawn in a
+     * corner; a game that sets its own resolution and never looks at its window again (Quake 3)
+     * instead draws small in the bottom-left of the stretched one. On unless turned off.
+     */
+    fun forceFullscreen(context: Context): Boolean = prefs(context).getBoolean("forceFullscreen", true)
+
+    fun setForceFullscreen(context: Context, on: Boolean) {
+        prefs(context).edit().putBoolean("forceFullscreen", on).apply()
+    }
+
+    /**
      * DirectAudio for games: their Wine audio driver talks to the relay helper on this side. On
      * unless the user turned it off.
      */
