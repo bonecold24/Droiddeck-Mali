@@ -152,7 +152,8 @@ fun PcKeyboard(
                 .pointerInput(Unit) { awaitEachGesture { awaitFirstDown().consume(); waitForUpOrCancellation()?.consume() } }
                 .padding(horizontal = 8.dp, vertical = 6.dp),
         ) {
-            val rowHeight = (maxWidth / 17f).coerceIn(34.dp, 56.dp)
+            // About half the screen on a phone-shaped panel: the program stays visible above it.
+            val rowHeight = (maxWidth / 26f).coerceIn(30.dp, 44.dp)
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().height(28.dp)) {
                     Text("PC keyboard", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = colors.onSurfaceVariant)
