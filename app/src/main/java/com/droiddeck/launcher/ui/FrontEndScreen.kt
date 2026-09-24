@@ -261,6 +261,10 @@ private class FrontFocus {
     val items = HashMap<String, FocusRequester>()
     val attached = HashMap<String, Int>()
     var last: String? = null
+    // The first tile of the page's grid: Down from the page's buttons goes to it, not to whichever
+    // tile happens to sit under the button.
+    val firstTile = FocusRequester()
+    var firstTileAttached = 0
     fun paneEntry(): FocusRequester {
         val id = last
         return when {
@@ -271,6 +275,24 @@ private class FrontFocus {
         }
     }
     companion object { const val PRIMARY = "\u0000primary" }
+}
+
+/** Down from this button goes to the first tile of the page's grid, when there is one. */
+@Composable
+private fun Modifier.downToFirstTile(): Modifier {
+    val ff = LocalFrontFocus.current ?: return this
+    return this.focusProperties { down = if (ff.firstTileAttached > 0) ff.firstTile else FocusRequester.Default }
+}
+
+/** Marks the first tile of the page's grid. */
+@Composable
+private fun Modifier.firstTile(): Modifier {
+    val ff = LocalFrontFocus.current ?: return this
+    DisposableEffect(Unit) {
+        ff.firstTileAttached++
+        onDispose { ff.firstTileAttached-- }
+    }
+    return this.focusRequester(ff.firstTile)
 }
 
 /** Lets the pane come back to this control: it is remembered when focused. */
@@ -916,7 +938,7 @@ private fun PrimaryButton(text: String, enabled: Boolean = true, main: Boolean =
         frontFocus.primaryAttached++
         onDispose { frontFocus.primaryAttached-- }
     }
-    val track = if (frontFocus == null) Modifier.paneItem("btn:$text") else Modifier
+    val track = (if (frontFocus == null) Modifier.paneItem("btn:$text") else Modifier).downToFirstTile()
     val src = remember { MutableInteractionSource() }
     val hot = rememberHot(src) && enabled
     val pressed by src.collectIsPressedAsState()
@@ -951,7 +973,7 @@ internal fun SecondaryButton(text: String, enabled: Boolean = true, onClick: () 
     val edge by animateColorAsState(if (hot) pal.signal else pal.line2, Motion.tw(250), label = "secEdge")
     val fill by animateColorAsState(if (hot) pal.signal.copy(alpha = 0.14f) else Color.White.copy(alpha = 0.03f), Motion.tw(250), label = "secFill")
     Box(
-        modifier = Modifier.paneItem("btn:$text").graphicsLayer { scaleX = scale; scaleY = scale }.clip(Shape12).background(fill).border(1.dp, edge, Shape12)
+        modifier = Modifier.paneItem("btn:$text").downToFirstTile().graphicsLayer { scaleX = scale; scaleY = scale }.clip(Shape12).background(fill).border(1.dp, edge, Shape12)
             .alpha(if (enabled) 1f else 0.5f)
             .hoverable(src).clickable(interactionSource = src, indication = LocalIndication.current, enabled = enabled, onClick = onClick)
             .padding(horizontal = 16.dp, vertical = 11.dp),
@@ -968,7 +990,7 @@ private fun Cog(onClick: () -> Unit) {
     val edge by animateColorAsState(if (hot) pal.signal else pal.line2, Motion.tw(250), label = "cogEdge")
     Box(
         contentAlignment = Alignment.Center,
-        modifier = Modifier.paneItem("cog").size(42.dp).clip(Shape12).background(Color.White.copy(alpha = 0.03f)).border(1.dp, edge, Shape12)
+        modifier = Modifier.paneItem("cog").downToFirstTile().size(42.dp).clip(Shape12).background(Color.White.copy(alpha = 0.03f)).border(1.dp, edge, Shape12)
             .hoverable(src).clickable(interactionSource = src, indication = LocalIndication.current, onClick = onClick),
     ) { Icon(Icons.Filled.Settings, "Settings", tint = if (hot) pal.signal else colors.onBackground, modifier = Modifier.size(18.dp).rotate(rot)) }
 }
@@ -1009,7 +1031,8 @@ private fun ArtGrid(tiles: List<Tile>, wide: Boolean = false) {
                     for (t in row) key(t.key) {
                         val src = remember { MutableInteractionSource() }
                         val hot = rememberHot(src)
-                        Box(modifier = Modifier.width(tileWidth).zIndex(if (hot) 1f else 0f)) { GameTile(t, wide, square, src, hot, Modifier.paneItem("tile:" + t.key)) }
+                        val track = Modifier.paneItem("tile:" + t.key).then(if (t === tiles.first()) Modifier.firstTile() else Modifier)
+                        Box(modifier = Modifier.width(tileWidth).zIndex(if (hot) 1f else 0f)) { GameTile(t, wide, square, src, hot, track) }
                     }
                 }
             }
