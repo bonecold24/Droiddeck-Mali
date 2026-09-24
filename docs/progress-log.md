@@ -7,6 +7,57 @@ the timeline, then lessons and backlog. Companion to the README (what the app *d
 
 ---
 
+## 2026-09-24 (afternoon) - main `94f9935`: PS1, controller focus, own signing key, CI hardening
+
+State: **main = `94f9935`** (PR #41 merge), main build run 36036219740 - the first one signed with
+DroidDeck's own key (`droiddeck-signed-standard`). No tag, no release since 0.1.6. Device-tested on
+the AYANEO Pocket FIT unless marked. **main is now protected** (below).
+
+- **PR #34 → `63d7051`, PR #38 → `c7998a8`** (`feat/duckstation`, `feat/duckstation-play`) - PS1 and the front end:
+  - **DuckStation like ARMSX2**: Player 1 on the controller, BIOS from `ROMs/psx/bios`, `psx` as the game
+    list, Vulkan, guide → pause menu, `-batch -bigpicture -fullscreen` from the rail. Crash Bandicoot and
+    Tekken 3 at 60 fps from the desktop and from the front end.
+  - **One tap to play**: DuckStation's and ARMSX2's first-time setup is answered for the user
+    (`SetupWizardIncomplete = false`); ARMSX2 names its BIOS dump itself (`[Filenames] BIOS`, a US dump
+    first, re-checked before every launch) - PCSX2 needs a named file, DuckStation finds one in its folder.
+    DuckStation no longer warns it cannot inhibit a screensaver (no `org.freedesktop.ScreenSaver` here).
+  - **One tile per disc**: a `.cue`/`.gdi`/`.m3u` hides the files it names (Tekken 3 showed 4×, one per
+    `(Track N).bin`); `bios`/`firmware` folders are skipped (the BIOS showed as a game).
+  - **Controller focus**: the rail item is outlined on open (an app starts in touch mode, where clickables
+    refuse focus - the app now asks for keyboard mode first); Right enters a page on its main button,
+    Left from the page's edge returns to the rail, Right again returns to the tile or button last used
+    (explicit tracking - `FocusRequester.saveFocusedChild` restored into the grid, not the tile); a page
+    opened from a tile takes focus on its main button (focus used to vanish with the tile and the next
+    press landed on Steam); Down from a page's buttons goes to the first tile.
+- **PR #41 → `94f9935`** (`feat/release-signing`) - signing, file access, hardening before going public:
+  - **Own signing key** (RSA 4096, made on device by `tools/release/make-release-key.sh`, digest
+    `b241ea7d…5d3f0` in `keystore/release-signer.sha256`). Every build before it - 0.1.6 included - was
+    signed with the public AOSP testkey, so anyone could sign an "update" that installs over DroidDeck.
+  - **Hand-over** (APK Signature Scheme v3 rotation): v1/v2 by the testkey, v3 by our key with a lineage
+    testkey → ours, testkey rollback off, `--rotation-min-sdk-version 28`. Proven on the FIT with a throwaway
+    key and package: a 0.1.6-style install updates and keeps its data; an apk signed with the testkey alone
+    is refused; so is one with an attacker's own lineage from the testkey; an apk signed with our key alone
+    (what MT Manager / APK Tool M make) installs over a hand-over install and fresh, not over a testkey one.
+  - **CI**: `sign.yml` (reusable, a matrix job per package) runs after every non-pull-request build
+    (environment `signing-main` on main, `signing-branch` elsewhere; the key is an environment secret).
+    `release.yml` (dispatch, version) signs the exact Build APK artifact of a main commit as four packages:
+    `com.droiddeck.launcher`, `com.tencent.ig`, `com.antutu.benchmark.full`, `com.ludashi.benchmark`
+    (`tools/release/variants.txt`; the manifest rename also covers `.documents` and the `.home` task affinity).
+  - **Documents provider** (`files/AppFilesProvider.kt`): the app's data folder in Android's file picker
+    ("Open from" → DroidDeck, per-package title), confined to the data folder (a `../` id is refused, links
+    out of it are hidden), and deleting never follows a link.
+  - **Hardening**: pull requests build with `pull_request`, not `pull_request_target` (a pull request could
+    write the caches main's signed builds restore); a build fails if a private key file is committed;
+    `.gitignore` covers key files; **main is protected** - pull request + passing `build` + one approval,
+    no force-push or deletion, the owner can override for his own pull requests. History scanned before
+    going public: no secrets.
+  - Max and Kurt get the key (jks, p12, pk8 + x509.pem, lineage) with a password and three plain guides
+    (MT Manager / APK Tool M signing, the hand-over, how pull requests / test builds / releases work).
+- **Also merged today** (Kurt): #20 Back shortcuts (session menu, Steam QAM), #24 build identity on the
+  launcher, #33 per-launch Android display choice, #35 CI build-cleanliness snapshot, #37 the split-D logo,
+  #40 faster held-stick navigation in the session drawer; (The412Banner) #32 stretch games to fill the
+  screen, Quake-engine titles windowed at the session's size.
+
 ## 2026-09-24 - main `08a6769`: GPU desktop, emulators like PS3, ARMSX2, game art
 
 State: **main = `08a6769`** (PR #29 merge), main build run 35983098806, staged as `Download/DroidDeck-main-08a6769(-Genshin).apk`. No tag, no release since 0.1.6. **Device-tested on the AYANEO Pocket FIT** (Adreno 750) unless marked.
@@ -218,12 +269,27 @@ State: **main = `90c7574`** (PR #14 merge), main build run 35895701784. No tag, 
 - Verify an emulator's config values from its source: RPCS3's GUI says "Async Shader Recompiler",
   the config value is "Async Recompiler (multi-threaded)".
 - Upstream PCSX2 has no ARM64 recompiler; a correct ARM64 build of it is still interpreter-slow.
+- An Android app starts in touch mode, where Compose clickables refuse focus: `requestFocus()` on open
+  does nothing until the app asks for keyboard input mode.
+- `grep -q` (or `head`) at the end of a pipe exits early; under `pipefail` that fails the whole line at
+  random. Capture the output first, then search it.
+- A reusable workflow gets no more permission than its caller gives, and sees environment secrets only
+  with `secrets: inherit`. A workflow naming an environment that does not exist creates it unprotected.
+- `pull_request_target` shares main's caches with the pull request's code - never with signed builds.
+- apksigner prints signers as "Signer #1", "Signer (minSdkVersion=…)" or "V3.0 Signer:" by version.
 
 ## Backlog / next
-- Play-test the other emulators one by one on the FIT: DuckStation, Dolphin, Cemu, melonDS,
-  PPSSPP, RetroArch (pad profiles and covers exist; nothing played yet).
+- Play-test the other emulators one by one on the FIT: Dolphin, Cemu, melonDS, PPSSPP, RetroArch
+  (pad profiles and covers exist; nothing played yet). DuckStation done 2026-09-24.
+- **Kurt's PR #39 (Non-Launcher flavor) breaks signing as written**: it replaces the `droiddeck-apk`
+  artifact with `droiddeck-home-apk` / `droiddeck-non-launcher-apk`, which `sign.yml` and `release.yml`
+  read, and it conflicts with today's `build.yml`. Adapt before merging: sign both editions (a release
+  would then be editions × packages).
+- After the repo is public: add a required reviewer to the `release` environment (not allowed on a
+  private repo on the Pro plan).
+- First release with the new key (0.1.7): run `release.yml`, publish; 0.1.6 users move over by the
+  hand-over.
 - Keyboard Esc in a rail game does not reach ARMSX2's pause menu (guide does).
-- Kurt's PR #20 (Back shortcuts) conflicts with main since the keyboard/drawer work - rebase.
 - 0.1.7 pre-release when ready (everything above is on main only).
 - Pin a newer ARMSX2 nightly only after testing it (it changes daily).
 - Device-prove 0.1.4 on the FIT (list above).
@@ -235,4 +301,4 @@ State: **main = `90c7574`** (PR #14 merge), main build run 35895701784. No tag, 
   actions. Device confirmation is still needed.
 - FlatOut shrink: try `vk_wsi_force_swapchain_to_current_extent=false` via `steamdeck-env`.
 - Max's stricter `winnative-directaudio` guards; `winnative-epic-launch` (a feature).
-- Rename before anything truly public: "SteamDeck" is Valve's mark.
+- Rename before anything truly public: "SteamDeck" is Valve's mark. (Done 2026-09-23: DroidDeck.)
