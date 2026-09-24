@@ -116,7 +116,7 @@ def ini_section(lines, name):
     return (start, len(lines)) if start is not None else None
 
 
-def patch_ini_section(path, section, body, what, needle="SDL-", require=None):
+def patch_ini_section(path, section, body, what, needle="SDL-", require=None, done="Player 1 on the controller"):
     """Add body's lines to [section] of an ini the emulator wrote itself, unless the section
     already binds a controller (needle). Missing file: nothing - the emulator writes its own
     defaults on first run and this runs again."""
@@ -144,7 +144,7 @@ def patch_ini_section(path, section, body, what, needle="SDL-", require=None):
     with open(path + ".tmp", "w", encoding="utf-8") as f:
         f.write("\n".join(lines) + "\n")
     os.replace(path + ".tmp", path)
-    print(f"bannerlator-pad-defaults: {what}: Player 1 on the controller ({path})")
+    print(f"bannerlator-pad-defaults: {what}: {done} ({path})")
 
 
 # DuckStation: SDL-<n>/<name>, axes signed (src/util/sdl_input_source.cpp); Pad1 keys from
@@ -221,10 +221,7 @@ SmallMotor = SDL-0/SmallMotor
 def pcsx2():
     patch_ini_section(os.path.join(CONFIG, "PCSX2/inis/PCSX2.ini"), "Pad1", PCSX2_PAD1, "PCSX2",
                       require="SettingsVersion")
-    # ARMSX2 (PCSX2 with ARM64 recompilers): the same ini and binding names under its own folder
-    # (pcsx2/Pcsx2Config.cpp: $XDG_CONFIG_HOME/ARMSX2/inis/PCSX2.ini).
-    patch_ini_section(os.path.join(CONFIG, "ARMSX2/inis/PCSX2.ini"), "Pad1", PCSX2_PAD1, "ARMSX2",
-                      require="SettingsVersion")
+
 
 
 # Dolphin: SDL/<id>/<SDL gamepad name>; control names from InputCommon/.../SDL/SDLGamepad.h (Left Y+
@@ -285,6 +282,81 @@ Nunchuk/Stick/Down = `Left Y-`
 Nunchuk/Stick/Left = `Left X-`
 Nunchuk/Stick/Right = `Left X+`
 """
+
+
+# ARMSX2 - the PS2 emulator (PCSX2 with ARM64 recompilers; upstream PCSX2 interprets on ARM64). Its
+# files are PCSX2's under $XDG_CONFIG_HOME/ARMSX2 (pcsx2/Pcsx2Config.cpp). The user supplies the BIOS
+# and the games; they live in the ROMs folder (/root/ROMs). The guide button opens the pause menu
+# (Hotkeys OpenPauseMenu) - the way out of a game started from the front end, which runs ARMSX2
+# without its window (-batch -bigpicture) - so it is not also the analog toggle here.
+ARMSX2_PAD1 = "\n".join(l for l in PCSX2_PAD1.splitlines() if not l.startswith("Analog ")) + "\n"
+ROMS = "/root/ROMs"
+
+
+def ps2_folder():
+    for name in ("ps2", "PS2"):
+        d = os.path.join(ROMS, name)
+        if os.path.isdir(d):
+            return d
+    return os.path.join(ROMS, "ps2")
+
+
+def ps2_bios_folder():
+    base = ps2_folder()
+    for name in ("bios", "BIOS", "firmware"):
+        d = os.path.join(base, name)
+        if os.path.isdir(d):
+            return d
+    d = os.path.join(base, "bios")
+    if os.path.isdir(ROMS):
+        try:
+            os.makedirs(d, exist_ok=True)  # where the user is told to put their BIOS
+        except OSError:
+            pass
+    return d
+
+
+def armsx2():
+    root = os.path.join(CONFIG, "ARMSX2")
+    ini = os.path.join(root, "inis/PCSX2.ini")
+    old = os.path.join(CONFIG, "PCSX2")
+    if not os.path.isfile(ini) and os.path.isfile(os.path.join(old, "inis/PCSX2.ini")):
+        # Someone who played on PCSX2 here: the same settings, BIOS choice and memory cards (the
+        # saves), copied once. PCSX2's own folder is left as it was.
+        import shutil
+        for sub in ("inis", "memcards", "bios", "gamesettings", "cheats", "patches", "covers",
+                    "inputprofiles", "textures"):
+            src = os.path.join(old, sub)
+            if os.path.isdir(src):
+                shutil.copytree(src, os.path.join(root, sub), dirs_exist_ok=True)
+        print(f"bannerlator-pad-defaults: ARMSX2: settings and memory cards copied from PCSX2 ({root})")
+    elif not os.path.isfile(ini):
+        # A new player: ARMSX2's own first-time setup still runs (SetupWizardIncomplete) to pick the
+        # BIOS, but looking in the ROMs folder, with the ps2 folder as its game list and the
+        # controller already on Player 1.
+        bios, games = ps2_bios_folder(), ps2_folder()
+        seed(ini, "[UI]\nSettingsVersion = 1\nSetupWizardIncomplete = true\n\n"
+                  f"[Folders]\nBios = {bios}\n\n"
+                  f"[GameList]\nRecursivePaths = {games}\n\n"
+                  # Vulkan outright rather than Auto's pick: the renderer every other path here uses.
+                  "[EmuCore/GS]\nRenderer = 14\n\n"
+                  "[Hotkeys]\nOpenPauseMenu = Keyboard/Escape\nOpenPauseMenu = SDL-0/Guide\n\n"
+                  "[Pad1]\n" + ARMSX2_PAD1, "ARMSX2", "first-time setup, BIOS from " + bios)
+        return
+    patch_ini_section(ini, "Pad1", ARMSX2_PAD1, "ARMSX2", require="SettingsVersion")
+    # The guide button is the pause menu here; PCSX2's profile (ours, copied over) had it as the
+    # analog toggle as well.
+    with open(ini, encoding="utf-8", errors="replace") as f:
+        lines = f.read().splitlines()
+    kept = [l for l in lines if l.replace(" ", "") != "Analog=SDL-0/Guide"]
+    if len(kept) != len(lines):
+        with open(ini + ".tmp", "w", encoding="utf-8") as f:
+            f.write("\n".join(kept) + "\n")
+        os.replace(ini + ".tmp", ini)
+    patch_ini_section(ini, "Hotkeys", "OpenPauseMenu = SDL-0/Guide\n", "ARMSX2", needle="SDL-0/Guide",
+                      require="SettingsVersion", done="the guide button opens the pause menu")
+    patch_ini_section(ini, "GameList", f"RecursivePaths = {ps2_folder()}\n", "ARMSX2", needle=ROMS,
+                      require="SettingsVersion", done="games listed from the ROMs folder")
 
 
 def dolphin():
@@ -454,7 +526,7 @@ def retroarch():
         print(f"bannerlator-pad-defaults: RetroArch: joypad driver udev -> sdl2 ({cfg})")
 
 
-for step in (rpcs3, duckstation, pcsx2, dolphin, cemu, melonds, ppsspp, retroarch):
+for step in (rpcs3, duckstation, pcsx2, armsx2, dolphin, cemu, melonds, ppsspp, retroarch):
     try:
         step()
     except Exception as e:

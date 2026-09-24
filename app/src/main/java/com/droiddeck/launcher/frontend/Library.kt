@@ -71,10 +71,23 @@ object Library {
         Spec("ppsspp", "PPSSPP", "PSP", "/usr/bin/PPSSPPSDL", listOf("psp"), setOf("iso", "cso", "pbp", "chd")),
         Spec("retroarch", "RetroArch", "many systems", "/usr/bin/retroarch", emptyList(), emptySet()),
     )
+    /**
+     * A dump's file name as a title: its tags - (USA), (En,Fr,Es,Pt), [!], (v1.01) - identify the
+     * file and are dropped for reading ("Tomb Raider (USA) (En,Fr,Es,Pt)" -> "Tomb Raider"). The
+     * file keeps them, and the cover lookup still uses them.
+     */
+    private fun displayTitle(name: String): String =
+        name.replace(Regex("\\s*[(\\[][^)\\]]*[)\\]]"), "").trim().ifEmpty { name }
+
+    /** Every system folder name the specs claim, so a loose-file scan of the root skips them. */
+    private val systemFolders: Set<String> by lazy { specs.flatMap { it.folders }.toSet() }
     private val installedIds = mapOf(
         "rpcs3" to "rpcs3", "armsx2" to "armsx2", "dolphin" to "dolphin", "duckstation" to "duckstation",
         "melonds" to "melonds", "cemu" to "cemu", "ppsspp" to "emulators", "retroarch" to "emulators",
     )
+
+    /** The emulator's name for a program path from the rail ("ARMSX2"), or null. */
+    fun nameForProgram(program: String?): String? = specs.firstOrNull { it.program == program }?.name
 
     /** Desktop catalog package that supplies this emulator. */
     fun packageId(emulatorId: String): String? = installedIds[emulatorId]
@@ -85,20 +98,23 @@ object Library {
         return specs.map { spec ->
             val games = ArrayList<Rom>()
             if (romsRoot != null && spec.exts.isNotEmpty()) {
-                // The system's folder(s), matched without regard to case, then the root itself for
-                // a file left loose there - and one folder deeper, since a dump usually comes as a
-                // folder named for the game with the image inside it.
+                // The system's folder(s), matched without regard to case, and up to three folders
+                // inside them - a dump usually comes as a folder named for the game with the image
+                // inside it, and people sort those into folders of their own (ps2/games/<game>/).
+                // The root itself only one deep, for a file left loose there.
                 val systemDirs = romsRoot.listFiles { f -> f.isDirectory && f.name.lowercase() in spec.folders }.orEmpty().toList()
                 val dirs = LinkedHashSet<File>()
-                for (top in systemDirs + romsRoot) {
-                    dirs.add(top)
-                    top.listFiles { f -> f.isDirectory }?.forEach { dirs.add(it) }
-                }
+                for (top in systemDirs) top.walkTopDown().maxDepth(3).filter { it.isDirectory }.forEach { dirs.add(it) }
+                dirs.add(romsRoot)
+                // ...and not into another system's folder: a PS3 .iso in ps3/ is not a PS2 game.
+                romsRoot.listFiles { f -> f.isDirectory && f.name.lowercase() !in systemFolders }?.forEach { dirs.add(it) }
                 for (dir in dirs) {
                     // A PS3 disc dump is a folder with PS3_GAME in it; RPCS3 boots the folder.
                     if (spec.id == "rpcs3" && File(dir, "PS3_GAME").isDirectory) {
                         val rel = dir.relativeTo(romsRoot).path
-                        games.add(Rom(dir.name, dir, "/root/ROMs/$rel", spec.id))
+                        games.add(Rom(displayTitle(dir.name), dir, "/root/ROMs/$rel", spec.id,
+                            // The dump carries its own art, as an installed package does.
+                            art = File(dir, "PS3_GAME/ICON0.PNG").takeIf { it.isFile }))
                         continue
                     }
                     dir.listFiles()?.sortedBy { it.name.lowercase() }?.forEach { f ->
@@ -106,13 +122,15 @@ object Library {
                         // A .bin beside a .cue is a track, not a game.
                         if (f.isFile && ext in spec.exts && !(ext == "bin" && File(dir, f.nameWithoutExtension + ".cue").isFile)) {
                             val rel = f.relativeTo(romsRoot).path
-                            games.add(Rom(f.nameWithoutExtension.removeSuffix(".dec"), f, "/root/ROMs/$rel", spec.id))
+                            games.add(Rom(displayTitle(f.nameWithoutExtension.removeSuffix(".dec")), f, "/root/ROMs/$rel", spec.id))
                         }
                     }
                 }
             }
             if (spec.id == "rpcs3") games.addAll(rpcs3Installed(context))
-            Emulator(spec.id, spec.name, spec.system, spec.program, installedPackage(installedIds.getValue(spec.id)), games)
+            // A cover found for the game before (CoverArt) where it has no art of its own.
+            val withArt = games.map { g -> if (g.art != null) g else CoverArt.cached(context, g)?.let { Rom(g.name, g.hostPath, g.guestPath, g.emulatorId, it) } ?: g }
+            Emulator(spec.id, spec.name, spec.system, spec.program, installedPackage(installedIds.getValue(spec.id)), withArt)
         }
     }
 
@@ -170,6 +188,9 @@ object Library {
     /** How the emulator is told which game to boot, on its command line. */
     fun launchArgs(emulatorId: String, guestPath: String): List<String> = when (emulatorId) {
         "rpcs3" -> listOf("--no-gui", guestPath)
+        // Straight into the game in its controller-driven full-screen UI (first-time setup there
+        // too), and gone when the game is quit from its pause menu (guide button): -batch.
+        "armsx2" -> listOf("-batch", "-bigpicture", "-fullscreen", "--", guestPath)
         "dolphin" -> listOf("-e", guestPath)
         "cemu" -> listOf("-g", guestPath)
         else -> listOf(guestPath)

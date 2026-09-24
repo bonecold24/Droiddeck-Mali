@@ -142,6 +142,8 @@ fun SessionPausedOverlay(onResume: () -> Unit) {
 /** Everything the drawer shows and does. */
 class DrawerActions(
     val steam: Boolean,
+    /** The drawer's heading: the emulator for a program from the rail, else Steam or Desktop. */
+    val title: String? = null,
     val isHomeApp: Boolean,
     val androidApps: List<HomeApp.LaunchableApp>,
     val hudOn: Boolean,
@@ -215,7 +217,7 @@ fun SessionDrawer(open: Boolean, a: DrawerActions) {
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(start = 4.dp, bottom = 6.dp)) {
                     Box(modifier = Modifier.size(10.dp).clip(CircleShape).background(Brush.linearGradient(listOf(colors.primary, pal.primary2))))
                     Spacer(Modifier.width(10.dp))
-                    Text(if (a.steam) "Steam" else "Desktop", fontSize = 17.sp, fontWeight = FontWeight.Bold, color = colors.onBackground)
+                    Text(a.title ?: if (a.steam) "Steam" else "Desktop", fontSize = 17.sp, fontWeight = FontWeight.Bold, color = colors.onBackground)
                 }
                 if (a.onSteamMenu != null && a.onQam != null) {
                     val qamInteraction = remember { MutableInteractionSource() }
@@ -318,9 +320,11 @@ fun SessionDrawer(open: Boolean, a: DrawerActions) {
                         listOf(SessionPrefs.TOUCH_AUTO to "Auto (${a.touchAuto})", SessionPrefs.TOUCH_PAD to "Touchpad", SessionPrefs.TOUCH_DIRECT to "Direct"), a.touchMode,
                         onPick = a.onTouch,
                     )
-                    if (a.steam) ChoiceRow(
+                    ChoiceRow(
                         host, "osc", "On-screen controls", null,
-                        listOf(SessionPrefs.OSC_AUTO to "Auto", SessionPrefs.OSC_ALWAYS to "Always", SessionPrefs.OSC_STEAM_QAM to "Steam + QAM", SessionPrefs.OSC_NEVER to "Never"), a.oscMode,
+                        if (a.steam) listOf(SessionPrefs.OSC_AUTO to "Auto", SessionPrefs.OSC_ALWAYS to "Always", SessionPrefs.OSC_STEAM_QAM to "Steam + QAM", SessionPrefs.OSC_NEVER to "Never")
+                        else listOf(SessionPrefs.OSC_AUTO to "Auto", SessionPrefs.OSC_ALWAYS to "Always", SessionPrefs.OSC_NEVER to "Never"),
+                        a.oscMode,
                         onPick = a.onOsc,
                     )
                     SettingsRow("Keyboard", null) {

@@ -192,6 +192,8 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
                     )
                     SessionDrawer(drawerOpen, DrawerActions(
                         steam = SessionState.mode == SessionService.MODE_STEAM,
+                        title = if (SessionState.mode == SessionService.MODE_RUN)
+                            com.droiddeck.launcher.frontend.Library.nameForProgram(SessionState.program) ?: "Game" else null,
                         isHomeApp = isHomeApp,
                         androidApps = androidApps,
                         hudOn = hudOn,
@@ -885,7 +887,10 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
             SessionPrefs.OSC_ALWAYS -> true
             SessionPrefs.OSC_STEAM_QAM -> true
             SessionPrefs.OSC_NEVER -> false
-            else -> !PadBridge.anyControllerConnected()
+            // Auto: the touch pad when there is no controller - except on the desktop, where the
+            // screen is a touchpad for the pointer and a pad over it would be in the way. A game
+            // started from the rail, or Steam, gets it; the drawer turns it on anywhere.
+            else -> !PadBridge.anyControllerConnected() && SessionState.mode != SessionService.MODE_DESKTOP
         }
         if (show == (controls.visibility == View.VISIBLE)) return
         if (!show) controls.releaseAll()

@@ -233,6 +233,18 @@ fun FrontEndScreen(s: FrontEndState, a: FrontEndActions, page: (@Composable () -
     val colors = MaterialTheme.colorScheme
     val ctx = LocalContext.current
     BackHandler(enabled = s.pageKey != null && page != null) { a.onPageBack() }
+    // Back (and B) from a game or an emulator steps out one level, as its "‹" link does, instead
+    // of leaving the app: a game -> its emulator (or Steam), an emulator -> Desktop.
+    BackHandler(
+        enabled = (s.pageKey == null || page == null) &&
+            (selected.startsWith("app:") || selected.startsWith("emu:") || selected.startsWith("rom:")),
+    ) {
+        selected = when {
+            selected.startsWith("app:") -> "steam"
+            selected.startsWith("emu:") -> "desktop"
+            else -> "emu:" + selected.removePrefix("rom:").substringBefore(':')
+        }
+    }
     LaunchedEffect(s.isHomeApp) { if (!s.isHomeApp && selected == "android-apps") selected = "steam" }
     remember { Motion.scale = Settings.Global.getFloat(ctx.contentResolver, Settings.Global.ANIMATOR_DURATION_SCALE, 1f); true }
 
@@ -849,7 +861,7 @@ private fun Poster(art: File?, name: String, modifier: Modifier) {
             .graphicsLayer { alpha = t.value; translationY = (1f - t.value) * 16.dp.toPx(); rotationZ = (1f - t.value) * 2f; scaleX = 0.94f + 0.06f * t.value; scaleY = scaleX; shadowElevation = 22.dp.toPx(); shape = Shape12; clip = false }
             .clip(Shape12).background(artBrush(hueOf(name))),
     ) {
-        if (art != null) AsyncImage(model = art, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
+        if (art != null) CoverImage(art, Modifier.fillMaxSize())
         else Text(name, fontSize = 11.sp, fontWeight = FontWeight.Bold, color = colors.onBackground, modifier = Modifier.align(Alignment.BottomStart).padding(8.dp), maxLines = 3, overflow = TextOverflow.Ellipsis)
     }
 }
@@ -921,13 +933,41 @@ private fun GameTile(t: Tile, wide: Boolean, square: Boolean, src: MutableIntera
     }
 }
 
+/**
+ * Art for a portrait (2:3) tile. Box art fills it; wide art - a PS3 disc's ICON0, a game's header -
+ * is shown whole over a blurred, darkened copy of itself instead of losing its sides to the crop.
+ */
+@Composable
+private fun CoverImage(art: File, modifier: Modifier) {
+    var wideArt by remember(art) { mutableStateOf(false) }
+    Box(modifier) {
+        if (wideArt) {
+            AsyncImage(
+                model = art, contentDescription = null, contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize().graphicsLayer { scaleX = 1.2f; scaleY = 1.2f }.blur(14.dp),
+            )
+            Spacer(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.45f)))
+        }
+        AsyncImage(
+            model = art, contentDescription = null,
+            contentScale = if (wideArt) ContentScale.Fit else ContentScale.Crop,
+            onSuccess = { state ->
+                val size = state.painter.intrinsicSize
+                if (size.width > size.height * 1.1f) wideArt = true
+            },
+            modifier = Modifier.fillMaxSize(),
+        )
+    }
+}
+
 @Composable
 private fun Art(art: File?, iconRes: Int?, label: String, modifier: Modifier, wide: Boolean = false, iconBitmap: Bitmap? = null) {
     val colors = MaterialTheme.colorScheme
     val ratio = if (art == null && (iconRes != null || iconBitmap != null)) 1f else if (wide) 16f / 9f else 2f / 3f
     Box(modifier = modifier.aspectRatio(ratio).background(if (art == null && iconRes == null && iconBitmap == null) artBrush(hueOf(label)) else Brush.linearGradient(listOf(colors.surfaceVariant, colors.surface)))) {
         when {
-            art != null -> AsyncImage(model = art, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
+            art != null -> if (wide) AsyncImage(model = art, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
+                            else CoverImage(art, Modifier.fillMaxSize())
             iconRes != null -> Image(painterResource(iconRes), null, contentScale = ContentScale.Fit, modifier = Modifier.fillMaxSize().padding(if (wide) 10.dp else 8.dp))
             iconBitmap != null -> Image(bitmap = iconBitmap.asImageBitmap(), contentDescription = null, contentScale = ContentScale.Fit, modifier = Modifier.fillMaxSize().padding(8.dp))
             else -> {
