@@ -504,10 +504,7 @@ private fun BuildStatus(label: String, onCheckLatest: () -> Unit, modifier: Modi
             )
             .padding(horizontal = 11.dp, vertical = 7.dp),
     ) {
-        Column(modifier = Modifier.weight(1f)) {
-            Text("BUILD", fontSize = 9.sp, letterSpacing = 1.sp, color = colors.onSurfaceVariant)
-            Text(label, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = colors.onBackground, maxLines = 1, overflow = TextOverflow.Ellipsis)
-        }
+        Text(label, modifier = Modifier.weight(1f), fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = colors.onBackground, maxLines = 1, overflow = TextOverflow.Ellipsis)
         Icon(Icons.Filled.Refresh, contentDescription = null, tint = if (hot) pal.signal else colors.onSurfaceVariant, modifier = Modifier.size(15.dp))
         Text("Check latest", fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = if (hot) pal.signal else colors.onBackground, maxLines = 1)
     }
