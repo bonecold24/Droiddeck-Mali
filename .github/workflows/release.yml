@@ -64,3 +64,5 @@ jobs:
       run_id: ${{ needs.find.outputs.run_id }}
       label: ${{ inputs.version }}
       artifact: droiddeck-release
+    # The key is an environment secret; a called workflow sees secrets only when they are passed on.
+    secrets: inherit

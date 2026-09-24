@@ -508,3 +508,5 @@ jobs:
     with:
       environment: ${{ github.ref == 'refs/heads/main' && 'signing-main' || 'signing-branch' }}
       variants: '["standard"]'
+    # The key is an environment secret; a called workflow sees secrets only when they are passed on.
+    secrets: inherit
