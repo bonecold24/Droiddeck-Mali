@@ -83,7 +83,6 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
     private var onScreenControls: OnScreenControls? = null
     private var keyboard: KeyboardHost? = null
     private var watching = true
-    private lateinit var gestures: PointerGestures
     private lateinit var touchpad: TouchpadGestures
     private var touchMode by mutableStateOf(SessionPrefs.TOUCH_AUTO)
     private var cursorPos by mutableStateOf(androidx.compose.ui.geometry.Offset(-100f, -100f))
@@ -95,6 +94,7 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
     private var drawerDirectionDownTime = 0L
     private var drawerDirectionLastRepeat = 0L
     private var drawerDirectionDeviceId = -1
+    private val resumeKeysDown = mutableSetOf<Pair<Int, Int>>()
 
     // Compose reads these; the activity writes them.
     private var drawerOpen by mutableStateOf(false)
@@ -102,6 +102,7 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
     /** The on-screen PC keyboard (ui/PcKeyboard): real key presses, Esc and F1 included. */
     private var pcKeyboardOpen by mutableStateOf(false)
     private var hudOn by mutableStateOf(true)
+    private var fillScreen by mutableStateOf(true)
     private var frameGenLabel by mutableStateOf("Off")
     private var frameGenEngine by mutableStateOf(FrameGen.ENGINE_OFF)
     private var frameGenMultiplier by mutableStateOf(2)
@@ -158,7 +159,6 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
         padBridge = bridge
         onScreenControls = OnScreenControls(this, bridge).also { root.addView(it) }
         keyboard = KeyboardHost(this).also { root.addView(it) }
-        gestures = PointerGestures(PointerGestures.slop(this), pointerListener)
         touchpad = TouchpadGestures(PointerGestures.slop(this), pointerListener)
         // One arrow, ours: Android draws a system pointer for a mouse over any window, and the
         // session already draws the pointer it is sent.
@@ -199,7 +199,8 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
                         if (drawerOpen) {
                             padBridge?.releaseAll()
                             androidx.compose.runtime.withFrameNanos { }
-                            sessionOverlay.requestFocus()
+                            val requested = sessionOverlay.requestFocus()
+                            Log.i(TAG, "drawer root focus requested=$requested focused=${sessionOverlay.hasFocus()}")
                         } else {
                             releaseDrawerDirection()
                         }
@@ -218,6 +219,7 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
                         isHomeApp = isHomeApp,
                         androidApps = androidApps,
                         hudOn = hudOn,
+                        fillScreen = if (SessionState.mode == SessionService.MODE_STEAM) fillScreen else null,
                         frameGenEngine = frameGenEngine, frameGenMultiplier = frameGenMultiplier,
                         lsfgReady = LsfgNative.isInstalled(this@SessionActivity),
                         oscMode = oscMode, touchMode = touchMode,
@@ -227,6 +229,7 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
                         secondScreenDisplays = secondScreenDisplays,
                         selectedSecondScreenDisplay = selectedSecondScreenDisplay,
                         onHud = { on -> SessionPrefs.setHudEnabled(this@SessionActivity, on); hudOn = on; hud.refresh() },
+                        onFillScreen = { on -> SessionPrefs.setForceFullscreen(this@SessionActivity, on); fillScreen = on },
                         onFrameGenPick = { engine, multiplier ->
                             FrameGen.set(this@SessionActivity, engine, multiplier)
                             readPrefs()
@@ -343,6 +346,7 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
 
     private fun readPrefs() {
         hudOn = SessionPrefs.hudEnabled(this)
+        fillScreen = SessionPrefs.forceFullscreen(this)
         touchMode = SessionPrefs.touchMode(this)
         frameGenLabel = FrameGen.label(this)
         frameGenEngine = FrameGen.engine(this)
@@ -678,8 +682,29 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
             KeyEvent.KEYCODE_VOLUME_UP, KeyEvent.KEYCODE_VOLUME_DOWN, KeyEvent.KEYCODE_VOLUME_MUTE ->
                 return super.dispatchKeyEvent(event)
         }
-        // Keep keys in the Android/Compose focus tree while the drawer is open. Its Back key and
-        // controller B always dismiss the drawer; directional and confirm keys stay with the UI.
+        if (drawerOpen) {
+            val handled = super.dispatchKeyEvent(event)
+            if (event.action == KeyEvent.ACTION_DOWN) {
+                Log.i(TAG, "drawer key=${KeyEvent.keyCodeToString(event.keyCode)} handled=$handled viewFocused=${sessionOverlay.hasFocus()}")
+            }
+            if (event.keyCode == KeyEvent.KEYCODE_BUTTON_B || event.keyCode == KeyEvent.KEYCODE_BACK) {
+                if (!handled && event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0) drawerOpen = false
+                releaseDrawerDirection()
+            }
+            return true
+        }
+        val fromController = PadBridge.isFromController(event.device)
+        val resumeKey = event.keyCode == KeyEvent.KEYCODE_BUTTON_A || event.keyCode == KeyEvent.KEYCODE_BUTTON_START
+        val resumeKeyId = event.deviceId to event.keyCode
+        if (fromController && resumeKey && (SessionState.suspended || resumeKeyId in resumeKeysDown)) {
+            if (event.action == KeyEvent.ACTION_DOWN) {
+                resumeKeysDown.add(resumeKeyId)
+                if (event.repeatCount == 0 && SessionState.suspended) SessionService.resume(this)
+            } else if (event.action == KeyEvent.ACTION_UP) {
+                resumeKeysDown.remove(resumeKeyId)
+            }
+            return true
+        }
         if (drawerOpen) {
             if (event.keyCode == KeyEvent.KEYCODE_BACK || event.keyCode == KeyEvent.KEYCODE_BUTTON_B) {
                 if (event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0) drawerOpen = false
@@ -741,7 +766,6 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
         return super.dispatchGenericMotionEvent(event)
     }
 
-    /** Convert a held left-stick or d-pad-hat direction into focus navigation. */
     private fun dispatchDrawerDirection(event: MotionEvent) {
         val hatX = event.getAxisValue(MotionEvent.AXIS_HAT_X)
         val hatY = event.getAxisValue(MotionEvent.AXIS_HAT_Y)
@@ -756,6 +780,7 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
         }
         val now = SystemClock.uptimeMillis()
         if (keyCode != drawerDirectionKey) {
+            Log.i(TAG, "drawer axis source=${event.source} x=$x y=$y direction=$keyCode")
             releaseDrawerDirection()
             if (keyCode == KeyEvent.KEYCODE_UNKNOWN) return
             drawerDirectionKey = keyCode
@@ -781,15 +806,12 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
             drawerDirectionDownTime, eventTime, action, drawerDirectionKey,
             repeatCount, 0, drawerDirectionDeviceId, 0, 0, InputDevice.SOURCE_DPAD,
         )
+        if (action == KeyEvent.ACTION_DOWN) {
+            Log.i(TAG, "drawer synthetic key=${KeyEvent.keyCodeToString(drawerDirectionKey)} viewFocused=${sessionOverlay.hasFocus()}")
+        }
         super.dispatchKeyEvent(event)
     }
 
-    /**
-     * The pointer. Touch goes through [PointerGestures] (tap, hold, drag, two-finger scroll); a
-     * mouse arrives with real buttons and a wheel and is forwarded as it is. Every position is
-     * mapped through the letterboxed rectangle into the compositor's fixed 1920x1080 pointer
-     * space, and the arrow is drawn where the app last sent the pointer.
-     */
     private val pointerListener = object : PointerGestures.Listener {
         override fun onMove(x: Float, y: Float) = movePointer(x, y)
         override fun onButton(button: Int, pressed: Boolean, x: Float, y: Float) {
@@ -890,6 +912,7 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
                 onQam = {
                     if (SessionState.mode == SessionService.MODE_STEAM) padBridge?.triggerQam()
                 },
+                onClose = { selectSecondScreenMode(SecondScreenMode.NONE) },
             )
             secondScreenPresentation = presentation
         }
@@ -950,7 +973,20 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
             }
             return touchpad.onTouch(event)
         }
-        return gestures.onTouch(event)
+        val rect = drawnRect() ?: return false
+        fun sendTouch(action: Int, index: Int) {
+            val x = ((event.getX(index) - rect.left) / rect.width()).coerceIn(0f, 1f)
+            val y = ((event.getY(index) - rect.top) / rect.height()).coerceIn(0f, 1f)
+            WaylandCompositor.nativeSendTouch(action, event.getPointerId(index), (x * 1919f).toInt(), (y * 1079f).toInt())
+        }
+        when (event.actionMasked) {
+            MotionEvent.ACTION_DOWN, MotionEvent.ACTION_POINTER_DOWN -> sendTouch(0, event.actionIndex)
+            MotionEvent.ACTION_MOVE -> for (index in 0 until event.pointerCount) sendTouch(1, index)
+            MotionEvent.ACTION_UP, MotionEvent.ACTION_POINTER_UP -> sendTouch(2, event.actionIndex)
+            MotionEvent.ACTION_CANCEL -> WaylandCompositor.nativeSendTouch(3, -1, 0, 0)
+            else -> return false
+        }
+        return true
     }
 
     /** A mouse: hover moves, buttons press, the wheel scrolls. Android sends buttons as touch

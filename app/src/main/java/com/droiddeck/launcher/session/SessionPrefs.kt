@@ -101,6 +101,32 @@ object SessionPrefs {
     }
 
     /**
+     * Steam only: gamescope makes every game window the size of the screen. A game that resizes
+     * its own window when it loses focus (FlatOut) otherwise comes back smaller, drawn in a
+     * corner; a game that sets its own resolution and never looks at its window again (Quake 3)
+     * instead draws small in the bottom-left of the stretched one. On unless turned off.
+     */
+    fun forceFullscreen(context: Context): Boolean = prefs(context).getBoolean("forceFullscreen", true)
+
+    fun setForceFullscreen(context: Context, on: Boolean) {
+        prefs(context).edit().putBoolean("forceFullscreen", on).apply()
+        writeForceFullscreenFlag(context)
+    }
+
+    /**
+     * The same choice as a file the running session watches, so the drawer can change it live:
+     * the session hands every change to gamescope, which reads GAMESCOPE_FORCE_WINDOWS_FULLSCREEN
+     * off its root window whenever it changes. Written again at every session start so a file left
+     * by an earlier session never disagrees with the setting.
+     */
+    fun writeForceFullscreenFlag(context: Context) {
+        runCatching {
+            java.io.File(com.droiddeck.launcher.runtime.LinuxRuntime.rootDir(context), "root/.droiddeck-fill")
+                .writeText(if (forceFullscreen(context)) "1\n" else "0\n")
+        }
+    }
+
+    /**
      * DirectAudio for games: their Wine audio driver talks to the relay helper on this side. On
      * unless the user turned it off.
      */
