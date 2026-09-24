@@ -221,6 +221,10 @@ SmallMotor = SDL-0/SmallMotor
 def pcsx2():
     patch_ini_section(os.path.join(CONFIG, "PCSX2/inis/PCSX2.ini"), "Pad1", PCSX2_PAD1, "PCSX2",
                       require="SettingsVersion")
+    # ARMSX2 (PCSX2 with ARM64 recompilers): the same ini and binding names under its own folder
+    # (pcsx2/Pcsx2Config.cpp: $XDG_CONFIG_HOME/ARMSX2/inis/PCSX2.ini).
+    patch_ini_section(os.path.join(CONFIG, "ARMSX2/inis/PCSX2.ini"), "Pad1", PCSX2_PAD1, "ARMSX2",
+                      require="SettingsVersion")
 
 
 # Dolphin: SDL/<id>/<SDL gamepad name>; control names from InputCommon/.../SDL/SDLGamepad.h (Left Y+
