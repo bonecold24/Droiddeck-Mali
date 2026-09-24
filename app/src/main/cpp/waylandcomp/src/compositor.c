@@ -465,17 +465,23 @@ static void release_buffer(struct surface *s, struct wl_resource *buffer, int64_
 /* Each Wine process is a separate client with its own wl_pointer / wl_keyboard. */
 struct seat_pointer { struct wl_resource *ptr; struct wl_resource *focus; };
 struct seat_keyboard { struct wl_resource *kb; struct wl_resource *focus; };
+struct seat_touch { struct wl_resource *touch; struct wl_resource *focus; };
 #define MAX_PTRS 32
+#define MAX_TOUCH_POINTS 32
 static struct seat_pointer g_ptrs[MAX_PTRS];
 static int g_nptrs;
 static struct seat_keyboard g_kbs[MAX_PTRS];
 static int g_nkbs;
+static struct seat_touch g_touches[MAX_PTRS];
+static int g_ntouches;
+struct active_touch { struct surface *surface; int pointer_fallback; };
+static struct active_touch g_touch_points[MAX_TOUCH_POINTS];
+static void touch_cancel_surface(struct surface *surface);
 static struct surface *g_grab;              /* no-desktop fallback: surface holding the button */
 static struct surface *g_key_target;        /* no-desktop fallback: last clicked surface */
 static struct surface *g_ime_click;         /* last clicked program window: where text input goes */
 static int g_input_pipe[2] = {-1, -1};
-/* type 0 = pointer (p1=action 0down/1move/2up, p2=x, p3=y); type 1 = key (p1=evdev, p2=state 1down/0up) */
-struct input_msg { int type; int p1; int p2; int p3; };
+struct input_msg { int type; int p1; int p2; int p3; int p4; };
 
 /* Pointer constraints (zwp_pointer_constraints_v1) and relative pointers
  * (zwp_relative_pointer_manager_v1); see the "pointer constraints" section. */
@@ -1002,6 +1008,7 @@ static void surface_resource_destroy(struct wl_resource *r) {
     if (!s) return;
     for (int i = 0; i < g_nptrs; i++) if (g_ptrs[i].focus == r) g_ptrs[i].focus = NULL;
     for (int i = 0; i < g_nkbs; i++) if (g_kbs[i].focus == r) g_kbs[i].focus = NULL;
+    touch_cancel_surface(s);
     if (g_grab == s) g_grab = NULL;
     if (g_key_target == s) g_key_target = NULL;
     if (g_ime_click == s) g_ime_click = NULL;
@@ -2401,6 +2408,10 @@ static void keyboard_res_destroy(struct wl_resource *r) {
 }
 static void touch_release(struct wl_client *c, struct wl_resource *r) { wl_resource_destroy(r); }
 static const struct wl_touch_interface touch_impl = { .release = touch_release };
+static void touch_res_destroy(struct wl_resource *r) {
+    for (int i = 0; i < g_ntouches; i++)
+        if (g_touches[i].touch == r) { g_touches[i] = g_touches[--g_ntouches]; break; }
+}
 
 static void seat_get_pointer(struct wl_client *c, struct wl_resource *r, uint32_t id) {
     struct wl_resource *p = wl_resource_create(c, &wl_pointer_interface, wl_resource_get_version(r), id);
@@ -2432,7 +2443,13 @@ static void seat_get_keyboard(struct wl_client *c, struct wl_resource *r, uint32
 }
 static void seat_get_touch(struct wl_client *c, struct wl_resource *r, uint32_t id) {
     struct wl_resource *t = wl_resource_create(c, &wl_touch_interface, wl_resource_get_version(r), id);
-    if (t) wl_resource_set_implementation(t, &touch_impl, NULL, NULL);
+    if (!t) { wl_client_post_no_memory(c); return; }
+    wl_resource_set_implementation(t, &touch_impl, NULL, touch_res_destroy);
+    if (g_ntouches < MAX_PTRS) {
+        g_touches[g_ntouches].touch = t;
+        g_touches[g_ntouches].focus = NULL;
+        g_ntouches++;
+    }
 }
 static void seat_release(struct wl_client *c, struct wl_resource *r) { wl_resource_destroy(r); }
 static const struct wl_seat_interface seat_impl = {
@@ -2442,7 +2459,7 @@ static const struct wl_seat_interface seat_impl = {
 static void bind_seat(struct wl_client *c, void *data, uint32_t ver, uint32_t id) {
     struct wl_resource *r = wl_resource_create(c, &wl_seat_interface, ver, id);
     wl_resource_set_implementation(r, &seat_impl, NULL, NULL);
-    wl_seat_send_capabilities(r, WL_SEAT_CAPABILITY_POINTER | WL_SEAT_CAPABILITY_KEYBOARD);
+    wl_seat_send_capabilities(r, WL_SEAT_CAPABILITY_POINTER | WL_SEAT_CAPABILITY_KEYBOARD | WL_SEAT_CAPABILITY_TOUCH);
     if (ver >= 2) wl_seat_send_name(r, "bannerlator-seat");
 }
 
@@ -2466,6 +2483,9 @@ static struct seat_keyboard *keyboard_for(struct wl_client *client) {
 #define for_each_keyboard_of(client, sk) \
     for (int _i = 0; _i < g_nkbs; _i++) \
         if (((sk) = &g_kbs[_i]), wl_resource_get_client((sk)->kb) == (client))
+#define for_each_touch_of(client, st) \
+    for (int _i = 0; _i < g_ntouches; _i++) \
+        if (((st) = &g_touches[_i]), wl_resource_get_client((st)->touch) == (client))
 
 /* Topmost window whose scene rectangle contains the point (no-desktop fallback). */
 static struct surface *toplevel_at(double x, double y) {
@@ -3000,6 +3020,179 @@ static void deliver_pointer(const struct input_msg *m) {
     pointer_event(x, y, m->p1 == 1 ? 0 : BTN_LEFT, m->p1 == 0);
 }
 
+static void input_output_to_scene(int px, int py, double *x, double *y) {
+    int w, h, ow, oh;
+    scene_size(&w, &h);
+    vkp_output_size(&ow, &oh);
+    if (ow <= 0 || oh <= 0 ||
+        !vkp_output_to_scene((double)px * ow / INPUT_SPACE_W, (double)py * oh / INPUT_SPACE_H, x, y)) {
+        *x = (double)px * w / INPUT_SPACE_W;
+        *y = (double)py * h / INPUT_SPACE_H;
+    }
+    if (*x < 0) *x = 0;
+    if (*y < 0) *y = 0;
+    if (*x > w - 1) *x = w - 1;
+    if (*y > h - 1) *y = h - 1;
+}
+
+static int touch_points_for_client(struct wl_client *client) {
+    for (int i = 0; i < MAX_TOUCH_POINTS; i++) {
+        struct surface *surface = g_touch_points[i].surface;
+        if (surface && wl_resource_get_client(surface->resource) == client) return 1;
+    }
+    return 0;
+}
+
+static void touch_frame(struct wl_client *client) {
+    struct seat_touch *st;
+    for_each_touch_of(client, st)
+        if (wl_resource_get_version(st->touch) >= WL_TOUCH_FRAME_SINCE_VERSION)
+            wl_touch_send_frame(st->touch);
+}
+
+static void touch_cancel_client(struct wl_client *client) {
+    struct seat_touch *st;
+    int release_pointer = 0;
+    for_each_touch_of(client, st) {
+        if (st->focus) wl_touch_send_cancel(st->touch);
+        st->focus = NULL;
+    }
+    for (int i = 0; i < MAX_TOUCH_POINTS; i++) {
+        struct surface *surface = g_touch_points[i].surface;
+        if (surface && wl_resource_get_client(surface->resource) == client) {
+            release_pointer |= g_touch_points[i].pointer_fallback;
+            memset(&g_touch_points[i], 0, sizeof(g_touch_points[i]));
+        }
+    }
+    if (release_pointer) pointer_button(BTN_LEFT, 0);
+    wl_display_flush_clients(g_display);
+}
+
+static void touch_cancel_all(void) {
+    int release_pointer = 0;
+    for (int i = 0; i < g_ntouches; i++) {
+        if (g_touches[i].focus) wl_touch_send_cancel(g_touches[i].touch);
+        g_touches[i].focus = NULL;
+    }
+    for (int i = 0; i < MAX_TOUCH_POINTS; i++)
+        release_pointer |= g_touch_points[i].pointer_fallback;
+    memset(g_touch_points, 0, sizeof(g_touch_points));
+    if (release_pointer) pointer_button(BTN_LEFT, 0);
+    wl_display_flush_clients(g_display);
+}
+
+static void touch_cancel_surface(struct surface *surface) {
+    struct wl_client *client = wl_resource_get_client(surface->resource);
+    for (int i = 0; i < MAX_TOUCH_POINTS; i++)
+        if (g_touch_points[i].surface == surface) {
+            touch_cancel_client(client);
+            return;
+        }
+}
+
+static struct surface *touch_target_at(double x, double y) {
+    struct surface *target = toplevel_at(x, y);
+    if (target) return target;
+    if (g_desktop) return g_desktop;
+    return g_grab ? g_grab : g_key_target;
+}
+
+static void touch_down(int id, double x, double y) {
+    if (id < 0 || id >= MAX_TOUCH_POINTS) return;
+    struct surface *target = touch_target_at(x, y);
+    if (!target) return;
+    struct wl_client *client = wl_resource_get_client(target->resource);
+    int any_active = 0;
+    for (int i = 0; i < MAX_TOUCH_POINTS; i++) {
+        struct surface *active = g_touch_points[i].surface;
+        if (!active) continue;
+        any_active = 1;
+        if (active != target) {
+            touch_cancel_all();
+            any_active = 0;
+            break;
+        }
+    }
+    if (g_touch_points[id].surface) touch_cancel_client(client);
+    struct seat_touch *st;
+    int has_touch = 0;
+    for_each_touch_of(client, st) has_touch = 1;
+    if (!has_touch) {
+        if (any_active) return;
+        g_touch_points[id].surface = target;
+        g_touch_points[id].pointer_fallback = 1;
+        pointer_event(x, y, BTN_LEFT, 1);
+        wl_display_flush_clients(g_display);
+        return;
+    }
+    int tx = 0, ty = 0;
+    if (target != g_desktop && target->placed) { tx = target->x; ty = target->y; }
+    wl_fixed_t fx = wl_fixed_from_double(x - tx), fy = wl_fixed_from_double(y - ty);
+    int sent = 0;
+    for_each_touch_of(client, st) {
+        st->focus = target->resource;
+        wl_touch_send_down(st->touch, wl_display_next_serial(g_display), now_ms(),
+                           target->resource, id, fx, fy);
+        sent = 1;
+    }
+    if (!sent) return;
+    g_touch_points[id].surface = target;
+    touch_frame(client);
+    wl_display_flush_clients(g_display);
+}
+
+static void touch_motion(int id, double x, double y) {
+    if (id < 0 || id >= MAX_TOUCH_POINTS) return;
+    struct surface *target = g_touch_points[id].surface;
+    if (!target) return;
+    if (g_touch_points[id].pointer_fallback) {
+        pointer_event(x, y, 0, 0);
+        wl_display_flush_clients(g_display);
+        return;
+    }
+    struct wl_client *client = wl_resource_get_client(target->resource);
+    int tx = 0, ty = 0;
+    if (target != g_desktop && target->placed) { tx = target->x; ty = target->y; }
+    wl_fixed_t fx = wl_fixed_from_double(x - tx), fy = wl_fixed_from_double(y - ty);
+    struct seat_touch *st;
+    for_each_touch_of(client, st)
+        if (st->focus == target->resource)
+            wl_touch_send_motion(st->touch, now_ms(), id, fx, fy);
+    touch_frame(client);
+    wl_display_flush_clients(g_display);
+}
+
+static void touch_up(int id, double x, double y) {
+    if (id < 0 || id >= MAX_TOUCH_POINTS) return;
+    struct surface *target = g_touch_points[id].surface;
+    if (!target) return;
+    if (g_touch_points[id].pointer_fallback) {
+        memset(&g_touch_points[id], 0, sizeof(g_touch_points[id]));
+        pointer_event(x, y, BTN_LEFT, 0);
+        wl_display_flush_clients(g_display);
+        return;
+    }
+    struct wl_client *client = wl_resource_get_client(target->resource);
+    struct seat_touch *st;
+    for_each_touch_of(client, st)
+        if (st->focus == target->resource)
+            wl_touch_send_up(st->touch, wl_display_next_serial(g_display), now_ms(), id);
+    memset(&g_touch_points[id], 0, sizeof(g_touch_points[id]));
+    touch_frame(client);
+    if (!touch_points_for_client(client))
+        for_each_touch_of(client, st) st->focus = NULL;
+    wl_display_flush_clients(g_display);
+}
+
+static void deliver_touch(const struct input_msg *m) {
+    double x, y;
+    input_output_to_scene(m->p3, m->p4, &x, &y);
+    if (m->p1 == 0) touch_down(m->p2, x, y);
+    else if (m->p1 == 1) touch_motion(m->p2, x, y);
+    else if (m->p1 == 2) touch_up(m->p2, x, y);
+    else if (m->p1 == 3) touch_cancel_all();
+}
+
 static void key_event(uint32_t evdev, int pressed);
 struct wl_resource *banner_ime_target(void);
 static void deliver_key(const struct input_msg *m) {
@@ -3068,6 +3261,7 @@ static int on_input_readable(int fd, uint32_t mask, void *data) {
         case 4: scroll_event(m.p1); break;
         case 5: on_vsync(((int64_t)m.p1 << 32) | (uint32_t)m.p2); break;
         case 6: pointer_delta(m.p1 / 256.0, m.p2 / 256.0); break; /* relative motion, 1/256 px */
+        case 7: deliver_touch(&m); break;
         default: deliver_pointer(&m); break;
         }
     }
@@ -3078,7 +3272,14 @@ static int on_input_readable(int fd, uint32_t mask, void *data) {
  * dispatches it. x/y are in INPUT_SPACE (0..1919, 0..1079) over the whole output. */
 void banner_wayland_send_pointer(int action, int x, int y) {
     if (g_input_pipe[1] < 0) return;
-    struct input_msg m = { 0, action, x, y };
+    struct input_msg m = { 0, action, x, y, 0 };
+    ssize_t n = write(g_input_pipe[1], &m, sizeof(m));
+    (void)n;
+}
+
+void banner_wayland_send_touch(int action, int pointer_id, int x, int y) {
+    if (g_input_pipe[1] < 0) return;
+    struct input_msg m = { 7, action, pointer_id, x, y };
     ssize_t n = write(g_input_pipe[1], &m, sizeof(m));
     (void)n;
 }
@@ -3086,7 +3287,7 @@ void banner_wayland_send_pointer(int action, int x, int y) {
 /* Called from JNI. Queues a key event. evdev = Linux input keycode (e.g. KEY_A=30); state 1=down 0=up. */
 void banner_wayland_send_key(int evdev, int state) {
     if (g_input_pipe[1] < 0) return;
-    struct input_msg m = { 1, evdev, state, 0 };
+    struct input_msg m = { 1, evdev, state, 0, 0 };
     ssize_t n = write(g_input_pipe[1], &m, sizeof(m));
     (void)n;
 }
@@ -3094,7 +3295,7 @@ void banner_wayland_send_key(int evdev, int state) {
 /* Called from JNI on every screen refresh (Choreographer). */
 void banner_wayland_vsync(int64_t frame_time_ns) {
     if (g_input_pipe[1] < 0) return;
-    struct input_msg m = { 5, (int)(frame_time_ns >> 32), (int)(uint32_t)frame_time_ns, 0 };
+    struct input_msg m = { 5, (int)(frame_time_ns >> 32), (int)(uint32_t)frame_time_ns, 0, 0 };
     ssize_t n = write(g_input_pipe[1], &m, sizeof(m));
     (void)n;
 }
@@ -3104,7 +3305,7 @@ void banner_wayland_vsync(int64_t frame_time_ns) {
  * 6 = relative motion by a,b in 1/256 pixel (the app's Relative Mouse / captured-mouse path). */
 void banner_wayland_send_scene_input(int type, int a, int b) {
     if (g_input_pipe[1] < 0) return;
-    struct input_msg m = { type, a, b, 0 };
+    struct input_msg m = { type, a, b, 0, 0 };
     ssize_t n = write(g_input_pipe[1], &m, sizeof(m));
     (void)n;
 }

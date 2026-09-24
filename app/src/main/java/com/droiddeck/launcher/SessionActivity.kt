@@ -82,7 +82,6 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
     private var onScreenControls: OnScreenControls? = null
     private var keyboard: KeyboardHost? = null
     private var watching = true
-    private lateinit var gestures: PointerGestures
     private lateinit var touchpad: TouchpadGestures
     private var touchMode by mutableStateOf(SessionPrefs.TOUCH_AUTO)
     private var cursorPos by mutableStateOf(androidx.compose.ui.geometry.Offset(-100f, -100f))
@@ -158,7 +157,6 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
         padBridge = bridge
         onScreenControls = OnScreenControls(this, bridge).also { root.addView(it) }
         keyboard = KeyboardHost(this).also { root.addView(it) }
-        gestures = PointerGestures(PointerGestures.slop(this), pointerListener)
         touchpad = TouchpadGestures(PointerGestures.slop(this), pointerListener)
         // One arrow, ours: Android draws a system pointer for a mouse over any window, and the
         // session already draws the pointer it is sent.
@@ -749,7 +747,6 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
         return super.dispatchGenericMotionEvent(event)
     }
 
-    /** Convert a held left-stick or d-pad-hat direction into focus navigation. */
     private fun dispatchDrawerDirection(event: MotionEvent) {
         val hatX = event.getAxisValue(MotionEvent.AXIS_HAT_X)
         val hatY = event.getAxisValue(MotionEvent.AXIS_HAT_Y)
@@ -792,12 +789,6 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
         super.dispatchKeyEvent(event)
     }
 
-    /**
-     * The pointer. Touch goes through [PointerGestures] (tap, hold, drag, two-finger scroll); a
-     * mouse arrives with real buttons and a wheel and is forwarded as it is. Every position is
-     * mapped through the letterboxed rectangle into the compositor's fixed 1920x1080 pointer
-     * space, and the arrow is drawn where the app last sent the pointer.
-     */
     private val pointerListener = object : PointerGestures.Listener {
         override fun onMove(x: Float, y: Float) = movePointer(x, y)
         override fun onButton(button: Int, pressed: Boolean, x: Float, y: Float) {
@@ -966,7 +957,20 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
             }
             return touchpad.onTouch(event)
         }
-        return gestures.onTouch(event)
+        val rect = drawnRect() ?: return false
+        fun sendTouch(action: Int, index: Int) {
+            val x = ((event.getX(index) - rect.left) / rect.width()).coerceIn(0f, 1f)
+            val y = ((event.getY(index) - rect.top) / rect.height()).coerceIn(0f, 1f)
+            WaylandCompositor.nativeSendTouch(action, event.getPointerId(index), (x * 1919f).toInt(), (y * 1079f).toInt())
+        }
+        when (event.actionMasked) {
+            MotionEvent.ACTION_DOWN, MotionEvent.ACTION_POINTER_DOWN -> sendTouch(0, event.actionIndex)
+            MotionEvent.ACTION_MOVE -> for (index in 0 until event.pointerCount) sendTouch(1, index)
+            MotionEvent.ACTION_UP, MotionEvent.ACTION_POINTER_UP -> sendTouch(2, event.actionIndex)
+            MotionEvent.ACTION_CANCEL -> WaylandCompositor.nativeSendTouch(3, -1, 0, 0)
+            else -> return false
+        }
+        return true
     }
 
     /** A mouse: hover moves, buttons press, the wheel scrolls. Android sends buttons as touch
