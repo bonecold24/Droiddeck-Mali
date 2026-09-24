@@ -76,6 +76,9 @@ object Library {
         "melonds" to "melonds", "cemu" to "cemu", "ppsspp" to "emulators", "retroarch" to "emulators",
     )
 
+    /** The emulator's name for a program path from the rail ("ARMSX2"), or null. */
+    fun nameForProgram(program: String?): String? = specs.firstOrNull { it.program == program }?.name
+
     /** Desktop catalog package that supplies this emulator. */
     fun packageId(emulatorId: String): String? = installedIds[emulatorId]
 

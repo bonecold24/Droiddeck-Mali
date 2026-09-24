@@ -192,6 +192,8 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
                     )
                     SessionDrawer(drawerOpen, DrawerActions(
                         steam = SessionState.mode == SessionService.MODE_STEAM,
+                        title = if (SessionState.mode == SessionService.MODE_RUN)
+                            com.droiddeck.launcher.frontend.Library.nameForProgram(SessionState.program) ?: "Game" else null,
                         isHomeApp = isHomeApp,
                         androidApps = androidApps,
                         hudOn = hudOn,

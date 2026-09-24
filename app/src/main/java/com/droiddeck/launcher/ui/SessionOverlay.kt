@@ -142,6 +142,8 @@ fun SessionPausedOverlay(onResume: () -> Unit) {
 /** Everything the drawer shows and does. */
 class DrawerActions(
     val steam: Boolean,
+    /** The drawer's heading: the emulator for a program from the rail, else Steam or Desktop. */
+    val title: String? = null,
     val isHomeApp: Boolean,
     val androidApps: List<HomeApp.LaunchableApp>,
     val hudOn: Boolean,
@@ -215,7 +217,7 @@ fun SessionDrawer(open: Boolean, a: DrawerActions) {
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(start = 4.dp, bottom = 6.dp)) {
                     Box(modifier = Modifier.size(10.dp).clip(CircleShape).background(Brush.linearGradient(listOf(colors.primary, pal.primary2))))
                     Spacer(Modifier.width(10.dp))
-                    Text(if (a.steam) "Steam" else "Desktop", fontSize = 17.sp, fontWeight = FontWeight.Bold, color = colors.onBackground)
+                    Text(a.title ?: if (a.steam) "Steam" else "Desktop", fontSize = 17.sp, fontWeight = FontWeight.Bold, color = colors.onBackground)
                 }
                 if (a.onSteamMenu != null && a.onQam != null) {
                     val qamInteraction = remember { MutableInteractionSource() }
