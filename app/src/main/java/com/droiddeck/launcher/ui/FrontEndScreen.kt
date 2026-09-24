@@ -59,11 +59,13 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
@@ -98,6 +100,7 @@ import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
@@ -143,6 +146,7 @@ class FrontEndState(
     val packagePercent: Int = -1,
     val sessionRunning: Boolean = false,
     val backActionsInverted: Boolean = false,
+    val buildLabel: String = "local",
 )
 
 class FrontEndActions(
@@ -172,6 +176,7 @@ class FrontEndActions(
     val onHomeApp: () -> Unit = {},
     val onAndroidApp: (com.droiddeck.launcher.HomeApp.LaunchableApp) -> Unit = {},
     val onBackActionsInverted: (Boolean) -> Unit = {},
+    val onCheckLatestBuild: () -> Unit = {},
 )
 
 
@@ -466,6 +471,45 @@ private fun Pane(s: FrontEndState, selected: String, a: FrontEndActions, page: (
             },
             label = "pane",
         ) { key -> if (page != null && key == s.pageKey) page() else Content(s, key, a, Modifier.fillMaxSize(), onSelect) }
+        if (page == null && s.pageKey == null && selected == "steam") {
+            BuildStatus(
+                label = s.buildLabel,
+                onCheckLatest = a.onCheckLatestBuild,
+                modifier = Modifier.align(Alignment.TopEnd).padding(12.dp),
+            )
+        }
+    }
+}
+
+@Composable
+private fun BuildStatus(label: String, onCheckLatest: () -> Unit, modifier: Modifier = Modifier) {
+    val colors = MaterialTheme.colorScheme
+    val pal = LocalPalette.current
+    val interaction = remember { MutableInteractionSource() }
+    val hot = rememberHot(interaction)
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(9.dp),
+        modifier = modifier
+            .widthIn(max = 360.dp)
+            .clip(Shape12)
+            .background(colors.surface.copy(alpha = 0.96f))
+            .border(1.5.dp, if (hot) pal.signal else pal.line2, Shape12)
+            .hoverable(interaction)
+            .clickable(
+                interactionSource = interaction,
+                indication = LocalIndication.current,
+                role = Role.Button,
+                onClick = onCheckLatest,
+            )
+            .padding(horizontal = 11.dp, vertical = 7.dp),
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text("BUILD", fontSize = 9.sp, letterSpacing = 1.sp, color = colors.onSurfaceVariant)
+            Text(label, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = colors.onBackground, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
+        Icon(Icons.Filled.Refresh, contentDescription = null, tint = if (hot) pal.signal else colors.onSurfaceVariant, modifier = Modifier.size(15.dp))
+        Text("Check latest", fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = if (hot) pal.signal else colors.onBackground, maxLines = 1)
     }
 }
 

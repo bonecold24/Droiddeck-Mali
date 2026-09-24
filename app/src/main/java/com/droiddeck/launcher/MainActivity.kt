@@ -244,6 +244,7 @@ class MainActivity : ComponentActivity() {
                         packagePercent = pkgPercent,
                         sessionRunning = SessionState.running,
                         backActionsInverted = backActionsInverted,
+                        buildLabel = BuildConfig.BUILD_LABEL,
                     ),
                     FrontEndActions(
                         onPlay = { startSession(Intent(this, SessionActivity::class.java)) },
@@ -307,6 +308,9 @@ class MainActivity : ComponentActivity() {
                         onBackActionsInverted = { inverted ->
                             SessionPrefs.setBackActionsInverted(this, inverted)
                             backActionsInverted = inverted
+                        },
+                        onCheckLatestBuild = {
+                            startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/The412Banner/DroidDeck/actions/workflows/build.yml")))
                         },
                     ),
                     page = page,

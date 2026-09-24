@@ -1,4 +1,5 @@
 name: Build APK
+run-name: ${{ github.event_name == 'pull_request_target' && format('building pr {0} on {1}', github.event.pull_request.number, github.event.pull_request.head.sha) || format('building {0} on {1}', github.ref_name, github.sha) }}
 
 # One job: the two glibc preload libraries the session needs, then the app around them.
 # Nothing is built on a developer machine - this workflow is the only thing that produces an apk.
@@ -139,6 +140,22 @@ jobs:
           VERSION=$(sed -n 's/^Pkg.Revision *= *//p' "$NDK/source.properties")
           echo "NDK $VERSION at $NDK"
           echo "NDK_VERSION=$VERSION" >> "$GITHUB_ENV"
+
+      - name: Set the APK build label
+        id: build-label
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          BUILD_REF: ${{ github.ref_name }}
+          BUILD_SHA: ${{ github.sha }}
+        run: |
+          if [[ -n "$PR_NUMBER" ]]; then
+            label="pr${PR_NUMBER} at ${PR_HEAD_SHA:0:7}"
+          else
+            label="${BUILD_REF} at ${BUILD_SHA:0:7}"
+          fi
+          echo "label=$label" >> "$GITHUB_OUTPUT"
+          echo "Build: \`$label\`" >> "$GITHUB_STEP_SUMMARY"
 
       # ── The session's preloads ───────────────────────────────────────────────────────────
       # Both are glibc aarch64 libraries that live inside the rootfs, so they are cross-compiled
@@ -306,6 +323,8 @@ jobs:
       # The whole log is kept so a failed build's errors can be quoted back on a pull request.
       - name: Build
         id: build
+        env:
+          DROIDDECK_BUILD_LABEL: ${{ steps.build-label.outputs.label }}
         run: |
           set -o pipefail
           ./gradlew assembleRelease --console=plain -PndkVersion="$NDK_VERSION" 2>&1 | tee /tmp/build.log
