@@ -327,10 +327,12 @@ fun ModeSettingsPage(s: ModeSettings, a: ModeSettingsActions) {
                     AnchoredMenu(
                         open, onDismiss = { if (host.open == "storage") host.open = null }, title = "Second library",
                         note = "Games that stream assets from SD or shared storage may stutter. Keep them internal.",
-                    ) {
-                        for ((path, label) in options) MenuItem(label, checked = path == s.gameStorage) {
-                            a.onGameStorage(path, if (path.isEmpty() || path == "off") "" else label.substringBefore(" ·"))
-                            host.open = null
+                    ) { firstItemFocus ->
+                        options.forEachIndexed { index, (path, label) ->
+                            MenuItem(label, checked = path == s.gameStorage, focusRequester = if (index == 0) firstItemFocus else null) {
+                                a.onGameStorage(path, if (path.isEmpty() || path == "off") "" else label.substringBefore(" ·"))
+                                host.open = null
+                            }
                         }
                         MenuItem("Choose a folder…", checked = false) { host.open = null; a.onPickGameStorageFolder() }
                     }

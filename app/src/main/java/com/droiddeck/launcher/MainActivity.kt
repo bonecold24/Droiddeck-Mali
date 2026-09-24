@@ -4,12 +4,14 @@ import android.Manifest
 import android.content.Intent
 import java.io.File
 import android.content.pm.PackageManager
+import android.hardware.display.DisplayManager
 import android.net.Uri
 import android.provider.OpenableColumns
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
+import android.view.Display
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
@@ -55,6 +57,8 @@ import com.droiddeck.launcher.files.InAppFilePicker
 import com.droiddeck.launcher.session.SessionArtifacts
 import com.droiddeck.launcher.session.SessionState
 import com.droiddeck.launcher.session.GameStorage
+import com.droiddeck.launcher.input.SecondScreenDisplay
+import com.droiddeck.launcher.input.SecondScreenDisplays
 
 /**
  * The whole app outside a session: is the runtime installed, is there a newer one, frame
@@ -187,6 +191,13 @@ class MainActivity : ComponentActivity() {
     private var homeAppSelected by mutableStateOf(false)
     private var defaultHomeLabel by mutableStateOf<String?>(null)
     private var androidApps by mutableStateOf<List<HomeApp.LaunchableApp>>(emptyList())
+    private var secondScreenDisplays by mutableStateOf<List<SecondScreenDisplay>>(emptyList())
+    private lateinit var displayManager: DisplayManager
+    private val secondScreenDisplayListener = object : DisplayManager.DisplayListener {
+        override fun onDisplayAdded(displayId: Int) = refreshSecondScreenDisplays()
+        override fun onDisplayRemoved(displayId: Int) = refreshSecondScreenDisplays()
+        override fun onDisplayChanged(displayId: Int) = refreshSecondScreenDisplays()
+    }
 
     private val homeRoleRequest = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) {
         refreshHomeAppState()
@@ -212,6 +223,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        displayManager = getSystemService(DISPLAY_SERVICE) as DisplayManager
         theme = SessionPrefs.theme(this)
         backActionsInverted = SessionPrefs.backActionsInverted(this)
         setContent {
@@ -238,6 +250,7 @@ class MainActivity : ComponentActivity() {
                         isHomeApp = homeAppSelected,
                         defaultHomeLabel = defaultHomeLabel,
                         androidApps = androidApps,
+                        secondScreenDisplays = secondScreenDisplays,
                         packages = packageRows,
                         packageCatalogLoading = catalogLoading,
                         packageBusyId = pkgId,
@@ -245,6 +258,7 @@ class MainActivity : ComponentActivity() {
                         packagePercent = pkgPercent,
                         sessionRunning = SessionState.running,
                         backActionsInverted = backActionsInverted,
+                        buildLabel = BuildConfig.BUILD_LABEL,
                     ),
                     FrontEndActions(
                         onPlay = { startSession(Intent(this, SessionActivity::class.java)) },
@@ -304,10 +318,13 @@ class MainActivity : ComponentActivity() {
                         onPageBack = { settingsMode = null; showPerformance = false; showProtons = false },
                         onTheme = { id -> SessionPrefs.setTheme(this, id); theme = id },
                         onHomeApp = { manageHomeApp() },
-                        onAndroidApp = { app -> launchAndroidApp(app) },
+                        onAndroidApp = { app, displayId -> launchAndroidApp(app, displayId) },
                         onBackActionsInverted = { inverted ->
                             SessionPrefs.setBackActionsInverted(this, inverted)
                             backActionsInverted = inverted
+                        },
+                        onCheckLatestBuild = {
+                            startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/The412Banner/DroidDeck/actions/workflows/build.yml")))
                         },
                     ),
                     page = page,
@@ -363,6 +380,7 @@ class MainActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         refreshHomeAppState()
+        refreshSecondScreenDisplays()
         refresh()
         // Added games' art (a store lookup for what the folders lack) starts here, not only when
         // the cog opens.
@@ -371,17 +389,35 @@ class MainActivity : ComponentActivity() {
         if (!busy) Thread({ checkCatalog() }, "catalog").start()
     }
 
+    override fun onStart() {
+        super.onStart()
+        displayManager.registerDisplayListener(secondScreenDisplayListener, ui)
+        refreshSecondScreenDisplays()
+    }
+
+    override fun onStop() {
+        displayManager.unregisterDisplayListener(secondScreenDisplayListener)
+        super.onStop()
+    }
+
     private fun refreshHomeAppState() {
         homeAppSelected = HomeApp.isDefault(this)
         defaultHomeLabel = HomeApp.defaultLabel(this)
         androidApps = if (homeAppSelected) HomeApp.launchableApps(this) else emptyList()
     }
 
-    private fun launchAndroidApp(app: HomeApp.LaunchableApp) {
+    private fun refreshSecondScreenDisplays() {
+        if (!::displayManager.isInitialized) return
+        secondScreenDisplays = SecondScreenDisplays.available(displayManager)
+    }
+
+    private fun launchAndroidApp(app: HomeApp.LaunchableApp, displayId: Int?) {
         try {
-            HomeApp.launch(this, app)
+            HomeApp.launch(this, app, displayId)
         } catch (_: Exception) {
-            android.widget.Toast.makeText(this, "Could not open ${app.label}", android.widget.Toast.LENGTH_SHORT).show()
+            val target = if (displayId == null || displayId == Display.DEFAULT_DISPLAY) "the primary screen"
+                else secondScreenDisplays.firstOrNull { it.id == displayId }?.label ?: "display $displayId"
+            android.widget.Toast.makeText(this, "Could not open ${app.label} on $target", android.widget.Toast.LENGTH_SHORT).show()
         }
     }
 
