@@ -47,6 +47,7 @@ import com.droiddeck.launcher.ui.CreditsDialog
 import com.droiddeck.launcher.ui.FrontEndScreen
 import com.droiddeck.launcher.ui.FrontEndState
 import com.droiddeck.launcher.ui.FrontEndActions
+import com.droiddeck.launcher.frontend.CoverArt
 import com.droiddeck.launcher.frontend.Library
 import com.droiddeck.launcher.ui.DroidDeckTheme
 import com.droiddeck.launcher.ui.RomsDialog
@@ -885,6 +886,12 @@ class MainActivity : ComponentActivity() {
             } else emptyList()
             val emus = Library.emulators(this) { id -> DesktopCatalog.installed(this, id) != null }
             ui.post { steamGames = games; emulatorList = emus }
+            // Box art for the games that have none, fetched after the list is up; the list is
+            // rebuilt once if any was found.
+            if (!OfflineMode.enabled(this) && CoverArt.fetchMissing(this, emus.flatMap { it.games })) {
+                val refreshed = Library.emulators(this) { id -> DesktopCatalog.installed(this, id) != null }
+                ui.post { emulatorList = refreshed }
+            }
         }, "library").start()
     }
 

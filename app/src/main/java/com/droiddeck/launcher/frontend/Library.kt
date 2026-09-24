@@ -104,7 +104,9 @@ object Library {
                     // A PS3 disc dump is a folder with PS3_GAME in it; RPCS3 boots the folder.
                     if (spec.id == "rpcs3" && File(dir, "PS3_GAME").isDirectory) {
                         val rel = dir.relativeTo(romsRoot).path
-                        games.add(Rom(dir.name, dir, "/root/ROMs/$rel", spec.id))
+                        games.add(Rom(dir.name, dir, "/root/ROMs/$rel", spec.id,
+                            // The dump carries its own art, as an installed package does.
+                            art = File(dir, "PS3_GAME/ICON0.PNG").takeIf { it.isFile }))
                         continue
                     }
                     dir.listFiles()?.sortedBy { it.name.lowercase() }?.forEach { f ->
@@ -118,7 +120,9 @@ object Library {
                 }
             }
             if (spec.id == "rpcs3") games.addAll(rpcs3Installed(context))
-            Emulator(spec.id, spec.name, spec.system, spec.program, installedPackage(installedIds.getValue(spec.id)), games)
+            // A cover found for the game before (CoverArt) where it has no art of its own.
+            val withArt = games.map { g -> if (g.art != null) g else CoverArt.cached(context, g)?.let { Rom(g.name, g.hostPath, g.guestPath, g.emulatorId, it) } ?: g }
+            Emulator(spec.id, spec.name, spec.system, spec.program, installedPackage(installedIds.getValue(spec.id)), withArt)
         }
     }
 
