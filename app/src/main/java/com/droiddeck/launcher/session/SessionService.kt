@@ -280,7 +280,12 @@ class SessionService : Service() {
         // An imported glibc Turnip for this mode, when the user chose one: the session script checks
         // the manifest and its library from inside and points the loader at it with VK_DRIVER_FILES,
         // so the runtime's own driver above stays untouched and is what a bad import falls back to.
-        val linuxDriverId = SessionPrefs.linuxDriver(this, SessionPrefs.prefMode(SessionState.mode))
+        // A program from the rail is one of the desktop's emulators, so it draws with the desktop's
+        // Linux driver, not the Steam session's: the driver's shader cache is keyed on the driver
+        // build, and with two drivers every emulator compiled its shaders twice - once per way of
+        // starting it (RPCS3's 6650 interpreter variants on each first boot).
+        val driverMode = if (SessionState.mode == MODE_RUN) MODE_DESKTOP else SessionPrefs.prefMode(SessionState.mode)
+        val linuxDriverId = SessionPrefs.linuxDriver(this, driverMode)
         LinuxVulkanDriver.resolveIcdPath(this, linuxDriverId)
             ?.let { guest.add(LinuxVulkanDriver.ENV + "=" + it) }
         // Turnip's own debug switches, for the runtime's driver and everything on it. The file in

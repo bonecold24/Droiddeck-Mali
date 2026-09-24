@@ -10,14 +10,14 @@ HOME = os.environ.get("HOME", "/root")
 CONFIG = os.environ.get("XDG_CONFIG_HOME", os.path.join(HOME, ".config"))
 
 
-def seed(path, text, what):
+def seed(path, text, what, done="Player 1 on the controller"):
     if os.path.exists(path):
         return False
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path + ".tmp", "w", encoding="utf-8") as f:
         f.write(text)
     os.replace(path + ".tmp", path)
-    print(f"bannerlator-pad-defaults: {what}: Player 1 on the controller ({path})")
+    print(f"bannerlator-pad-defaults: {what}: {done} ({path})")
     return True
 
 
@@ -68,6 +68,37 @@ RPCS3_PLAYER1 = """Player 1 Input:
 
 def rpcs3():
     seed(os.path.join(CONFIG, "rpcs3/input_configs/global/Default.yml"), RPCS3_PLAYER1, "RPCS3")
+    rpcs3_shader_mode()
+
+
+# RPCS3's default shader mode (Async Recompiler with Shader Interpreter) builds 6650 interpreter
+# pipelines at the start of every boot, minutes on an Adreno. The async recompiler compiles only
+# what a game draws, in the background, once. A new install starts with it (a config.yml that
+# holds only this is merged over RPCS3's defaults); an existing one still on the default is moved
+# once, and a marker keeps any later choice the user makes in RPCS3's own settings.
+RPCS3_INTERPRETER = "Async Recompiler with Shader Interpreter"
+RPCS3_RECOMPILER = "Async Recompiler (multi-threaded)"  # the GUI says "Async Shader Recompiler"; this is the value (system_config_types.cpp)
+
+
+def rpcs3_shader_mode():
+    d = os.path.join(CONFIG, "rpcs3")
+    marker = os.path.join(d, ".droiddeck-shader-mode")
+    if os.path.exists(marker):
+        return
+    cfg = os.path.join(d, "config.yml")
+    if not os.path.isfile(cfg):
+        if seed(cfg, f"Video:\n  Shader Mode: {RPCS3_RECOMPILER}\n", "RPCS3", f"shader mode {RPCS3_RECOMPILER}"):
+            open(marker, "w").close()
+        return
+    with open(cfg, encoding="utf-8", errors="replace") as f:
+        text = f.read()
+    if f"Shader Mode: {RPCS3_INTERPRETER}" in text:
+        text = text.replace(f"Shader Mode: {RPCS3_INTERPRETER}", f"Shader Mode: {RPCS3_RECOMPILER}", 1)
+        with open(cfg + ".tmp", "w", encoding="utf-8") as f:
+            f.write(text)
+        os.replace(cfg + ".tmp", cfg)
+        print(f"bannerlator-pad-defaults: RPCS3: shader mode {RPCS3_RECOMPILER} ({cfg})")
+    open(marker, "w").close()
 
 
 # ---- ini helpers (DuckStation and PCSX2 share one ini dialect, keys may repeat) -------------
