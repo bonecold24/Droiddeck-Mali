@@ -81,9 +81,14 @@ rm -f "$out.idsig"
 # (Listed first, then searched: grep -q stops reading early, which fails a pipe under pipefail.)
 listing=$(unzip -l "$out")
 grep -qE 'META-INF/.*\.(SF|RSA)$' <<<"$listing" || die "$variant: no JAR signature (old installers)"
+# Android 9+ must see our key and only our key. apksigner labels signers "Signer #1" or, in newer
+# build-tools, "Signer (minSdkVersion=28, ...)"; the digests are what count.
 certs=$("$BUILD_TOOLS/apksigner" verify --min-sdk-version 28 --print-certs "$out")
-v3=$(sed -n 's/^Signer #1 certificate SHA-256 digest: //p' <<<"$certs")
-[ "$v3" = "$expected" ] || die "$variant: Android 9+ sees signer $v3, not DroidDeck's key $expected"
+v3=$(sed -n 's/^Signer.* certificate SHA-256 digest: //p' <<<"$certs" | sort -u)
+if [ "$v3" != "$expected" ]; then
+  echo "$certs" >&2
+  die "$variant: Android 9+ sees signer(s) [$(tr '\n' ' ' <<<"$v3")], not only DroidDeck's key $expected"
+fi
 lineage=$("$BUILD_TOOLS/apksigner" lineage --in "$out" --print-certs)
 grep -q "Signer #1 in lineage certificate SHA-256 digest: $TESTKEY_SHA256" <<<"$lineage" \
   || die "$variant: the lineage does not start at the testkey - old installs could not update"
