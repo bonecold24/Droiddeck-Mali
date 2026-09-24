@@ -1,5 +1,6 @@
 package com.droiddeck.launcher.ui
 
+import android.view.Display
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -179,7 +180,7 @@ class DrawerActions(
     val onFexPreset: (String) -> Unit,
     val onSecondScreenMode: (SecondScreenMode) -> Unit,
     val onSecondScreenDisplay: (Int) -> Unit,
-    val onLaunchAndroidApp: (HomeApp.LaunchableApp) -> Unit,
+    val onLaunchAndroidApp: (HomeApp.LaunchableApp, Int?) -> Unit,
     val onBackground: () -> Unit,
     val onStop: () -> Unit,
     val onClose: () -> Unit,
@@ -192,6 +193,7 @@ fun SessionDrawer(open: Boolean, a: DrawerActions) {
     val pal = LocalPalette.current
     val host = rememberMenuHost()
     var androidAppsExpanded by rememberSaveable { mutableStateOf(false) }
+    var appToChooseDisplay by remember { mutableStateOf<HomeApp.LaunchableApp?>(null) }
     val veil by animateFloatAsState(if (open) 1f else 0f, Motion.tw(260), label = "veil")
     // A controller starts on the drawer's first control, highlighted, as on the app's main screen:
     // the STEAM button, or in a desktop session the first setting.
@@ -305,7 +307,11 @@ fun SessionDrawer(open: Boolean, a: DrawerActions) {
                                             )
                                         }
                                     },
-                                ) { a.onLaunchAndroidApp(app) }
+                                ) {
+                                    host.open = null
+                                    if (a.secondScreenDisplays.isEmpty()) a.onLaunchAndroidApp(app, null)
+                                    else appToChooseDisplay = app
+                                }
                             }
                         }
                     }
@@ -398,6 +404,24 @@ fun SessionDrawer(open: Boolean, a: DrawerActions) {
                 Spacer(Modifier.height(12.dp))
             }
         }
+    }
+
+    appToChooseDisplay?.let { app ->
+        val secondaryDisplay = a.secondScreenDisplays.firstOrNull { it.id == a.selectedSecondScreenDisplay }
+            ?: a.secondScreenDisplays.firstOrNull()
+        ChooseAppDisplayDialog(
+            app = app,
+            secondaryDisplay = secondaryDisplay,
+            onPrimary = {
+                appToChooseDisplay = null
+                a.onLaunchAndroidApp(app, Display.DEFAULT_DISPLAY)
+            },
+            onSecondary = {
+                appToChooseDisplay = null
+                secondaryDisplay?.let { a.onLaunchAndroidApp(app, it.id) }
+            },
+            onDismiss = { appToChooseDisplay = null },
+        )
     }
 }
 

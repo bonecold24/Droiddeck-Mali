@@ -1,5 +1,6 @@
 package com.droiddeck.launcher
 
+import android.app.ActivityOptions
 import android.app.role.RoleManager
 import android.graphics.Bitmap
 import android.content.ComponentName
@@ -73,11 +74,19 @@ object HomeApp {
         return apps.sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it.label })
     }
 
-    fun launch(context: Context, app: LaunchableApp) {
+    fun launch(context: Context, app: LaunchableApp, displayId: Int? = null) {
         val intent = Intent(Intent.ACTION_MAIN)
             .addCategory(Intent.CATEGORY_LAUNCHER)
             .setComponent(ComponentName(app.packageName, app.className))
-        context.startActivity(intent)
+        if (displayId == null) {
+            context.startActivity(intent)
+            return
+        }
+        // Keep the target app's task separate from DroidDeck. Without this, Android can put the
+        // app on top of the caller's task and move the entire task to the chosen display.
+        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        val options = ActivityOptions.makeBasic().setLaunchDisplayId(displayId)
+        context.startActivity(intent, options.toBundle())
     }
 
     fun isActiveSteamSession(): Boolean =
