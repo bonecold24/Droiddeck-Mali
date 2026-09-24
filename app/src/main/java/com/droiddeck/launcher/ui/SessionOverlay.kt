@@ -161,6 +161,8 @@ class DrawerActions(
     val touchAuto: String,
     val shapeMode: String,
     val fexPreset: String,
+    /** Steam only: games stretched to the screen's size, changed live (null = not Steam). */
+    val fillScreen: Boolean? = null,
     val secondScreenMode: SecondScreenMode,
     val secondScreenDisplays: List<SecondScreenDisplay>,
     val selectedSecondScreenDisplay: Int,
@@ -177,6 +179,7 @@ class DrawerActions(
     val onTouch: (String) -> Unit,
     val onShape: (String) -> Unit,
     val onFexPreset: (String) -> Unit,
+    val onFillScreen: (Boolean) -> Unit = {},
     val onSecondScreenMode: (SecondScreenMode) -> Unit,
     val onSecondScreenDisplay: (Int) -> Unit,
     val onLaunchAndroidApp: (HomeApp.LaunchableApp) -> Unit,
@@ -316,6 +319,10 @@ fun SessionDrawer(open: Boolean, a: DrawerActions) {
                         host, "hud", "Performance HUD", null, a.hudOn,
                         chipModifier = if (steamButtons) Modifier else Modifier.focusRequester(firstFocus)
                             .onFocusChanged { firstControlFocused = it.isFocused }, onChange = a.onHud,
+                    )
+                    if (a.fillScreen != null) ToggleRow(
+                        host, "fill", "Stretch games to fill the screen",
+                        "Off for a game that shows up small in a corner (Quake 3).", a.fillScreen, onChange = a.onFillScreen,
                     )
                     val fgOpen = host.open == "fg"
                     val fgLabel = when (a.frameGenEngine) {

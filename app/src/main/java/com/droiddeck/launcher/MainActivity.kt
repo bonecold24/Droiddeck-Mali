@@ -105,6 +105,7 @@ class MainActivity : ComponentActivity() {
     private var phantomWarning by mutableStateOf<String?>(null)
     private var directAudio by mutableStateOf(false)
     private var clientDirectAudio by mutableStateOf(false)
+    private var forceFullscreen by mutableStateOf(true)
     private var mic by mutableStateOf(false)
     private var linuxRows by mutableStateOf<List<DriverRow>>(emptyList())
     /** The latest Banners-Turnip release as each driver menu offers it (see [refreshReleaseRows]). */
@@ -526,6 +527,7 @@ class MainActivity : ComponentActivity() {
                 backActionsInverted = backActionsInverted,
                 directAudio = if (mode == SessionService.MODE_STEAM) directAudio else null,
                 clientDirectAudio = clientDirectAudio,
+                forceFullscreen = if (mode == SessionService.MODE_STEAM) forceFullscreen else null,
                 mic = if (mode == SessionService.MODE_STEAM) mic else null,
                 renderer = if (mode == SessionService.MODE_DESKTOP) renderer else null,
                 gameStorage = if (mode == SessionService.MODE_STEAM) gameStorage else null,
@@ -561,6 +563,7 @@ class MainActivity : ComponentActivity() {
                 },
                 onDirectAudio = { on -> SessionPrefs.setDirectAudio(this, on); directAudio = on },
                 onClientDirectAudio = { on -> SessionPrefs.setClientDirectAudio(this, on); clientDirectAudio = on },
+                onForceFullscreen = { on -> SessionPrefs.setForceFullscreen(this, on); forceFullscreen = on },
                 onMic = { on ->
                     SessionPrefs.setMicEnabled(this, on)
                     mic = on
@@ -657,6 +660,7 @@ class MainActivity : ComponentActivity() {
         backActionsInverted = SessionPrefs.backActionsInverted(this)
         directAudio = SessionPrefs.directAudio(this)
         clientDirectAudio = SessionPrefs.clientDirectAudio(this)
+        forceFullscreen = SessionPrefs.forceFullscreen(this)
         mic = SessionPrefs.micEnabled(this)
         renderer = SessionPrefs.desktopRenderer(this)
         gameStorage = SessionPrefs.gameStorage(this)
