@@ -170,6 +170,9 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
         SessionState.programArgs = intent.getStringArrayExtra(SessionService.EXTRA_PROGRAM_ARGS)?.toList().orEmpty()
         SessionState.steamUi = intent.getStringExtra(SessionService.EXTRA_STEAM_UI)
         SessionState.steamUrl = intent.getStringExtra(SessionService.EXTRA_STEAM_URL)
+        if (intent.action == SessionService.ACTION_AGENT_START) {
+            SessionEvents.record("agent.start_requested", mapOf("mode" to SessionState.mode))
+        }
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         // Game-tier power policy for the whole session: a sustained clock floor, the panel's
         // fastest mode, and the OS told it is in gameplay. Logged so a slow device says why.
@@ -1192,6 +1195,15 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
 
     override fun onNewIntent(intent: android.content.Intent) {
         super.onNewIntent(intent)
+        if (intent.action == SessionService.ACTION_AGENT_START) {
+            if (SessionState.running || SessionState.phase !in setOf(SessionPhase.IDLE, SessionPhase.FAILED)) {
+                Log.w(TAG, "ignoring agent start while session phase is ${SessionState.phase}")
+                return
+            }
+            setIntent(intent)
+            recreate()
+            return
+        }
         setIntent(intent)
         if (intent.action == SessionService.ACTION_HOME_GUIDE) {
             handleHomeGuideIntent(intent)

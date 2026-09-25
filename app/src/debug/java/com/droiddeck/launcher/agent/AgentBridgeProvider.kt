@@ -4,16 +4,13 @@ import android.Manifest
 import android.content.ContentProvider
 import android.content.ContentValues
 import android.content.Context
-import android.content.Intent
 import android.content.pm.PackageManager
 import android.database.Cursor
 import android.net.Uri
 import android.os.Binder
 import android.os.Bundle
 import android.os.Process
-import android.util.Base64
 import com.droiddeck.launcher.BuildConfig
-import com.droiddeck.launcher.SessionActivity
 import com.droiddeck.launcher.runtime.LinuxRuntime
 import com.droiddeck.launcher.runtime.LinuxRuntimeInstaller
 import com.droiddeck.launcher.session.SessionArtifacts
@@ -23,7 +20,6 @@ import com.droiddeck.launcher.session.SessionPaths
 import com.droiddeck.launcher.session.SessionService
 import com.droiddeck.launcher.session.SessionState
 import org.json.JSONArray
-import org.json.JSONException
 import org.json.JSONObject
 import java.io.File
 import java.util.concurrent.CountDownLatch
@@ -31,8 +27,6 @@ import java.util.concurrent.TimeUnit
 
 /** A shell-only control surface, installed only by debug builds. */
 class AgentBridgeProvider : ContentProvider() {
-    private val recoveryComplete = CountDownLatch(1)
-
     override fun onCreate(): Boolean {
         val appContext = context?.applicationContext ?: return false
         Thread({
@@ -56,7 +50,7 @@ class AgentBridgeProvider : ContentProvider() {
         val response = try {
             when (method) {
                 "state" -> state(context).put("ok", true)
-                "start" -> start(context, arg.orEmpty(), extras)
+                "start" -> error("USE_DROIDDECKCTL", "Start sessions with tools/droiddeckctl so Android launches a visible Activity")
                 "stop" -> stop(context)
                 "resume" -> resume(context)
                 else -> error("UNKNOWN_COMMAND", "Unknown agent command '$method'")
@@ -112,72 +106,6 @@ class AgentBridgeProvider : ContentProvider() {
             ?.maxWithOrNull(compareBy<File> { it.lastModified() }.thenBy { it.name })
     }
 
-    private fun start(context: Context, requested: String, extras: Bundle?): JSONObject {
-        if (SessionState.running || SessionState.phase !in setOf(SessionPhase.IDLE, SessionPhase.FAILED)) {
-            return error("SESSION_ACTIVE", "A session is already starting or running")
-        }
-        val request = request(extras)
-        val mode = request?.optString("mode")?.takeIf { it.isNotBlank() } ?: requested
-        val intent = Intent(context, SessionActivity::class.java)
-            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
-        val sessionMode: String
-
-        when (mode) {
-            "steam" -> {
-                sessionMode = SessionService.MODE_STEAM
-                intent.putExtra(SessionService.EXTRA_MODE, sessionMode)
-            }
-            "desktop", SessionService.MODE_DESKTOP -> {
-                sessionMode = SessionService.MODE_DESKTOP
-                intent.putExtra(SessionService.EXTRA_MODE, sessionMode)
-            }
-            "run" -> {
-                sessionMode = SessionService.MODE_RUN
-                val program = request?.optString("program")?.takeIf { it.isNotBlank() }
-                    ?: return error("PROGRAM_REQUIRED", "Run mode requires a program path")
-                val args = request?.optJSONArray("programArgs") ?: JSONArray()
-                val programArgs = Array(args.length()) { index ->
-                    args.optString(index)
-                }
-                intent.putExtra(SessionService.EXTRA_MODE, sessionMode)
-                    .putExtra(SessionService.EXTRA_PROGRAM, program)
-                    .putExtra(SessionService.EXTRA_PROGRAM_ARGS, programArgs)
-            }
-            else -> return error("INVALID_MODE", "Mode must be steam, desktop, or run")
-        }
-
-        request?.optString("steamUi")?.takeIf { it == "desktop" }?.let {
-            intent.putExtra(SessionService.EXTRA_STEAM_UI, it)
-        }
-        request?.optString("steamUrl")?.takeIf { it.startsWith("steam://") }?.let {
-            intent.putExtra(SessionService.EXTRA_STEAM_URL, it)
-        }
-
-        awaitRecovery()
-        return try {
-            SessionEvents.begin(context, sessionMode)
-            SessionState.program = intent.getStringExtra(SessionService.EXTRA_PROGRAM)
-            SessionState.programArgs = intent.getStringArrayExtra(SessionService.EXTRA_PROGRAM_ARGS)?.toList().orEmpty()
-            SessionState.steamUi = intent.getStringExtra(SessionService.EXTRA_STEAM_UI)
-            SessionState.steamUrl = intent.getStringExtra(SessionService.EXTRA_STEAM_URL)
-            SessionEvents.record("agent.start_requested", mapOf("mode" to sessionMode))
-            context.startActivity(intent)
-            JSONObject().put("ok", true).put("command", "start").put("mode", mode)
-        } catch (e: Exception) {
-            val message = e.message ?: e.javaClass.simpleName
-            SessionEvents.fail("ACTIVITY_START_FAILED", message)
-            val dir = SessionPaths.take()
-            if (dir != null) {
-                val appContext = context.applicationContext
-                Thread({
-                    SessionArtifacts.collect(appContext, dir, "activity start failed")
-                    SessionPaths.release(appContext, dir)
-                }, "agent-start-failure-artifacts").start()
-            }
-            error("ACTIVITY_START_FAILED", message)
-        }
-    }
-
     private fun stop(context: Context): JSONObject {
         if (SessionState.running) {
             SessionService.stop(context)
@@ -202,29 +130,6 @@ class AgentBridgeProvider : ContentProvider() {
         return JSONObject().put("ok", true).put("command", "resume")
     }
 
-    private fun request(extras: Bundle?): JSONObject? {
-        val encoded = extras?.getString(REQUEST_EXTRA) ?: return null
-        return try {
-            val decoded = Base64.decode(encoded, Base64.DEFAULT)
-            JSONObject(String(decoded, Charsets.UTF_8))
-        } catch (e: JSONException) {
-            throw IllegalArgumentException("Invalid request JSON", e)
-        } catch (e: IllegalArgumentException) {
-            throw IllegalArgumentException("Invalid base64 request", e)
-        }
-    }
-
-    private fun awaitRecovery() {
-        try {
-            if (!recoveryComplete.await(90, TimeUnit.SECONDS)) {
-                throw IllegalStateException("Session artifact recovery did not finish")
-            }
-        } catch (e: InterruptedException) {
-            Thread.currentThread().interrupt()
-            throw IllegalStateException("Interrupted while recovering session artifacts", e)
-        }
-    }
-
     private fun error(code: String, message: String) = JSONObject()
         .put("ok", false)
         .put("error", JSONObject().put("code", code).put("message", message))
@@ -237,7 +142,19 @@ class AgentBridgeProvider : ContentProvider() {
 
     companion object {
         const val RESULT_JSON = "json"
-        const val REQUEST_EXTRA = "request"
+        private val recoveryComplete = CountDownLatch(1)
+
+        fun awaitRecovery() {
+            try {
+                if (!recoveryComplete.await(90, TimeUnit.SECONDS)) {
+                    throw IllegalStateException("Session artifact recovery did not finish")
+                }
+            } catch (e: InterruptedException) {
+                Thread.currentThread().interrupt()
+                throw IllegalStateException("Interrupted while recovering session artifacts", e)
+            }
+        }
+
         private val STARTING_PHASES = setOf(
             SessionPhase.PREPARING,
             SessionPhase.INSTALLING_RUNTIME,

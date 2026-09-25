@@ -28,6 +28,9 @@ class ControlError(RuntimeError):
 def adb_path(configured: str | None) -> str:
     if configured:
         return configured
+    environment_adb = os.environ.get("ADB")
+    if environment_adb:
+        return environment_adb
     found = shutil.which("adb")
     if found:
         return found
@@ -81,6 +84,45 @@ def provider_call(adb: str, serial: str, method: str, arg: str | None = None, re
     if result.returncode != 0 and response.get("ok") is not False:
         raise ControlError(output.strip() or "ADB content call failed", "ADB_FAILED")
     return response
+
+
+def start_agent_activity(adb: str, serial: str, request: dict) -> None:
+    encoded = base64.b64encode(json.dumps(request, separators=(",", ":")).encode()).decode()
+    result = run_adb(
+        adb,
+        serial,
+        "shell",
+        "am",
+        "start",
+        "-W",
+        "-n",
+        "com.droiddeck.launcher/.agent.AgentStartActivity",
+        "--es",
+        "request",
+        encoded,
+        timeout=90,
+    )
+    output = (result.stdout + result.stderr).decode(errors="replace")
+    if result.returncode != 0 or "status: ok" not in output.lower():
+        raise ControlError(output.strip() or "The agent start Activity did not launch", "ACTIVITY_START_FAILED")
+
+
+def confirm_start(adb: str, serial: str, request: dict, previous: dict) -> dict:
+    deadline = time.monotonic() + 95
+    expected_mode = {"steam": "steam", "desktop": "lxqt", "run": "run"}[request["mode"]]
+    while True:
+        state = get_state(adb, serial)
+        session = state.get("session", {})
+        phase = session.get("phase")
+        if session.get("mode") == expected_mode and session.get("id") != previous.get("id"):
+            return state
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise ControlError(
+                f"The agent Activity launched but no new session appeared; phase is {phase}",
+                "ACTIVITY_START_FAILED",
+            )
+        time.sleep(min(0.25, remaining))
 
 
 def get_state(adb: str, serial: str) -> dict:
@@ -148,13 +190,18 @@ def execute(args: argparse.Namespace, adb: str, serial: str) -> dict:
                 if not args.url.startswith("steam://"):
                     raise ControlError("Steam URL must start with steam://", "INVALID_STEAM_URL")
                 request["steamUrl"] = args.url
-        response = provider_call(adb, serial, "start", args.mode, request)
-        if response.get("ok") is False:
-            error = response.get("error", {})
-            raise ControlError(error.get("message", "start failed"), error.get("code", "START_FAILED"))
+        start_agent_activity(adb, serial, request)
+        started = confirm_start(adb, serial, request, current["session"])
         if args.wait:
             return add_serial(wait_for_phase(adb, serial, "READY", args.timeout), serial)
-        return add_serial(response, serial)
+        session = started["session"]
+        return add_serial({
+            "ok": True,
+            "command": "start",
+            "mode": args.mode,
+            "sessionId": session.get("id"),
+            "phase": session.get("phase"),
+        }, serial)
 
     if args.command == "run":
         current = get_state(adb, serial)
@@ -162,11 +209,16 @@ def execute(args: argparse.Namespace, adb: str, serial: str) -> dict:
             raise ControlError("A session is already starting or running", "SESSION_ACTIVE")
         program_args = args.arguments[1:] if args.arguments[:1] == ["--"] else args.arguments
         request = {"mode": "run", "program": args.program, "programArgs": program_args}
-        response = provider_call(adb, serial, "start", "run", request)
-        if response.get("ok") is False:
-            error = response.get("error", {})
-            raise ControlError(error.get("message", "run failed"), error.get("code", "START_FAILED"))
-        return add_serial(response, serial)
+        start_agent_activity(adb, serial, request)
+        started = confirm_start(adb, serial, request, current["session"])
+        session = started["session"]
+        return add_serial({
+            "ok": True,
+            "command": "start",
+            "mode": "run",
+            "sessionId": session.get("id"),
+            "phase": session.get("phase"),
+        }, serial)
 
     if args.command == "wait":
         phases = {"ready": "READY", "idle": "IDLE", "failed": "FAILED"}

@@ -12,10 +12,6 @@ On Android 12+, if Steam exits without a log, turn off **Restrict child processe
 
 Run `tools/build_local.sh` with Docker, Java 17, the Android SDK/NDK, and `zstd` installed. It builds the ARM64 audio sinks from PulseAudio 13.0 and packages them into the APK at `app/build/outputs/apk/release/app-release.apk`. Set `DROIDDECK_PA13_SOURCE_DIR` to an existing PulseAudio 13.0 source directory to skip downloading it. To install the APK on an attached device, run `tools/deploy_local.sh`.
 
-## Agent control
-
-Debug APKs expose a shell-protected ADB bridge and `tools/droiddeckctl`. See [agent control](docs/agent-control.md) for setup and commands.
-
 ## Limits
 
 Compatibility and performance vary by device; hardware validation is limited. Desktop compositing uses software rendering. Firefox sandboxing is reduced under proot. See the session logs in `Download/DroidDeck/` when diagnosing problems.

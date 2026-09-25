@@ -1,6 +1,6 @@
 # Agent control
 
-The debug APK exposes a ContentProvider at `content://com.droiddeck.launcher.agent`. Android's shell-only `DUMP` permission protects it. The provider and its authority are absent from release APKs.
+The debug APK exposes a ContentProvider at `content://com.droiddeck.launcher.agent` and an Activity for starting sessions. Android's shell-only `DUMP` permission protects both. They are absent from release APKs.
 
 Build and install the debug APK:
 
@@ -9,13 +9,14 @@ Build and install the debug APK:
 adb install -r app/build/outputs/apk/debug/app-debug.apk
 ```
 
-The provider can also be called directly:
+The provider can also be called directly for state, stop, and resume:
 
 ```sh
 adb shell content call --uri content://com.droiddeck.launcher.agent --method state
-adb shell content call --uri content://com.droiddeck.launcher.agent --method start --arg steam
 adb shell content call --uri content://com.droiddeck.launcher.agent --method stop
 ```
+
+Start requests go through `tools/droiddeckctl`, which launches the protected debug Activity from the ADB shell. Calling the provider's `start` method directly returns an error because a background provider cannot reliably open the session screen.
 
 The host CLI resolves one authorized device using `ADB_SERIAL` or `ANDROID_SERIAL` when set. Otherwise it deduplicates transports that report the same device serial and asks for an explicit serial if multiple devices remain.
 
@@ -31,7 +32,7 @@ tools/droiddeckctl logs latest ./session-artifacts
 tools/droiddeckctl screenshot ./screen.png
 ```
 
-Every command writes JSON to stdout and reports its resolved ADB serial to stderr. Exit codes are 0 for success, 2 for invalid or rejected commands, 3 for ADB/device errors, 4 for session failures, 5 for timeouts, and 6 for artifact or file errors. Set `ADB` to select an adb executable or pass `--adb`; pass `--serial` before the command to select a device directly.
+Every command writes JSON to stdout and reports its resolved ADB serial to stderr. Exit codes are 0 for success, 2 for invalid or rejected commands, 3 for ADB/device errors, 4 for session failures, 5 for timeouts, and 6 for artifact or file errors. Set `ADB` to select an adb executable (or pass `--adb`); pass `--serial` before the command to select a device directly.
 
 `start` accepts `steam` or `desktop`. Steam starts in Big Picture by default; `--ui desktop` selects the client's desktop UI, and `--url steam://...` passes a client URL. Use `--wait` to wait for `READY` as part of `start`. `run` accepts a program path and optional guest arguments.
 
