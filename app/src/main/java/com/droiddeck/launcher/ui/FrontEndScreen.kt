@@ -136,6 +136,8 @@ import com.droiddeck.launcher.HomeApp
 import com.droiddeck.launcher.frontend.Library
 import com.droiddeck.launcher.gpu.FrameGen
 import com.droiddeck.launcher.input.SecondScreenDisplay
+import com.droiddeck.launcher.core.PhantomProcessLimit
+import com.droiddeck.launcher.core.PhantomProcessStatus
 import com.droiddeck.launcher.session.SessionPrefs
 import java.io.File
 import kotlin.math.roundToInt
@@ -176,6 +178,8 @@ class FrontEndState(
     val buildLabel: String = "local",
     val oscMode: String = SessionPrefs.OSC_AUTO,
     val controller: com.droiddeck.launcher.input.ControllerPrefs.Settings? = null,
+    val phantomProcessStatus: PhantomProcessStatus = PhantomProcessStatus.NOT_APPLICABLE,
+    val showPhantomGate: Boolean = false,
 )
 
 class FrontEndActions(
@@ -207,6 +211,10 @@ class FrontEndActions(
     val onAndroidApp: (HomeApp.LaunchableApp, Int?) -> Unit = { _, _ -> },
     val onBackActionsInverted: (Boolean) -> Unit = {},
     val onCheckLatestBuild: () -> Unit = {},
+    val onRefreshPhantomStatus: () -> Unit = {},
+    val onOpenDeveloperOptions: () -> Unit = {},
+    val onCopyPhantomCommand: () -> Unit = {},
+    val onDismissPhantomGate: () -> Unit = {},
     val controller: ControllerActions? = null,
 )
 
@@ -471,6 +479,25 @@ private fun FrontEndScreenBody(s: FrontEndState, a: FrontEndActions, page: (@Com
                     secondaryDisplay?.let { a.onAndroidApp(app, it.id) }
                 },
                 onDismiss = { appToChooseDisplay = null },
+            )
+        }
+        if (s.showPhantomGate && PhantomProcessLimit.blocksSteam(s.phantomProcessStatus)) {
+            androidx.compose.material3.AlertDialog(
+                onDismissRequest = a.onDismissPhantomGate,
+                title = { Text("Steam cannot start yet") },
+                text = {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text(PhantomProcessLimit.title(s.phantomProcessStatus))
+                        Text(PhantomProcessLimit.gateInstructions(s.phantomProcessStatus))
+                        Text(PhantomProcessLimit.ADB_COMMAND, style = MaterialTheme.typography.bodySmall)
+                    }
+                },
+                confirmButton = {
+                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        androidx.compose.material3.TextButton(onClick = a.onOpenDeveloperOptions) { Text("Developer options") }
+                        androidx.compose.material3.TextButton(onClick = a.onCopyPhantomCommand) { Text("Copy ADB") }
+                    }
+                },
             )
         }
     }
@@ -999,6 +1026,24 @@ private fun SetupPanel(s: FrontEndState, a: FrontEndActions) {
         Column(modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(bottom = 24.dp)) {
                 Rise(0) { Eyebrow("Setup") }
                 Rise(1) { Title("Setup") }
+                if (PhantomProcessLimit.blocksSteam(s.phantomProcessStatus)) {
+                    SettingsGroup("Android process limit") {
+                        Text(
+                            PhantomProcessLimit.title(s.phantomProcessStatus),
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.error,
+                        )
+                        Text(PhantomProcessLimit.instructions(s.phantomProcessStatus), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(PhantomProcessLimit.ADB_COMMAND, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            SecondaryButton("Developer options", onClick = a.onOpenDeveloperOptions)
+                            SecondaryButton("Check again", onClick = a.onRefreshPhantomStatus)
+                        }
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            SecondaryButton("Copy ADB command", onClick = a.onCopyPhantomCommand)
+                        }
+                    }
+                }
                 SettingsGroup("Launcher tools") {
                     ActionRow("Files", "Browse and manage files", "Open", a.onFiles)
                     ActionRow("Compatibility tools", "Install ARM64 Proton builds", "Manage", a.onProtons)

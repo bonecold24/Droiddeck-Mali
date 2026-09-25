@@ -2,6 +2,8 @@ package com.droiddeck.launcher
 
 import android.Manifest
 import android.content.Intent
+import android.content.ClipData
+import android.content.ClipboardManager
 import java.io.File
 import android.content.pm.PackageManager
 import android.hardware.display.DisplayManager
@@ -38,6 +40,8 @@ import com.droiddeck.launcher.session.SessionPrefs
 import com.droiddeck.launcher.ui.ProtonPage
 import com.droiddeck.launcher.ui.ProtonRow
 import com.droiddeck.launcher.core.CpuCores
+import com.droiddeck.launcher.core.PhantomProcessLimit
+import com.droiddeck.launcher.core.PhantomProcessStatus
 import com.droiddeck.launcher.ui.CoreRow
 import com.droiddeck.launcher.ui.PerformancePage
 import com.droiddeck.launcher.ui.ModeSettingsPage
@@ -112,6 +116,8 @@ class MainActivity : ComponentActivity() {
     private var noXalia by mutableStateOf(false)
     private var prootNoSeccomp by mutableStateOf(false)
     private var phantomWarning by mutableStateOf<String?>(null)
+    private var phantomProcessStatus by mutableStateOf(PhantomProcessStatus.NOT_APPLICABLE)
+    private var showPhantomGate by mutableStateOf(false)
     private var directAudio by mutableStateOf(false)
     private var clientDirectAudio by mutableStateOf(false)
     private var forceFullscreen by mutableStateOf(true)
@@ -230,6 +236,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         displayManager = getSystemService(DISPLAY_SERVICE) as DisplayManager
+        refreshPhantomStatus()
         theme = SessionPrefs.theme(this)
         backActionsInverted = SessionPrefs.backActionsInverted(this)
         setContent {
@@ -269,19 +276,21 @@ class MainActivity : ComponentActivity() {
                         buildLabel = BuildConfig.BUILD_LABEL,
                         oscMode = oscMode,
                         controller = controllerSettings,
+                        phantomProcessStatus = phantomProcessStatus,
+                        showPhantomGate = showPhantomGate,
                     ),
                     FrontEndActions(
-                        onPlay = { startSession(Intent(this, SessionActivity::class.java)) },
+                        onPlay = { startSession(Intent(this, SessionActivity::class.java), steamSession = true) },
                         // Steam's desktop client as a window on the desktop: under gamescope the
                         // client puts itself into Big Picture whatever it is started with.
                         onPlayDesktopUi = {
                             startSession(Intent(this, SessionActivity::class.java)
                                 .putExtra(SessionService.EXTRA_MODE, SessionService.MODE_DESKTOP)
-                                .putExtra(SessionService.EXTRA_STEAM_UI, "desktop"))
+                                .putExtra(SessionService.EXTRA_STEAM_UI, "desktop"), steamSession = true)
                         },
                         onSteamGame = { g ->
-                            startActivity(Intent(this, SessionActivity::class.java)
-                                .putExtra(SessionService.EXTRA_STEAM_URL, "steam://rungameid/${g.gameId}"))
+                            startSession(Intent(this, SessionActivity::class.java)
+                                .putExtra(SessionService.EXTRA_STEAM_URL, "steam://rungameid/${g.gameId}"), steamSession = true)
                         },
                         onDesktop = {
                             startSession(Intent(this, SessionActivity::class.java)
@@ -343,6 +352,15 @@ class MainActivity : ComponentActivity() {
                         onCheckLatestBuild = {
                             startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/The412Banner/DroidDeck/actions/workflows/build.yml")))
                         },
+                        onRefreshPhantomStatus = { refreshPhantomStatus() },
+                        onOpenDeveloperOptions = { openDeveloperOptions() },
+                        onCopyPhantomCommand = {
+                            (getSystemService(CLIPBOARD_SERVICE) as ClipboardManager).setPrimaryClip(
+                                ClipData.newPlainText("DroidDeck child-process setting", PhantomProcessLimit.ADB_COMMAND),
+                            )
+                            android.widget.Toast.makeText(this, "ADB command copied", android.widget.Toast.LENGTH_SHORT).show()
+                        },
+                        onDismissPhantomGate = { showPhantomGate = false },
                         controller = ControllerActions(
                             onOsc = { o -> SessionPrefs.setOscMode(this, o); oscMode = o },
                             onTint = { t -> ControllerPrefs.setTint(this, t); refreshController() },
@@ -411,6 +429,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
+        refreshPhantomStatus()
         oscMode = SessionPrefs.oscMode(this)
         refreshController()
         refreshHomeAppState()
@@ -949,17 +968,7 @@ class MainActivity : ComponentActivity() {
         zinkLazy = SessionPrefs.zinkLazy(this)
         noXalia = SessionPrefs.noXalia(this)
         prootNoSeccomp = SessionPrefs.prootNoSeccomp(this)
-        // Android 12 kills the children an app forks itself once there are more than a handful.
-        // A session is nothing but those, so where this is on the OS ends the session and no log
-        // of ours says why. We cannot change a secure setting from here - only say so.
-        phantomWarning = runCatching {
-            android.provider.Settings.Global.getString(contentResolver, "settings_enable_monitor_phantom_procs")
-        }.getOrNull().let { v ->
-            when (v?.lowercase()) {
-                "false", "0" -> null
-                else -> "Android 12 and later kill the extra processes an app starts for itself once there are more than a few, and a session is made of dozens: proot, gamescope, the client and its helpers, Wine. Where that is left on, the client dies with nothing in its log, because nothing in the session did it. Some phones have a \"restrict child processes\" switch in Developer options - turn it off. Otherwise, over adb:\n\n    adb shell settings put global settings_enable_monitor_phantom_procs false\n\nThis phone " + (if (v == null) "has not been set either way, so the ROM's default applies." else "currently reports it as on.")
-            }
-        }
+        refreshPhantomStatus()
     }
 
     private fun refreshProtons() {
@@ -1016,10 +1025,31 @@ class MainActivity : ComponentActivity() {
     }
 
     /** Starts a session; with no runtime on a non-Adreno, the same warning Setup gives comes first, before any download. */
-    private fun startSession(intent: Intent) {
+    private fun startSession(intent: Intent, steamSession: Boolean = false) {
+        refreshPhantomStatus()
+        if (steamSession && PhantomProcessLimit.blocksSteam(phantomProcessStatus)) {
+            showPhantomGate = true
+            return
+        }
         val warn = installed == null && !com.droiddeck.launcher.core.DeviceSupport.adreno()
         if (warn && available != null) showNonAdreno = available
         else startActivity(intent)
+    }
+
+    private fun refreshPhantomStatus() {
+        phantomProcessStatus = PhantomProcessLimit.read(contentResolver)
+        phantomWarning = if (PhantomProcessLimit.blocksSteam(phantomProcessStatus)) {
+            "${PhantomProcessLimit.title(phantomProcessStatus)}. ${PhantomProcessLimit.instructions(phantomProcessStatus)}\n\n${PhantomProcessLimit.ADB_COMMAND}"
+        } else null
+    }
+
+    private fun openDeveloperOptions() {
+        runCatching {
+            startActivity(Intent(android.provider.Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS))
+        }.onFailure {
+            startActivity(Intent(android.provider.Settings.ACTION_SETTINGS))
+            android.widget.Toast.makeText(this, "Open Developer options in Settings", android.widget.Toast.LENGTH_LONG).show()
+        }
     }
 
     private fun install(release: LinuxRuntimeInstaller.Release) {
