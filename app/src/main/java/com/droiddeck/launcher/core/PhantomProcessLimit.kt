@@ -52,9 +52,9 @@ object PhantomProcessLimit {
     }
 
     fun gateInstructions(status: PhantomProcessStatus): String = when (status) {
-        PhantomProcessStatus.ENABLED -> "Turn off “Restrict child processes” in Developer options. If it is not listed, connect this device to a computer with ADB and run the command below."
-        PhantomProcessStatus.UNSET -> "The ROM default may enforce this limit. Turn off “Restrict child processes” in Developer options. If it is not listed, connect this device to a computer with ADB and run the command below."
-        PhantomProcessStatus.UNREADABLE -> "DroidDeck could not check this setting. Turn off “Restrict child processes” in Developer options, or connect this device to a computer with ADB and run the command below."
+        PhantomProcessStatus.ENABLED -> "Turn off “Restrict child processes” in Developer options."
+        PhantomProcessStatus.UNSET -> "The ROM default may enforce this limit. Explicitly turn off “Restrict child processes” in Developer options."
+        PhantomProcessStatus.UNREADABLE -> "DroidDeck could not check this setting. Turn off “Restrict child processes” in Developer options."
         else -> instructions(status)
     }
 

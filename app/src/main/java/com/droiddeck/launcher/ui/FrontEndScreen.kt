@@ -361,6 +361,8 @@ private fun FrontEndScreenBody(s: FrontEndState, a: FrontEndActions, page: (@Com
     var appToChooseDisplay by remember { mutableStateOf<HomeApp.LaunchableApp?>(null) }
     val colors = MaterialTheme.colorScheme
     val ctx = LocalContext.current
+    val phantomGateVisible = s.showPhantomGate && PhantomProcessLimit.blocksSteam(s.phantomProcessStatus)
+    val processSettingsPageVisible = phantomGateVisible || showWirelessAdbFix || showDeveloperDisplayChoice
     val requestDeveloperOptions = {
         if (s.secondScreenDisplays.isEmpty()) a.onOpenDeveloperOptions(null)
         else showDeveloperDisplayChoice = true
@@ -370,18 +372,18 @@ private fun FrontEndScreenBody(s: FrontEndState, a: FrontEndActions, page: (@Com
         showWirelessAdbFix = true
     }
     LaunchedEffect(s.showPhantomGate, s.phantomProcessStatus) {
-        if (s.showPhantomGate && PhantomProcessLimit.blocksSteam(s.phantomProcessStatus)) {
+        if (phantomGateVisible) {
             while (true) {
                 kotlinx.coroutines.delay(2_000)
                 a.onRefreshPhantomStatus()
             }
         }
     }
-    BackHandler(enabled = s.pageKey != null && page != null) { a.onPageBack() }
+    BackHandler(enabled = !processSettingsPageVisible && s.pageKey != null && page != null) { a.onPageBack() }
     // Back (and B) from a game or an emulator steps out one level, as its "‹" link does, instead
     // of leaving the app: a game -> its emulator (or Steam), an emulator -> Desktop.
     BackHandler(
-        enabled = (s.pageKey == null || page == null) &&
+        enabled = !processSettingsPageVisible && (s.pageKey == null || page == null) &&
             (selected.startsWith("app:") || selected.startsWith("emu:") || selected.startsWith("rom:")),
     ) {
         selected = when {
@@ -412,7 +414,8 @@ private fun FrontEndScreenBody(s: FrontEndState, a: FrontEndActions, page: (@Com
         // Start controllers on the current page's main action; the rail is initially collapsed.
         val window = LocalWindowInfo.current
         val inputMode = LocalInputModeManager.current
-        LaunchedEffect(Unit) {
+        LaunchedEffect(processSettingsPageVisible) {
+            if (processSettingsPageVisible) return@LaunchedEffect
             snapshotFlow { window.isWindowFocused }.first { it }
             repeat(20) {
                 if (anyFocused) return@LaunchedEffect
@@ -426,16 +429,16 @@ private fun FrontEndScreenBody(s: FrontEndState, a: FrontEndActions, page: (@Com
         // the pad then had nothing to move from (a press landed back on the rail's first item). So
         // once the new page is in, a controller lands on its main button.
         val inputModeManager = LocalInputModeManager.current
-        LaunchedEffect(selected, s.pageKey, showWirelessAdbFix) {
-            if (showWirelessAdbFix) return@LaunchedEffect
+        LaunchedEffect(selected, s.pageKey, processSettingsPageVisible) {
+            if (processSettingsPageVisible) return@LaunchedEffect
             kotlinx.coroutines.delay(450)
             if (!anyFocused && inputModeManager.inputMode == InputMode.Keyboard) runCatching {
                 if (frontFocus.primaryAttached > 0) frontFocus.primary.requestFocus()
                 else frontFocus.menuToggle.requestFocus()
             }
         }
-        LaunchedEffect(navOpen, railSelection, showWirelessAdbFix) {
-            if (showWirelessAdbFix) return@LaunchedEffect
+        LaunchedEffect(navOpen, railSelection, processSettingsPageVisible) {
+            if (processSettingsPageVisible) return@LaunchedEffect
             if (navOpen) {
                 frontFocus.focusedRail = null
                 repeat(12) {
@@ -511,32 +514,19 @@ private fun FrontEndScreenBody(s: FrontEndState, a: FrontEndActions, page: (@Com
                 onDismiss = { appToChooseDisplay = null },
             )
         }
-        if (s.showPhantomGate && PhantomProcessLimit.blocksSteam(s.phantomProcessStatus)) {
-            androidx.compose.material3.AlertDialog(
-                onDismissRequest = a.onDismissPhantomGate,
-                title = { Text("Steam cannot start yet") },
-                text = {
-                    Column(
-                        modifier = Modifier.heightIn(max = 320.dp).verticalScroll(rememberScrollState()),
-                        verticalArrangement = Arrangement.spacedBy(8.dp),
-                    ) {
-                        Text(PhantomProcessLimit.title(s.phantomProcessStatus))
-                        Text(PhantomProcessLimit.gateInstructions(s.phantomProcessStatus))
-                        Text(PhantomProcessLimit.ADB_COMMAND, style = MaterialTheme.typography.bodySmall)
-                    }
-                },
-                confirmButton = {
-                    Column(horizontalAlignment = Alignment.End) {
-                        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                            androidx.compose.material3.TextButton(onClick = requestDeveloperOptions) { Text("Developer options") }
-                            androidx.compose.material3.TextButton(onClick = { requestWirelessAdbFix(false) }) { Text("Fix over Wi-Fi") }
-                        }
-                        androidx.compose.material3.TextButton(onClick = a.onCopyPhantomCommand) { Text("Copy ADB") }
-                    }
-                },
-            )
+        if (phantomGateVisible && !showWirelessAdbFix && !showDeveloperDisplayChoice) {
+            Box(Modifier.fillMaxSize().background(colors.background)) {
+                PhantomProcessGatePage(
+                    status = s.phantomProcessStatus,
+                    onDismiss = a.onDismissPhantomGate,
+                    onRefresh = a.onRefreshPhantomStatus,
+                    onOpenDeveloperOptions = requestDeveloperOptions,
+                    onFixOverWifi = { requestWirelessAdbFix(false) },
+                    onCopyCommand = a.onCopyPhantomCommand,
+                )
+            }
         }
-        if (showWirelessAdbFix) {
+        if (showWirelessAdbFix && !showDeveloperDisplayChoice) {
             Box(Modifier.fillMaxSize().background(colors.background)) {
                 WirelessAdbFixPage(
                     onBack = { showWirelessAdbFix = false },
@@ -550,37 +540,29 @@ private fun FrontEndScreenBody(s: FrontEndState, a: FrontEndActions, page: (@Com
             }
         }
         if (showDeveloperDisplayChoice) {
-            androidx.compose.material3.AlertDialog(
-                onDismissRequest = { showDeveloperDisplayChoice = false },
-                title = { Text("Open Developer options") },
-                text = { Text("Choose where Settings should open.") },
-                confirmButton = {
-                    Column(horizontalAlignment = Alignment.End) {
-                        androidx.compose.material3.TextButton(onClick = {
-                            showDeveloperDisplayChoice = false
-                            a.onOpenDeveloperOptions(null)
-                        }) { Text("Main screen") }
-                        s.secondScreenDisplays.forEach { display ->
-                            androidx.compose.material3.TextButton(onClick = {
-                                showDeveloperDisplayChoice = false
-                                a.onOpenDeveloperOptions(display.id)
-                            }) {
-                                Text(if (s.secondScreenDisplays.size == 1) "Bottom screen" else display.label)
-                            }
-                        }
-                    }
-                },
-                dismissButton = {
-                    androidx.compose.material3.TextButton(onClick = { showDeveloperDisplayChoice = false }) { Text("Cancel") }
-                },
-            )
+            Box(Modifier.fillMaxSize().background(colors.background)) {
+                DeveloperDisplayChoicePage(
+                    displays = s.secondScreenDisplays.map { display ->
+                        display.id to if (s.secondScreenDisplays.size == 1) "Bottom screen" else display.label
+                    },
+                    onMainScreen = {
+                        showDeveloperDisplayChoice = false
+                        a.onOpenDeveloperOptions(null)
+                    },
+                    onSecondaryScreen = { displayId ->
+                        showDeveloperDisplayChoice = false
+                        a.onOpenDeveloperOptions(displayId)
+                    },
+                    onBack = { showDeveloperDisplayChoice = false },
+                )
+            }
         }
     }
-    BackHandler(enabled = navOpen) { navOpen = false }
+    BackHandler(enabled = navOpen && !processSettingsPageVisible) { navOpen = false }
     val hasBackTarget = (s.pageKey != null && page != null) ||
         ((s.pageKey == null || page == null) &&
             (selected.startsWith("app:") || selected.startsWith("emu:") || selected.startsWith("rom:")))
-    BackHandler(enabled = !navOpen && !hasBackTarget) { navOpen = true }
+    BackHandler(enabled = !processSettingsPageVisible && !navOpen && !hasBackTarget) { navOpen = true }
 }
 
 
