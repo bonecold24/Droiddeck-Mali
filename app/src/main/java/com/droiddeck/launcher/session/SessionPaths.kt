@@ -51,7 +51,6 @@ object SessionPaths {
         return made
     }
 
-    /** The current session's folder, or null between sessions. */
     fun current(): File? = dir
 
     /**
@@ -66,7 +65,6 @@ object SessionPaths {
         return ended
     }
 
-    /** A file in the current session's folder, or null between sessions. */
     fun file(name: String): File? = dir?.let { File(it, name) }
 
     /** Let the next session claim a new folder. Called when a session ends. */
