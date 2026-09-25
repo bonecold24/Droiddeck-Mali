@@ -59,30 +59,6 @@ jobs:
             echo "::error::PR #$PR_NUMBER must be open, ready for review, and target main"; exit 1;
           }
 
-          # Branch protection requires an approval. Repeat the check here so manually dispatching
-          # this workflow cannot bypass it. The review must approve this exact head commit, and the
-          # reviewer must be a repository owner, member, or collaborator with review access.
-          decision=$(gh pr view "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --json reviewDecision --jq '.reviewDecision')
-          [[ "$decision" == APPROVED ]] || {
-            echo "::error::PR #$PR_NUMBER does not currently have its required approving review"; exit 1;
-          }
-          reviews=$(gh api --paginate --slurp "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER/reviews?per_page=100" | jq 'add')
-          maintainer_approvals=$(jq --arg sha "$head_sha" '
-            [ .[]
-              | select(.commit_id == $sha)
-              | select(.author_association == "OWNER" or .author_association == "MEMBER" or .author_association == "COLLABORATOR")
-              | { login: .user.login, state: .state, submitted_at: .submitted_at }
-            ]
-            | sort_by(.submitted_at)
-            | group_by(.login)
-            | map(last)
-            | map(select(.state == "APPROVED"))
-            | length
-          ' <<<"$reviews")
-          (( maintainer_approvals > 0 )) || {
-            echo "::error::No maintainer has approved the current PR commit $head_sha"; exit 1;
-          }
-
           # Find the newest PR CI run for this commit. A newer failed or in-progress run prevents
           # signing even if an older attempt for the same commit passed.
           runs=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow build.yml \
@@ -138,6 +114,37 @@ jobs:
              $(jq -r '.head.sha' <<<"$latest_pr") == "$head_sha" && \
              $(jq -r '.base.sha' <<<"$latest_pr") == "$base_sha" ]] || {
             echo "::error::The PR changed while authorization was being checked; wait for fresh approval and CI"; exit 1;
+          }
+
+          # Check approval after the build and artifact checks, as close as possible to signing.
+          # The reviewer must approve this exact head commit and have write or admin access.
+          decision=$(gh pr view "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --json reviewDecision --jq '.reviewDecision')
+          [[ "$decision" == APPROVED ]] || {
+            echo "::error::PR #$PR_NUMBER does not currently have its required approving review"; exit 1;
+          }
+          reviews=$(gh api --paginate --slurp "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER/reviews?per_page=100" | jq 'add')
+          approved_reviewers=$(jq -r --arg sha "$head_sha" '
+            [ .[]
+              | select(.commit_id == $sha)
+              | { login: .user.login, state: .state, submitted_at: .submitted_at }
+            ]
+            | sort_by(.submitted_at)
+            | group_by(.login)
+            | map(last)
+            | map(select(.state == "APPROVED"))
+            | .[].login
+          ' <<<"$reviews")
+          maintainer_approved=false
+          while IFS= read -r reviewer; do
+            [[ "$reviewer" =~ ^[A-Za-z0-9-]{1,39}$ ]] || continue
+            if permission=$(gh api "repos/$GITHUB_REPOSITORY/collaborators/$reviewer/permission" --jq '.permission' 2>/dev/null); then
+              case "$permission" in
+                write|admin) maintainer_approved=true ;;
+              esac
+            fi
+          done <<<"$approved_reviewers"
+          [[ "$maintainer_approved" == true ]] || {
+            echo "::error::No reviewer with write or admin access has approved the current PR commit $head_sha"; exit 1;
           }
 
           short_sha=${head_sha:0:7}
