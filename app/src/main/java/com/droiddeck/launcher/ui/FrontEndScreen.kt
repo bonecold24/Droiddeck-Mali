@@ -354,6 +354,14 @@ private fun FrontEndScreenBody(s: FrontEndState, a: FrontEndActions, page: (@Com
     var appToChooseDisplay by remember { mutableStateOf<HomeApp.LaunchableApp?>(null) }
     val colors = MaterialTheme.colorScheme
     val ctx = LocalContext.current
+    LaunchedEffect(s.showPhantomGate, s.phantomProcessStatus) {
+        if (s.showPhantomGate && PhantomProcessLimit.blocksSteam(s.phantomProcessStatus)) {
+            while (true) {
+                kotlinx.coroutines.delay(2_000)
+                a.onRefreshPhantomStatus()
+            }
+        }
+    }
     BackHandler(enabled = s.pageKey != null && page != null) { a.onPageBack() }
     // Back (and B) from a game or an emulator steps out one level, as its "‹" link does, instead
     // of leaving the app: a game -> its emulator (or Steam), an emulator -> Desktop.
