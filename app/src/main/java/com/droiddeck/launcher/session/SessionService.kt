@@ -601,7 +601,9 @@ class SessionService : Service() {
         components.add(networkLink)
         components.forEach { it.start() }
 
-        val line = command.joinToString(" ") { it.replace(" ", "\\ ") }
+        val line = command.joinToString(" ") {
+            it.replace("\\", "\\\\").replace(" ", "\\ ")
+        }
         watchLaunchRequests(sessionRoot)
         // One session replacing another (the desktop's Steam launchers): the old proot is killed
         // by the teardown a second after the new one has started, and its exit used to arrive
