@@ -57,6 +57,7 @@ import com.droiddeck.launcher.wayland.HdrSupport
 import com.droiddeck.launcher.session.SessionService
 import com.droiddeck.launcher.session.SessionState
 import com.droiddeck.launcher.ui.CursorOverlay
+import androidx.compose.ui.graphics.asImageBitmap
 import com.droiddeck.launcher.ui.DrawerActions
 import com.droiddeck.launcher.ui.HudText
 import com.droiddeck.launcher.ui.LoadingOverlay
@@ -96,6 +97,17 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
     private val cursorHide = Runnable { cursorVisible = false }
     /** When the pad or the on-screen controls were last used (uptimeMillis); see [showCursor]. */
     private var lastPadInputMs = 0L
+    // The program's own pointer, from wl_pointer.set_cursor (see syncClientCursor): its image in
+    // session pixels, hotspot, and whether it asked for no pointer at all.
+    private val cursorBuf = IntArray(WaylandCompositor.CURSOR_BUF_INTS)
+    private var cursorSerial = 0
+    private var clientHidesCursor = false
+    private var cursorImage by mutableStateOf<androidx.compose.ui.graphics.ImageBitmap?>(null)
+    private var cursorHotX by mutableStateOf(0)
+    private var cursorHotY by mutableStateOf(0)
+    private var cursorImageScale by mutableStateOf(1f)
+    /** labwc changes the shape a moment after the move that reached an edge: look again then. */
+    private val cursorResync = Runnable { if (syncClientCursor() && clientHidesCursor) cursorVisible = false }
     private val uiHandler = Handler(Looper.getMainLooper())
     private var pendingBackAction: Runnable? = null
     private var drawerDirectionKey = KeyEvent.KEYCODE_UNKNOWN
@@ -240,7 +252,8 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
             isFocusableInTouchMode = true
             setContent {
                 DroidDeckTheme {
-                    CursorOverlay(cursorPos, cursorVisible, resources.displayMetrics.density)
+                    CursorOverlay(cursorPos, cursorVisible, resources.displayMetrics.density,
+                        cursorImage, cursorHotX, cursorHotY, cursorImageScale)
                     if (hud.text.isNotEmpty()) HudText(hud.text)
                     if (loading.visible) LoadingOverlay(loading.step, loading.percent, loading.elapsed, loading.hint, loading.ended)
                     // Opening the drawer takes the controller away from the game: release its pad.
@@ -1000,10 +1013,50 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
      */
     private fun showCursor(x: Float, y: Float) {
         cursorPos = androidx.compose.ui.geometry.Offset(x, y)
+        syncClientCursor()
+        uiHandler.removeCallbacks(cursorResync)
+        uiHandler.postDelayed(cursorResync, 60)
+        // A program that asked for no pointer (a mouse-look game) wins over everything below.
+        if (clientHidesCursor) { cursorVisible = false; return }
         if (android.os.SystemClock.uptimeMillis() - lastPadInputMs < CURSOR_PAD_HOLD_MS) return
         cursorVisible = true
         uiHandler.removeCallbacks(cursorHide)
         if (SessionState.mode == SessionService.MODE_STEAM && SessionState.steamUi != "desktop") uiHandler.postDelayed(cursorHide, 2500)
+    }
+
+    /**
+     * Pulls the program's pointer (wl_pointer.set_cursor) if it changed: labwc's resize arrows at a
+     * window's edges and corners, a text field's I-beam, or a request for no pointer. Serial 0 = no
+     * program has set one yet, and the built-in arrow stays. Returns true when something changed.
+     */
+    private fun syncClientCursor(): Boolean {
+        if (!CompositorHost.isStarted) return false
+        val n = WaylandCompositor.nativeCursorSnapshot(cursorBuf)
+        if (n < 6) return false
+        val serial = cursorBuf[0]
+        if (serial == 0 || serial == cursorSerial) return false
+        cursorSerial = serial
+        clientHidesCursor = cursorBuf[1] != 0
+        if (clientHidesCursor) return true
+        val w = cursorBuf[2]
+        val h = cursorBuf[3]
+        if (w <= 0 || h <= 0 || n < 6 + w * h) return false
+        val bitmap = try {
+            android.graphics.Bitmap.createBitmap(cursorBuf, 6, w, w, h, android.graphics.Bitmap.Config.ARGB_8888)
+        } catch (e: Exception) {
+            Log.w(TAG, "cursor bitmap failed", e)
+            return false
+        }
+        cursorImage = bitmap.asImageBitmap()
+        cursorHotX = cursorBuf[4]
+        cursorHotY = cursorBuf[5]
+        // Session pixels -> screen pixels, as the session's picture is scaled (movePointer).
+        val width = surfaceView.width.takeIf { it > 0 }
+        val height = surfaceView.height.takeIf { it > 0 }
+        val out = SessionState.outputSize
+        if (width != null && height != null)
+            cursorImageScale = minOf(width / out.first.toFloat(), height / out.second.toFloat())
+        return true
     }
 
     private fun refreshSecondScreenDisplays() {
