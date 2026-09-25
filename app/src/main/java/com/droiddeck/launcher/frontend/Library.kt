@@ -129,7 +129,7 @@ object Library {
     /**
      * Whether a program from the rail runs at the panel's own resolution rather than the session's
      * 720p default. melonDS draws two 256x192 screens on the CPU: the panel's size costs it
-     * nothing, and 720p scaled up to the panel blurs the sharp pixels its Hybrid layout is set
+     * nothing, and 720p scaled up to the panel blurs the sharp pixels its screen layout is set
      * up for (bannerlator-pad-defaults).
      */
     fun drawsAtPanel(program: String?): Boolean = specs.any { it.program == program && it.atPanel }

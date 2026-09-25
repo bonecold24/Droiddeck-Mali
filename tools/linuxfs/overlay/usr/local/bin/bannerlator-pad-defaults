@@ -743,17 +743,20 @@ Right = 65794
 HK_FullscreenToggle = {MELONDS_GUIDE}
 """
 
-# The screen a handheld's wide panel suits best: Hybrid (the top screen large, both screens small
-# beside it - ScreenLayout.h screenLayout_Hybrid = 3), sharp pixels (no filtering, no integer
-# steps that leave the panel half used). Keys as melonDS writes them (Window.cpp windowCfg).
+# The screen a handheld's wide panel suits best: the top screen as big as the panel's height allows
+# with the bottom screen alone beside it, centred (ScreenLayout.h: Horizontal = 2, EmphTop = 1;
+# melonDS's Hybrid shows the big screen a second time, small, above the bottom one; nobody needs
+# it twice). Sharp pixels: no filtering, and no integer steps that leave the panel half used. Keys as
+# melonDS writes them (Window.cpp windowCfg).
 MELONDS_WINDOW = """[Instance0.Window0]
-ScreenLayout = 3
-ScreenSizing = 0
+ScreenLayout = 2
+ScreenSizing = 1
 IntegerScaling = false
 ScreenFilter = false
 """
-# melonDS's own defaults for those, which an existing install is moved off once.
-MELONDS_WINDOW_DEFAULTS = {"ScreenLayout": "0", "ScreenFilter": "true"}
+# melonDS's own defaults for those, which an existing install is moved off once. Hybrid (3) was
+# this preset's first layout, and moves on too.
+MELONDS_WINDOW_DEFAULTS = {"ScreenLayout": ("0", "3"), "ScreenSizing": ("0",), "ScreenFilter": ("true",)}
 
 
 def toml_get(lines, table, key):
@@ -859,10 +862,10 @@ def melonds_bios(lines):
 
 def melonds():
     path = os.path.join(CONFIG, "melonDS/melonDS.toml")
-    marker = os.path.join(os.path.dirname(path), ".droiddeck-display")
+    marker = os.path.join(os.path.dirname(path), ".droiddeck-display-2")
     if not os.path.isfile(path):
         seed(path, "[Instance0]\nJoystickID = 0\n\n" + MELONDS_JOY + "\n" + MELONDS_WINDOW, "melonDS",
-             "Player 1 on the controller, Hybrid screens")
+             "Player 1 on the controller, big top screen")
         open(marker, "w").close()
     with open(path, encoding="utf-8", errors="replace") as f:
         text = f.read()
@@ -887,14 +890,14 @@ def melonds():
     elif joy.get("HK_FullscreenToggle", -1) == -1 and MELONDS_GUIDE not in joy.values():
         toml_set(lines, "Instance0.Joystick", "HK_FullscreenToggle", str(MELONDS_GUIDE))
         done.append("guide button toggles full screen")
-    # Once, for a melonDS set up before this: the Hybrid screens, where it is still on its own
+    # Once, for a melonDS set up before this: the big top screen, where it is still on its own
     # defaults. The marker keeps whatever the user picks in melonDS's View menu afterwards.
     if not os.path.exists(marker):
         for l in MELONDS_WINDOW.splitlines()[1:]:
             k, v = (x.strip() for x in l.split("=", 1))
-            if toml_get(lines, "Instance0.Window0", k) in (None, MELONDS_WINDOW_DEFAULTS.get(k)):
+            if toml_get(lines, "Instance0.Window0", k) in (None,) + MELONDS_WINDOW_DEFAULTS.get(k, ()):
                 toml_set(lines, "Instance0.Window0", k, v)
-        done.append("Hybrid screens")
+        done.append("big top screen")
         open(marker, "w").close()
     bios = melonds_bios(lines)
     if bios:
