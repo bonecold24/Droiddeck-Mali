@@ -40,6 +40,7 @@ object ControllerPrefs {
         val opacity: Int,
         val size: Int,
         val stickClick: Boolean,
+        val adaptiveSticks: Boolean,
         val customLayout: Boolean,
         val mapping: Map<String, String>,
     )
@@ -53,6 +54,7 @@ object ControllerPrefs {
             opacity = p.getInt("opacity", 100).takeIf { it in opacities } ?: 100,
             size = p.getInt("size", 100).takeIf { it in sizes } ?: 100,
             stickClick = p.getBoolean("stickClick", true),
+            adaptiveSticks = p.getBoolean("adaptiveSticks", true),
             customLayout = p.all.keys.any { it.startsWith("layout.") },
             mapping = mappable.associate { (id, _) -> id to target(context, id) },
         )
@@ -84,6 +86,10 @@ object ControllerPrefs {
 
     fun setStickClick(context: Context, on: Boolean) {
         prefs(context).edit().putBoolean("stickClick", on).apply()
+    }
+
+    fun setAdaptiveSticks(context: Context, on: Boolean) {
+        prefs(context).edit().putBoolean("adaptiveSticks", on).apply()
     }
 
     fun layout(context: Context, width: Int, height: Int): Map<String, Pair<Float, Float>> {

@@ -8,20 +8,24 @@ import android.view.WindowManager
 import android.widget.FrameLayout
 import androidx.activity.ComponentActivity
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.ui.Alignment
+import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.droiddeck.launcher.ui.DroidDeckTheme
-import com.droiddeck.launcher.ui.SecondaryButton
+import com.droiddeck.launcher.ui.LocalPalette
 
 class ControllerEditorActivity : ComponentActivity() {
     private lateinit var controls: OnScreenControls
@@ -36,27 +40,39 @@ class ControllerEditorActivity : ComponentActivity() {
         val bar = ComposeView(this).apply {
             setContent {
                 DroidDeckTheme {
-                    Column(
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        modifier = Modifier.padding(top = 16.dp)
-                            .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.92f), RoundedCornerShape(14.dp))
-                            .padding(horizontal = 16.dp, vertical = 12.dp),
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        modifier = Modifier
+                            .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.9f), RoundedCornerShape(50))
+                            .padding(start = 14.dp, end = 5.dp, top = 5.dp, bottom = 5.dp),
                     ) {
-                        Text("Drag a control to move it", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 10.dp)) {
-                            SecondaryButton("Reset to default") { controls.resetLayout() }
-                            SecondaryButton("Cancel") { finish() }
-                            SecondaryButton("Save") {
-                                controls.saveLayout()
-                                finish()
-                            }
+                        Text("Drag to move", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(end = 4.dp))
+                        EditorButton("Reset", false) { controls.resetLayout() }
+                        EditorButton("Cancel", false) { finish() }
+                        EditorButton("Save", true) {
+                            controls.saveLayout()
+                            finish()
                         }
                     }
                 }
             }
         }
-        root.addView(bar, FrameLayout.LayoutParams(FrameLayout.LayoutParams.WRAP_CONTENT, FrameLayout.LayoutParams.WRAP_CONTENT, Gravity.TOP or Gravity.CENTER_HORIZONTAL))
+        root.addView(bar, FrameLayout.LayoutParams(FrameLayout.LayoutParams.WRAP_CONTENT, FrameLayout.LayoutParams.WRAP_CONTENT, Gravity.CENTER))
         setContentView(root)
+    }
+
+    @Composable
+    private fun EditorButton(label: String, primary: Boolean, onClick: () -> Unit) {
+        val pal = LocalPalette.current
+        Text(
+            label, fontSize = 12.sp, fontWeight = FontWeight.SemiBold,
+            color = if (primary) Color.White else MaterialTheme.colorScheme.onBackground,
+            modifier = Modifier.clip(RoundedCornerShape(50))
+                .background(if (primary) pal.signal else Color.White.copy(alpha = 0.06f))
+                .clickable(onClick = onClick)
+                .padding(horizontal = 12.dp, vertical = 6.dp),
+        )
     }
 
     override fun onWindowFocusChanged(hasFocus: Boolean) {

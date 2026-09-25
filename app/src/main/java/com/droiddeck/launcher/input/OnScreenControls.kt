@@ -7,10 +7,12 @@ import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.Path
 import android.graphics.Rect
+import android.graphics.RectF
 import android.os.Build
 import android.view.MotionEvent
 import android.view.View
 import android.view.WindowInsets
+import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.sin
@@ -34,20 +36,26 @@ class OnScreenControls(context: Context, private val pad: PadBridge?, private va
         var pressedBy = -1
         var kx = 0f
         var ky = 0f
+        var ax = 0f
+        var ay = 0f
         var dirty = false
         var clicked = false
         var lastUp = 0L
+        val wide = id in shoulderIds
+        val halfW get() = if (wide) radius * SHOULDER_WIDTH else radius
+        val halfH get() = if (wide) radius * SHOULDER_HEIGHT else radius
 
         fun contains(x: Float, y: Float, r: Float): Boolean {
             val dx = x - cx
             val dy = y - cy
+            if (wide) return abs(dx) <= halfW + r * 0.25f && abs(dy) <= halfH + r * 0.25f
             val hit = r * 1.25f
             return dx * dx + dy * dy <= hit * hit
         }
 
         fun drag(x: Float, y: Float) {
-            var dx = x - cx
-            var dy = y - cy
+            var dx = x - ax
+            var dy = y - ay
             val d = sqrt(dx * dx + dy * dy)
             if (d > radius) { dx = dx / d * radius; dy = dy / d * radius }
             kx = dx; ky = dy; dirty = true
@@ -84,6 +92,7 @@ class OnScreenControls(context: Context, private val pad: PadBridge?, private va
     private var grabX = 0f
     private var grabY = 0f
     private var ignoreSaved = false
+    private var fit = 1f
 
     private var idleFill = 0
     private var heldFill = 0
@@ -96,6 +105,7 @@ class OnScreenControls(context: Context, private val pad: PadBridge?, private va
     private val fill = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
     private val stroke = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE }
     private val arrow = Path()
+    private val box = RectF()
     private val text = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         textAlign = Paint.Align.CENTER
         typeface = android.graphics.Typeface.DEFAULT_BOLD
@@ -107,7 +117,15 @@ class OnScreenControls(context: Context, private val pad: PadBridge?, private va
 
     private fun dp(value: Float) = value * resources.displayMetrics.density
 
-    private fun scaled(value: Float) = dp(value) * settings.size / 100f
+    private fun scaled(value: Float) = dp(value) * settings.size / 100f * fit
+
+    private fun fitScale(): Float {
+        val metrics = resources.displayMetrics
+        val heightMm = (height - safe.top - safe.bottom) / pxPerMm(metrics.ydpi)
+        val faceMm = dp(60f) / pxPerMm(metrics.xdpi)
+        val floor = (MIN_FACE_MM / faceMm).coerceAtMost(1f)
+        return (heightMm / FULL_SIZE_HEIGHT_MM).coerceIn(floor, 1f)
+    }
 
     fun reload() {
         releaseAll()
@@ -163,6 +181,7 @@ class OnScreenControls(context: Context, private val pad: PadBridge?, private va
 
     private fun relayout() {
         if (width <= 0 || height <= 0) return
+        fit = if (buttonsOnly && !editing) 1f else fitScale()
         for (control in controls) control.radius = if (buttonsOnly && !editing && (control.id == "guide" || control.id == "qam")) dp(30f) else scaled(control.radiusDp)
         if (buttonsOnly && !editing) {
             val inset = dp(44f)
@@ -192,34 +211,56 @@ class OnScreenControls(context: Context, private val pad: PadBridge?, private va
         val inboard = (0.17f * usableW / mmX).coerceIn(24f, 40f) * mmX
         val lift = (0.285f * usableH / mmY).coerceIn(22f, 45f) * mmY
         val gap = dp(12f)
-        val restY = h - safe.bottom - lift
+        val floor = BOTTOM_MARGIN_MM * mmY
+        val drop = max(drop("dpad", "ls", gap), drop("rs", "face", gap))
+        val restY = min(h - safe.bottom - lift, h - safe.bottom - floor - drop)
         put("ls", safe.left + inboard, restY)
         put("face", w - safe.right - inboard, restY)
-        besideBelow("dpad", "ls", 1f, gap)
-        besideBelow("rs", "face", -1f, gap)
-        val shoulderY = min(centre("ls").second - extent("ls"), centre("face").second - extent("face")) - gap - extent("lb")
+        besideBelow("dpad", "ls", 1f, gap, floor)
+        besideBelow("rs", "face", -1f, gap, floor)
+        val phone = usableH / mmY < PHONE_MAX_HEIGHT_MM
+        val shoulderY = if (phone) safe.top + floor + halfH("lb")
+            else min(centre("ls").second - extent("ls"), centre("face").second - extent("face")) - gap - halfH("lb")
         shoulders("ls", "lb", "lt", 1f, gap, shoulderY)
         shoulders("face", "rb", "rt", -1f, gap, shoulderY)
-        val bottom = h - safe.bottom - dp(8f) - extent("guide")
+        val bottom = h - safe.bottom - floor - extent("guide")
         val spread = extent("guide") + gap / 2f
         put("guide", w / 2f - spread, bottom)
         put("qam", w / 2f + spread, bottom)
         val inner = max(centre("dpad").first + extent("dpad"), w - centre("rs").first + extent("rs")) + gap + extent("select")
         put("select", inner, restY)
         put("start", w - inner, restY)
+        if (phone) {
+            val top = max(centre("lb").first + extent("lb"), w - centre("rb").first + extent("rb")) + gap * 2.5f + extent("select")
+            put("select", top, shoulderY)
+            put("start", w - top, shoulderY)
+        }
         if (crowded("select", gap) || crowded("start", gap)) {
             above("select", "dpad", gap)
             val (sx, sy) = centre("select")
             put("start", w - sx, sy)
             if (crowded("start", gap)) above("start", "rs", gap)
         }
+        if (crowded("guide", gap, gap, "qam") || crowded("qam", gap, gap, "guide")) {
+            val row = centre("select").second
+            put("guide", w / 2f - spread, row)
+            put("qam", w / 2f + spread, row)
+            if (crowded("guide", gap, gap, "qam") || crowded("qam", gap, gap, "guide")) {
+                val top = safe.top + dp(8f) + extent("guide")
+                put("guide", w / 2f - spread, top)
+                put("qam", w / 2f + spread, top)
+            }
+        }
     }
 
-    private fun besideBelow(group: String, anchor: String, inward: Float, gap: Float) {
+    private fun drop(group: String, anchor: String, gap: Float): Float =
+        (extent(anchor) + extent(group) + gap) * sin(Math.toRadians(DROP_DEGREES)).toFloat() + extent(group)
+
+    private fun besideBelow(group: String, anchor: String, inward: Float, gap: Float, margin: Float) {
         val (ax, ay) = centre(anchor)
         val reach = extent(anchor) + extent(group) + gap
-        val floor = height - safe.bottom - dp(8f) - extent(group)
-        val dy = min(reach * sin(Math.toRadians(35.0)).toFloat(), floor - ay)
+        val floor = height - safe.bottom - margin - extent(group)
+        val dy = min(reach * sin(Math.toRadians(DROP_DEGREES)).toFloat(), floor - ay)
         val dx = sqrt(max(0f, reach * reach - dy * dy))
         put(group, ax + inward * dx, ay + dy)
     }
@@ -236,14 +277,14 @@ class OnScreenControls(context: Context, private val pad: PadBridge?, private va
         put(group, ax, ay - extent(anchor) - gap - extent(group))
     }
 
-    private fun crowded(group: String, gap: Float): Boolean {
+    private fun crowded(group: String, gap: Float, space: Float = gap / 2f, except: String? = null): Boolean {
         val (x, y) = centre(group)
         return groups.any { other ->
-            if (other == group) return@any false
+            if (other == group || other == except) return@any false
             val (ox, oy) = centre(other)
             val dx = x - ox
             val dy = y - oy
-            sqrt(dx * dx + dy * dy) < extent(group) + extent(other) + gap / 2f
+            sqrt(dx * dx + dy * dy) < extent(group) + extent(other) + space
         }
     }
 
@@ -255,8 +296,10 @@ class OnScreenControls(context: Context, private val pad: PadBridge?, private va
     }
 
     private fun extent(group: String): Float = members(group).maxOf { control ->
-        sqrt(scaled(control.offsetXDp).let { it * it } + scaled(control.offsetYDp).let { it * it }) + control.radius
+        sqrt(scaled(control.offsetXDp).let { it * it } + scaled(control.offsetYDp).let { it * it }) + control.halfW
     }
+
+    private fun halfH(group: String): Float = members(group).maxOf { abs(scaled(it.offsetYDp)) + it.halfH }
 
     private fun put(group: String, x: Float, y: Float) {
         for (control in members(group)) {
@@ -268,10 +311,10 @@ class OnScreenControls(context: Context, private val pad: PadBridge?, private va
     private fun clamp(group: String) {
         val list = members(group)
         val margin = dp(4f)
-        val minX = list.minOf { it.cx - it.radius } - safe.left - margin
-        val maxX = list.maxOf { it.cx + it.radius } - (width - safe.right - margin)
-        val minY = list.minOf { it.cy - it.radius } - safe.top - margin
-        val maxY = list.maxOf { it.cy + it.radius } - (height - safe.bottom - margin)
+        val minX = list.minOf { it.cx - it.halfW } - safe.left - margin
+        val maxX = list.maxOf { it.cx + it.halfW } - (width - safe.right - margin)
+        val minY = list.minOf { it.cy - it.halfH } - safe.top - margin
+        val maxY = list.maxOf { it.cy + it.halfH } - (height - safe.bottom - margin)
         val dx = if (minX < 0) -minX else if (maxX > 0) -maxX else 0f
         val dy = if (minY < 0) -minY else if (maxY > 0) -maxY else 0f
         if (dx == 0f && dy == 0f) return
@@ -310,18 +353,30 @@ class OnScreenControls(context: Context, private val pad: PadBridge?, private va
             val held = control.pressedBy != -1
             val radius = control.radius
             if (control.stick >= 0) {
+                val bx = if (held) control.ax else control.cx
+                val by = if (held) control.ay else control.cy
                 fill.color = if (held) heldFill else stickFill
-                canvas.drawCircle(control.cx, control.cy, radius, fill)
+                canvas.drawCircle(bx, by, radius, fill)
                 stroke.color = if (held) heldStroke else idleStroke
-                canvas.drawCircle(control.cx, control.cy, radius, stroke)
+                canvas.drawCircle(bx, by, radius, stroke)
                 val knob = radius * 0.46f
                 fill.color = if (held || control.clicked) heldFill else knobFill
-                canvas.drawCircle(control.cx + control.kx, control.cy + control.ky, knob, fill)
+                canvas.drawCircle(bx + control.kx, by + control.ky, knob, fill)
                 stroke.color = if (held) heldStroke else idleStroke
-                canvas.drawCircle(control.cx + control.kx, control.cy + control.ky, knob, stroke)
+                canvas.drawCircle(bx + control.kx, by + control.ky, knob, stroke)
                 text.color = if (held) Color.WHITE else idleText
                 text.textSize = knob * 0.8f
-                canvas.drawText(label(control), control.cx + control.kx, control.cy + control.ky + text.textSize * 0.35f, text)
+                canvas.drawText(label(control), bx + control.kx, by + control.ky + text.textSize * 0.35f, text)
+            } else if (control.wide) {
+                box.set(control.cx - control.halfW, control.cy - control.halfH, control.cx + control.halfW, control.cy + control.halfH)
+                val corner = control.halfH * 0.55f
+                fill.color = if (held) heldFill else idleFill
+                canvas.drawRoundRect(box, corner, corner, fill)
+                stroke.color = if (held) heldStroke else idleStroke
+                canvas.drawRoundRect(box, corner, corner, stroke)
+                text.color = if (held) Color.WHITE else idleText
+                text.textSize = control.halfH * 0.8f
+                canvas.drawText(label(control), control.cx, control.cy + text.textSize * 0.35f, text)
             } else {
                 fill.color = if (held) heldFill else idleFill
                 canvas.drawCircle(control.cx, control.cy, radius, fill)
@@ -341,7 +396,12 @@ class OnScreenControls(context: Context, private val pad: PadBridge?, private va
         val group = selected ?: return
         val (x, y) = centre(group)
         stroke.color = heldStroke
-        canvas.drawCircle(x, y, extent(group) + dp(6f), stroke)
+        val single = members(group).singleOrNull()
+        if (single?.wide == true) {
+            val pad = dp(6f)
+            box.set(x - single.halfW - pad, y - single.halfH - pad, x + single.halfW + pad, y + single.halfH + pad)
+            canvas.drawRoundRect(box, single.halfH, single.halfH, stroke)
+        } else canvas.drawCircle(x, y, extent(group) + dp(6f), stroke)
     }
 
     private fun drawArrow(canvas: Canvas, x: Float, y: Float, size: Float, direction: Int) {
@@ -370,6 +430,9 @@ class OnScreenControls(context: Context, private val pad: PadBridge?, private va
                 control.pressedBy = event.getPointerId(index)
                 if (control.stick >= 0) {
                     control.clicked = settings.stickClick && event.eventTime - control.lastUp < DOUBLE_TAP_MS
+                    val adaptive = settings.adaptiveSticks
+                    control.ax = if (adaptive) event.getX(index) else control.cx
+                    control.ay = if (adaptive) event.getY(index) else control.cy
                     control.drag(event.getX(index), event.getY(index))
                 }
                 requestUnbufferedDispatch(event)
@@ -519,6 +582,14 @@ class OnScreenControls(context: Context, private val pad: PadBridge?, private va
 
     private companion object {
         const val DOUBLE_TAP_MS = 300L
+        const val MIN_FACE_MM = 9.5f
+        const val FULL_SIZE_HEIGHT_MM = 85f
+        const val BOTTOM_MARGIN_MM = 5f
+        const val DROP_DEGREES = 35.0
+        const val PHONE_MAX_HEIGHT_MM = 90f
+        const val SHOULDER_WIDTH = 1.45f
+        const val SHOULDER_HEIGHT = 0.8f
+        val shoulderIds = setOf("lb", "rb", "lt", "rt")
         val directions = listOf("up", "right", "down", "left")
     }
 }
