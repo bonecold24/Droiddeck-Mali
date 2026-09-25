@@ -87,13 +87,25 @@ jobs:
             echo "::error::The successful CI artifact is not for the current PR head and base"; exit 1;
           }
 
-          # Keep test builds at main's current stable versionCode so stable and PR builds can be
-          # installed over one another. A code bump belongs in a release, not in this test APK.
+          # Use the last public stable APK as the versionCode baseline. Main can be ahead of the
+          # shipped release, but testers still need to switch back to that release in place.
           sdk=${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}
           [[ -n "$sdk" && -d "$sdk/build-tools" ]] || { echo "::error::Android build-tools are unavailable"; exit 1; }
           build_tools=$(find "$sdk/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -1)
-          expected_code=$(sed -nE 's/^[[:space:]]*versionCode[[:space:]]+([0-9]+).*$/\1/p' app/build.gradle | head -1)
-          [[ "$expected_code" =~ ^[0-9]+$ ]] || { echo "::error::Could not read main's versionCode"; exit 1; }
+          stable_repo=The412Banner/DroidDeck
+          stable_tag=$(gh api "repos/$stable_repo/releases/latest" --jq '.tag_name')
+          [[ "$stable_tag" =~ ^[0-9A-Za-z._-]+$ ]] || { echo "::error::Could not identify the latest stable release"; exit 1; }
+          mkdir -p "$RUNNER_TEMP/stable-apk"
+          gh release download "$stable_tag" --repo "$stable_repo" \
+            --pattern "DroidDeck-$stable_tag.apk" --dir "$RUNNER_TEMP/stable-apk"
+          stable_apk="$RUNNER_TEMP/stable-apk/DroidDeck-$stable_tag.apk"
+          test -s "$stable_apk" || { echo "::error::The latest stable release has no standard APK"; exit 1; }
+          stable_badging=$("$build_tools/aapt" dump badging "$stable_apk")
+          stable_package=$(sed -n "s/^package: name='\\([^']*\\)'.*/\\1/p" <<<"$stable_badging")
+          expected_code=$(sed -n "s/^package:.*versionCode='\\([^']*\\)'.*/\\1/p" <<<"$stable_badging")
+          [[ "$stable_package" == com.droiddeck.launcher && "$expected_code" =~ ^[0-9]+$ ]] || {
+            echo "::error::Could not read the standard package and versionCode from stable release $stable_tag"; exit 1;
+          }
           mkdir -p "$RUNNER_TEMP/pr-apk"
           gh run download "$run_id" --repo "$GITHUB_REPOSITORY" --name droiddeck-apk --dir "$RUNNER_TEMP/pr-apk"
           mapfile -t apks < <(find "$RUNNER_TEMP/pr-apk" -type f -name '*.apk' -print)
@@ -105,23 +117,11 @@ jobs:
             echo "::error::Expected the standard package, got '$apk_package'"; exit 1;
           }
           [[ "$apk_code" == "$expected_code" ]] || {
-            echo "::error::PR APK versionCode $apk_code differs from main's stable baseline $expected_code; keep PR builds at the stable code so testers can switch back in place"; exit 1;
-          }
-
-          # Close the race with a new push/base update while approval and CI were being checked.
-          latest_pr=$(gh api "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER")
-          [[ $(jq -r '.state' <<<"$latest_pr") == open && \
-             $(jq -r '.head.sha' <<<"$latest_pr") == "$head_sha" && \
-             $(jq -r '.base.sha' <<<"$latest_pr") == "$base_sha" ]] || {
-            echo "::error::The PR changed while authorization was being checked; wait for fresh approval and CI"; exit 1;
+            echo "::error::PR APK versionCode $apk_code differs from stable release $stable_tag versionCode $expected_code; keep PR builds at the stable code so testers can switch back in place"; exit 1;
           }
 
           # Check approval after the build and artifact checks, as close as possible to signing.
           # The reviewer must approve this exact head commit and have write or admin access.
-          decision=$(gh pr view "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --json reviewDecision --jq '.reviewDecision')
-          [[ "$decision" == APPROVED ]] || {
-            echo "::error::PR #$PR_NUMBER does not currently have its required approving review"; exit 1;
-          }
           reviews=$(gh api --paginate --slurp "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER/reviews?per_page=100" | jq 'add')
           approved_reviewers=$(jq -r --arg sha "$head_sha" '
             [ .[]
@@ -146,6 +146,15 @@ jobs:
           [[ "$maintainer_approved" == true ]] || {
             echo "::error::No reviewer with write or admin access has approved the current PR commit $head_sha"; exit 1;
           }
+          # Re-read PR head, base, and review decision after the permission lookups.
+          latest_pr=$(gh api "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER")
+          decision=$(gh pr view "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --json reviewDecision --jq '.reviewDecision')
+          [[ $(jq -r '.state' <<<"$latest_pr") == open && \
+             $(jq -r '.head.sha' <<<"$latest_pr") == "$head_sha" && \
+             $(jq -r '.base.sha' <<<"$latest_pr") == "$base_sha" && \
+             "$decision" == APPROVED ]] || {
+            echo "::error::The PR or its approval changed while authorization was being checked"; exit 1;
+          }
 
           short_sha=${head_sha:0:7}
           label="PR-$PR_NUMBER-$short_sha"
@@ -161,7 +170,7 @@ jobs:
             echo "### Authorized PR signing"
             echo
             printf 'PR #%s at %s has an approving maintainer review and a green Build APK run (%s).\n' "$PR_NUMBER" "$short_sha" "$run_id"
-            printf 'The APK versionCode matches the main stable baseline (%s).\n' "$expected_code"
+            printf 'The APK versionCode matches stable release %s (%s).\n' "$stable_tag" "$expected_code"
           } >> "$GITHUB_STEP_SUMMARY"
 
   sign:
