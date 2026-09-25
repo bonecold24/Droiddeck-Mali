@@ -759,6 +759,24 @@ ScreenFilter = false
 MELONDS_WINDOW_DEFAULTS = {"ScreenLayout": ("0", "3"), "ScreenSizing": ("0",), "ScreenFilter": ("true",)}
 
 
+# The window melonDS returns to when the guide button leaves full screen: 1x wide (the width of
+# two DS screens side by side, Screen.cpp screenGetMinSize) and 16:9, so gamescope stretches it to
+# fill the panel and the menu bar and cursor come out large enough to use. A bigger window keeps
+# its menus at their real size, tiny on a handheld. Qt's saveGeometry() v3 blob: magic, version,
+# frame and normal rects (x, y, right, bottom), screen, maximized, full screen, screen width, and
+# the normal rect again (QWidget::restoreGeometry).
+def melonds_geometry():
+    import base64, struct
+    w, h = 512, 288
+    try:
+        screen_w = int(os.environ.get("BL_WIDTH", "1920"))
+    except ValueError:
+        screen_w = 1920
+    rect = (0, 0, w - 1, h - 1)
+    blob = struct.pack(">IHH4i4iiBBi4i", 0x1D9D0CB, 3, 0, *rect, *rect, 0, 0, 0, screen_w, *rect)
+    return base64.b64encode(blob).decode()
+
+
 def toml_get(lines, table, key):
     """The raw value of key in [table], or None."""
     inside = False
@@ -864,7 +882,8 @@ def melonds():
     path = os.path.join(CONFIG, "melonDS/melonDS.toml")
     marker = os.path.join(os.path.dirname(path), ".droiddeck-display-2")
     if not os.path.isfile(path):
-        seed(path, "[Instance0]\nJoystickID = 0\n\n" + MELONDS_JOY + "\n" + MELONDS_WINDOW, "melonDS",
+        seed(path, "[Instance0]\nJoystickID = 0\n\n" + MELONDS_JOY + "\n" + MELONDS_WINDOW +
+             f'Geometry = "{melonds_geometry()}"\n', "melonDS",
              "Player 1 on the controller, big top screen")
         open(marker, "w").close()
     with open(path, encoding="utf-8", errors="replace") as f:
@@ -897,7 +916,8 @@ def melonds():
             k, v = (x.strip() for x in l.split("=", 1))
             if toml_get(lines, "Instance0.Window0", k) in (None,) + MELONDS_WINDOW_DEFAULTS.get(k, ()):
                 toml_set(lines, "Instance0.Window0", k, v)
-        done.append("big top screen")
+        toml_set(lines, "Instance0.Window0", "Geometry", f'"{melonds_geometry()}"')
+        done.append("big top screen, 1x window")
         open(marker, "w").close()
     bios = melonds_bios(lines)
     if bios:
