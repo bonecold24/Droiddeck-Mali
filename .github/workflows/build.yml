@@ -499,8 +499,9 @@ jobs:
           # An apk is a zip already; compressing it again buys nothing and costs seconds.
           compression-level: 0
 
-  # Only main is signed with DroidDeck's private key. Pull requests and other branches keep the
-  # public AOSP testkey build, so unreviewed branch code never gets access to the release key.
+  # This workflow signs only main. PR build jobs keep using the public AOSP test key; the separate
+  # main-only approval workflow can later sign an approved PR artifact without running PR code with
+  # the release key.
   sign:
     needs: build
     if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'

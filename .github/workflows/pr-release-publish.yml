@@ -200,18 +200,21 @@ jobs:
 
       - name: Verify the release signer and checksum
         env:
-          EXPECTED_SHA256: b241ea7d7e8180e2e58a8a2cc6e819eedc36eff5a0a04f382a34cabba4b5d3f0
           APK_NAME: ${{ needs.authorize.outputs.apk_name }}
         run: |
           set -euo pipefail
           apk="signed/$APK_NAME"
           test -s "$apk" || { echo "::error::Signed APK is missing: $APK_NAME"; exit 1; }
+          expected_sha256=$(tr -d '[:space:]' < keystore/release-signer.sha256)
+          [[ "$expected_sha256" =~ ^[[:xdigit:]]{64}$ ]] || {
+            echo "::error::keystore/release-signer.sha256 is not a SHA-256 digest"; exit 1;
+          }
           sdk=${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}
           [[ -n "$sdk" && -d "$sdk/build-tools" ]] || { echo "::error::Android build-tools are unavailable"; exit 1; }
           tools=$(find "$sdk/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -1)
           certs=$("$tools/apksigner" verify --min-sdk-version 28 --print-certs "$apk")
           digest=$(sed -n 's/.*certificate SHA-256 digest: //p' <<<"$certs" | sort -u)
-          [[ "$digest" == "$EXPECTED_SHA256" ]] || {
+          [[ "$digest" == "$expected_sha256" ]] || {
             printf '%s\n' "$certs" >&2
             echo "::error::PR APK is not signed with the release certificate"; exit 1;
           }
@@ -226,7 +229,6 @@ jobs:
           APK_NAME: ${{ needs.authorize.outputs.apk_name }}
           SOURCE_REPO: ${{ github.repository }}
           TARGET_REPO: Droid-Deck/DroidDeck-CI
-          SIGNING_CERT_SHA256: b241ea7d7e8180e2e58a8a2cc6e819eedc36eff5a0a04f382a34cabba4b5d3f0
         run: |
           set -euo pipefail
           if [ -z "$GH_TOKEN" ]; then
@@ -236,6 +238,7 @@ jobs:
           pr=$(gh api "repos/$SOURCE_REPO/pulls/$PR_NUMBER")
           title=$(jq -r '.title' <<<"$pr" | tr '\r\n' '  ' | sed 's/[[:space:]]\+/ /g; s/ $//')
           url=$(jq -r '.html_url' <<<"$pr")
+          signing_cert_sha256=$(tr -d '[:space:]' < keystore/release-signer.sha256)
           tag="pr-$PR_NUMBER"
           notes=$(mktemp)
           trap 'rm -f "$notes"' EXIT
@@ -244,7 +247,7 @@ jobs:
             printf 'Title: %s\n\n' "$title"
             printf 'Source PR: %s\n' "$url"
             printf "Source commit: \`%s\`\n" "$HEAD_SHA"
-            printf "Signed with DroidDeck release certificate SHA-256 \`%s\`.\n" "$SIGNING_CERT_SHA256"
+            printf "Signed with DroidDeck release certificate SHA-256 \`%s\`.\n" "$signing_cert_sha256"
             printf 'This is a review-approved test build. Back up app data before installing test builds.\n'
           } > "$notes"
           if view_out=$(gh api "repos/$TARGET_REPO/releases/tags/$tag" 2>&1); then
