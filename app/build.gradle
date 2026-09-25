@@ -4,6 +4,51 @@ plugins {
 apply plugin: 'kotlin-android'
 apply plugin: 'org.jetbrains.kotlin.plugin.compose'
 
+def gitValue = { List<String> arguments ->
+    try {
+        def output = providers.exec {
+            commandLine(['git'] + arguments)
+            workingDir rootProject.projectDir
+            ignoreExitValue = true
+        }
+        output.result.get().exitValue == 0 ? output.standardOutput.asText.get().trim() : null
+    } catch (Exception ignored) {
+        null
+    }
+}
+
+def buildLabel = providers.environmentVariable('DROIDDECK_BUILD_LABEL').getOrNull()
+if (buildLabel == null || buildLabel.trim().isEmpty()) {
+    def eventName = providers.environmentVariable('GITHUB_EVENT_NAME').getOrNull()
+    def eventPath = providers.environmentVariable('GITHUB_EVENT_PATH').getOrNull()
+    if (eventName == 'pull_request_target' && eventPath) {
+        try {
+            def eventFile = layout.file(providers.provider { new File(eventPath) })
+            def eventText = providers.fileContents(eventFile).asText.get()
+            def pullRequest = new groovy.json.JsonSlurper().parseText(eventText).pull_request
+            if (pullRequest?.number && pullRequest?.head?.sha) {
+                buildLabel = "pr${pullRequest.number} at ${pullRequest.head.sha.take(7)}"
+            }
+        } catch (Exception ignored) {
+        }
+    }
+    if (buildLabel == null || buildLabel.trim().isEmpty()) {
+        def branch = providers.environmentVariable('GITHUB_REF_NAME').getOrNull()
+            ?: gitValue(['branch', '--show-current']) ?: 'local'
+        def commit = providers.environmentVariable('GITHUB_SHA').getOrNull()
+            ?.take(7) ?: gitValue(['rev-parse', '--short=7', 'HEAD']) ?: 'unknown'
+        buildLabel = "${branch} at ${commit}"
+    }
+}
+def buildOrigin = providers.environmentVariable('GITHUB_ACTIONS').getOrNull() == 'true' ? 'remote' : 'local'
+def treeState = providers.environmentVariable('DROIDDECK_BUILD_TREE_STATE').getOrNull()
+if (!(treeState in ['clean', 'dirty'])) {
+    def status = gitValue(['status', '--porcelain'])
+    treeState = status == null ? 'unknown' : (status.isEmpty() ? 'clean' : 'dirty')
+}
+buildLabel = "${buildOrigin} ${treeState} · ${buildLabel}"
+def escapedBuildLabel = buildLabel.replace('\\', '\\\\').replace('"', '\\"')
+
 android {
     namespace 'com.droiddeck.launcher'
     compileSdk 34
@@ -18,8 +63,9 @@ android {
         // file out of its own data directory, and this app's entire job is to exec a rootfs:
         // proot, gamescope, the Steam client and everything it launches all live under files/.
         targetSdkVersion 28
-        versionCode 7
-        versionName "0.1.6"
+        versionCode 8
+        versionName "0.1.7"
+        buildConfigField "String", "BUILD_LABEL", "\"${escapedBuildLabel}\""
 
         ndk {
             abiFilters 'arm64-v8a'
@@ -87,6 +133,7 @@ android {
 
     buildFeatures {
         compose true
+        buildConfig true
     }
 
     compileOptions {

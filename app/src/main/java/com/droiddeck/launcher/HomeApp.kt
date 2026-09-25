@@ -1,5 +1,6 @@
 package com.droiddeck.launcher
 
+import android.app.ActivityOptions
 import android.app.role.RoleManager
 import android.graphics.Bitmap
 import android.content.ComponentName
@@ -20,6 +21,25 @@ object HomeApp {
         val className: String,
         val icon: Bitmap?,
     )
+
+    /**
+     * Whether the app offers itself as a Home app at all. HomeActivity is declared disabled and
+     * only enabled when the user turns on "Use as a Home screen": a player who does not want a
+     * launcher never gets Android's "which Home app?" question, and it is one apk either way.
+     * The setting is the component's own state, which Android keeps across updates.
+     */
+    fun isHomeScreenEnabled(context: Context): Boolean =
+        context.packageManager.getComponentEnabledSetting(ComponentName(context, HomeActivity::class.java)) ==
+            PackageManager.COMPONENT_ENABLED_STATE_ENABLED
+
+    /** Turned off while DroidDeck is the Home app, the phone goes back to its own launcher. */
+    fun setHomeScreenEnabled(context: Context, enabled: Boolean) {
+        context.packageManager.setComponentEnabledSetting(
+            ComponentName(context, HomeActivity::class.java),
+            if (enabled) PackageManager.COMPONENT_ENABLED_STATE_ENABLED else PackageManager.COMPONENT_ENABLED_STATE_DISABLED,
+            PackageManager.DONT_KILL_APP,
+        )
+    }
 
     fun isDefault(context: Context): Boolean {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
@@ -73,11 +93,19 @@ object HomeApp {
         return apps.sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it.label })
     }
 
-    fun launch(context: Context, app: LaunchableApp) {
+    fun launch(context: Context, app: LaunchableApp, displayId: Int? = null) {
         val intent = Intent(Intent.ACTION_MAIN)
             .addCategory(Intent.CATEGORY_LAUNCHER)
             .setComponent(ComponentName(app.packageName, app.className))
-        context.startActivity(intent)
+        if (displayId == null) {
+            context.startActivity(intent)
+            return
+        }
+        // Keep the target app's task separate from DroidDeck. Without this, Android can put the
+        // app on top of the caller's task and move the entire task to the chosen display.
+        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        val options = ActivityOptions.makeBasic().setLaunchDisplayId(displayId)
+        context.startActivity(intent, options.toBundle())
     }
 
     fun isActiveSteamSession(): Boolean =

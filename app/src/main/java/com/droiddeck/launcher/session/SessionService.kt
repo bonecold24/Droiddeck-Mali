@@ -304,6 +304,10 @@ class SessionService : Service() {
         if (SessionPrefs.noGlError(this)) guest.add("MESA_NO_ERROR=1")
         if (SessionState.mode == MODE_STEAM) guest.add("BL_STEAMDECK=" + (if (SessionPrefs.steamDeckMode(this)) "1" else "0"))
         if (SessionState.mode == MODE_STEAM) guest.add("BL_STEAM_CHANNEL=" + SessionPrefs.steamChannel(this))
+        if (SessionState.mode == MODE_STEAM) {
+            guest.add("BL_GAMESCOPE_FORCE_FULLSCREEN=" + (if (SessionPrefs.forceFullscreen(this)) "1" else "0"))
+            SessionPrefs.writeForceFullscreenFlag(this)
+        }
         // Proton's own gate for its xalia helper (its `proton` script reads this, and sets
         // XALIA_SUPPORTED_ONLY itself otherwise). Off by default: xalia is Valve's, and on a device
         // whose seccomp answers its syscalls normally there is no reason to take it away.

@@ -31,12 +31,18 @@ object DesktopCatalog {
         return try {
             val json = JSONObject(body)
             val arr = json.getJSONArray("packages")
+            // A package built per memory page size (ARMSX2: 4K and 16K kernels) names the others
+            // under "pages"; the device's own size picks one, and the top-level file is the 4K one.
+            val pageSize = try {
+                android.system.Os.sysconf(android.system.OsConstants._SC_PAGESIZE).toString()
+            } catch (e: Exception) { "4096" }
             (0 until arr.length()).map { i ->
                 val o = arr.getJSONObject(i)
+                val file = o.optJSONObject("pages")?.optJSONObject(pageSize) ?: o
                 Entry(
                     o.getString("id"), o.getString("name"), o.optInt("tier", 1), o.optString("version", ""),
-                    o.optString("kind", "tar"), o.getString("url"), o.optString("sha256", ""),
-                    o.optLong("size", 0L), o.optString("notes", ""),
+                    o.optString("kind", "tar"), file.getString("url"), file.optString("sha256", ""),
+                    file.optLong("size", 0L), o.optString("notes", ""),
                     o.optString("icon", "applications-games"), o.optString("category", "Game"),
                 )
             }

@@ -8,9 +8,12 @@ import android.os.Bundle
 import android.os.Environment
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import android.util.Log
+import android.view.InputDevice
 import android.view.KeyEvent
 import android.view.MotionEvent
+import android.view.ViewConfiguration
 import android.view.Display
 import android.view.SurfaceHolder
 import android.view.SurfaceView
@@ -21,6 +24,7 @@ import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.OnBackPressedCallback
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
@@ -35,6 +39,7 @@ import com.droiddeck.launcher.input.OnScreenControls
 import com.droiddeck.launcher.input.PadBridge
 import com.droiddeck.launcher.input.PointerGestures
 import com.droiddeck.launcher.input.SecondScreenDisplay
+import com.droiddeck.launcher.input.SecondScreenDisplays
 import com.droiddeck.launcher.input.SecondScreenMode
 import com.droiddeck.launcher.input.TouchpadGestures
 import com.droiddeck.launcher.runtime.LinuxRuntime
@@ -58,6 +63,7 @@ import com.droiddeck.launcher.ui.DroidDeckTheme
 import com.droiddeck.launcher.wayland.CompositorHost
 import com.droiddeck.launcher.wayland.WaylandCompositor
 import java.io.File
+import kotlin.math.abs
 
 /**
  * The session's screen: our Wayland compositor presenting onto this activity's Surface, and the
@@ -72,25 +78,56 @@ import java.io.File
  */
 class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
     private lateinit var surfaceView: SurfaceView
+    private lateinit var sessionOverlay: ComposeView
     private lateinit var loading: LoadingState
     private lateinit var hud: PerfHud
     private var padBridge: PadBridge? = null
     private var onScreenControls: OnScreenControls? = null
     private var keyboard: KeyboardHost? = null
     private var watching = true
-    private lateinit var gestures: PointerGestures
     private lateinit var touchpad: TouchpadGestures
     private var touchMode by mutableStateOf(SessionPrefs.TOUCH_AUTO)
     private var cursorPos by mutableStateOf(androidx.compose.ui.geometry.Offset(-100f, -100f))
     private var cursorVisible by mutableStateOf(false)
     private val cursorHide = Runnable { cursorVisible = false }
     private val uiHandler = Handler(Looper.getMainLooper())
+    private var pendingBackAction: Runnable? = null
+    private var drawerDirectionKey = KeyEvent.KEYCODE_UNKNOWN
+    private var drawerDirectionDownTime = 0L
+    private var drawerDirectionDeviceId = -1
+    private var drawerDirectionRepeatCount = 0
+    private val drawerFirstRepeatDelayMs = ViewConfiguration.getKeyRepeatTimeout().toLong()
+    private val drawerSlowRepeatIntervalMs = maxOf(
+        ViewConfiguration.getKeyRepeatDelay().toLong(), DRAWER_SLOW_REPEAT_FLOOR_MS,
+    )
+    private val drawerDirectionRepeat = object : Runnable {
+        override fun run() {
+            if (drawerDirectionKey == KeyEvent.KEYCODE_UNKNOWN) return
+
+            val now = SystemClock.uptimeMillis()
+            val heldMs = now - drawerDirectionDownTime
+            val progress = ((heldMs - drawerFirstRepeatDelayMs).toFloat() / DRAWER_REPEAT_ACCELERATION_MS)
+                .coerceIn(0f, 1f)
+            val intervalMs = (
+                drawerSlowRepeatIntervalMs +
+                    (DRAWER_FAST_REPEAT_INTERVAL_MS - drawerSlowRepeatIntervalMs) * progress
+                ).toLong()
+
+            dispatchDrawerKey(KeyEvent.ACTION_DOWN, ++drawerDirectionRepeatCount, now)
+            uiHandler.postDelayed(this, intervalMs)
+        }
+    }
+    private val resumeKeysDown = mutableSetOf<Pair<Int, Int>>()
 
     // Compose reads these; the activity writes them.
     private var drawerOpen by mutableStateOf(false)
+    private var drawerPage by mutableIntStateOf(0)
+    private var drawerControllerActive by mutableStateOf(false)
+    private var backActionsInverted by mutableStateOf(false)
     /** The on-screen PC keyboard (ui/PcKeyboard): real key presses, Esc and F1 included. */
     private var pcKeyboardOpen by mutableStateOf(false)
     private var hudOn by mutableStateOf(true)
+    private var fillScreen by mutableStateOf(true)
     private var frameGenLabel by mutableStateOf("Off")
     private var frameGenEngine by mutableStateOf(FrameGen.ENGINE_OFF)
     private var frameGenMultiplier by mutableStateOf(2)
@@ -147,7 +184,6 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
         padBridge = bridge
         onScreenControls = OnScreenControls(this, bridge).also { root.addView(it) }
         keyboard = KeyboardHost(this).also { root.addView(it) }
-        gestures = PointerGestures(PointerGestures.slop(this), pointerListener)
         touchpad = TouchpadGestures(PointerGestures.slop(this), pointerListener)
         // One arrow, ours: Android draws a system pointer for a mouse over any window, and the
         // session already draws the pointer it is sent.
@@ -175,14 +211,25 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
 
         // One Compose layer for every menu and overlay. Touches nothing in it consumes fall
         // through to the pad and the game underneath.
-        root.addView(ComposeView(this).apply {
+        sessionOverlay = ComposeView(this).apply {
+            isFocusable = true
+            isFocusableInTouchMode = true
             setContent {
                 DroidDeckTheme {
                     CursorOverlay(cursorPos, cursorVisible, resources.displayMetrics.density)
                     if (hud.text.isNotEmpty()) HudText(hud.text)
                     if (loading.visible) LoadingOverlay(loading.step, loading.percent, loading.elapsed, loading.hint, loading.ended)
                     // Opening the drawer takes the controller away from the game: release its pad.
-                    androidx.compose.runtime.LaunchedEffect(drawerOpen) { if (drawerOpen) padBridge?.releaseAll() }
+                    androidx.compose.runtime.LaunchedEffect(drawerOpen) {
+                        if (drawerOpen) {
+                            padBridge?.releaseAll()
+                            androidx.compose.runtime.withFrameNanos { }
+                            val requested = sessionOverlay.requestFocus()
+                            Log.i(TAG, "drawer root focus requested=$requested focused=${sessionOverlay.hasFocus()}")
+                        } else {
+                            releaseDrawerDirection()
+                        }
+                    }
                     // The PC keyboard takes it too, for moving over the keys; the drawer opens over it.
                     androidx.compose.runtime.LaunchedEffect(pcKeyboardOpen) { if (pcKeyboardOpen) padBridge?.releaseAll() }
                     if (pcKeyboardOpen) com.droiddeck.launcher.ui.PcKeyboard(
@@ -190,11 +237,14 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
                         onAndroidKeyboard = { pcKeyboardOpen = false; keyboard?.toggle() },
                         onClose = { pcKeyboardOpen = false },
                     )
-                    SessionDrawer(drawerOpen, DrawerActions(
+                    SessionDrawer(drawerOpen, drawerPage, drawerControllerActive, onPageChange = { drawerPage = it }, a = DrawerActions(
                         steam = SessionState.mode == SessionService.MODE_STEAM,
+                        title = if (SessionState.mode == SessionService.MODE_RUN)
+                            com.droiddeck.launcher.frontend.Library.nameForProgram(SessionState.program) ?: "Game" else null,
                         isHomeApp = isHomeApp,
                         androidApps = androidApps,
                         hudOn = hudOn,
+                        fillScreen = if (SessionState.mode == SessionService.MODE_STEAM) fillScreen else null,
                         frameGenEngine = frameGenEngine, frameGenMultiplier = frameGenMultiplier,
                         lsfgReady = LsfgNative.isInstalled(this@SessionActivity),
                         oscMode = oscMode, touchMode = touchMode,
@@ -204,6 +254,7 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
                         secondScreenDisplays = secondScreenDisplays,
                         selectedSecondScreenDisplay = selectedSecondScreenDisplay,
                         onHud = { on -> SessionPrefs.setHudEnabled(this@SessionActivity, on); hudOn = on; hud.refresh() },
+                        onFillScreen = { on -> SessionPrefs.setForceFullscreen(this@SessionActivity, on); fillScreen = on },
                         onFrameGenPick = { engine, multiplier ->
                             FrameGen.set(this@SessionActivity, engine, multiplier)
                             readPrefs()
@@ -212,22 +263,26 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
                         onKeyboard = { drawerOpen = false; pcKeyboardOpen = false; keyboard?.toggle() },
                         onHardwareKeyboard = { drawerOpen = false; pcKeyboardOpen = !pcKeyboardOpen },
                         onSteamMenu = if (SessionState.mode == SessionService.MODE_STEAM) ({ sendSteamGuide() }) else null,
-                        onQam = if (SessionState.mode == SessionService.MODE_STEAM) ({
-                            drawerOpen = false
-                            padBridge?.triggerQam()
-                        }) else null,
+                        onQam = if (SessionState.mode == SessionService.MODE_STEAM) ({ triggerSteamQam() }) else null,
+                        backActionsInverted = backActionsInverted,
+                        onBackActionsInverted = { inverted ->
+                            SessionPrefs.setBackActionsInverted(this@SessionActivity, inverted)
+                            backActionsInverted = inverted
+                        },
                         onOsc = { v -> SessionPrefs.setOscMode(this@SessionActivity, v); readPrefs(); updateOnScreenControls() },
                         onTouch = { v -> SessionPrefs.setTouchMode(this@SessionActivity, v); readPrefs() },
                         onShape = { v -> SessionPrefs.setShapeMode(this@SessionActivity, v); readPrefs() },
                         onFexPreset = { v -> SessionPrefs.setFexPreset(this@SessionActivity, v); readPrefs() },
                         onSecondScreenMode = ::selectSecondScreenMode,
                         onSecondScreenDisplay = ::selectSecondScreenDisplay,
-                        onLaunchAndroidApp = { app ->
+                        onLaunchAndroidApp = { app, displayId ->
                             drawerOpen = false
                             try {
-                                HomeApp.launch(this@SessionActivity, app)
+                                HomeApp.launch(this@SessionActivity, app, displayId)
                             } catch (_: Exception) {
-                                Toast.makeText(this@SessionActivity, "Could not open ${app.label}", Toast.LENGTH_SHORT).show()
+                                val target = if (displayId == null || displayId == Display.DEFAULT_DISPLAY) "the primary screen"
+                                    else secondScreenDisplays.firstOrNull { it.id == displayId }?.label ?: "display $displayId"
+                                Toast.makeText(this@SessionActivity, "Could not open ${app.label} on $target", Toast.LENGTH_SHORT).show()
                             }
                         },
                         onBackground = { drawerOpen = false; moveTaskToBack(true) },
@@ -239,7 +294,8 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
                     }
                 }
             }
-        })
+        }
+        root.addView(sessionOverlay)
         setContentView(root)
         handleHomeGuideIntent(intent)
 
@@ -252,13 +308,16 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
             }
         }
         SessionState.endListener = endListener
-        // Back opens the drawer (and closes it again). Leaving the session running in the
-        // background and ending it are both actions in there, so neither can happen by accident
-        // from a button a game might also be reading.
+        // A single Back opens the session menu; two quick presses/swipes send the Steam QAM chord.
+        // The single action waits out the double-press window so the two actions stay distinct.
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() {
                 // The PC keyboard closes first (B on a controller), then Back is the drawer again.
-                if (pcKeyboardOpen && !drawerOpen) pcKeyboardOpen = false else drawerOpen = !drawerOpen
+                when {
+                    drawerOpen -> drawerOpen = false
+                    pcKeyboardOpen -> pcKeyboardOpen = false
+                    else -> routeBackAction()
+                }
             }
         })
         watchSession()
@@ -277,6 +336,32 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
         }, 90)
     }
 
+    private fun triggerSteamQam() {
+        drawerOpen = false
+        padBridge?.triggerQam()
+    }
+
+    private fun routeBackAction() {
+        pendingBackAction?.let { pending ->
+            uiHandler.removeCallbacks(pending)
+            pendingBackAction = null
+            performBackAction(double = true)
+            return
+        }
+        val pending = Runnable {
+            pendingBackAction = null
+            performBackAction(double = false)
+        }
+        pendingBackAction = pending
+        uiHandler.postDelayed(pending, BACK_DOUBLE_PRESS_TIMEOUT_MS)
+    }
+
+    private fun performBackAction(double: Boolean) {
+        val isSteam = SessionState.mode == SessionService.MODE_STEAM
+        val opensQam = isSteam && (double xor backActionsInverted)
+        if (opensQam) triggerSteamQam() else drawerOpen = !drawerOpen
+    }
+
     private fun handleHomeGuideIntent(incoming: Intent?) {
         if (incoming?.action != SessionService.ACTION_HOME_GUIDE) return
         incoming.action = null
@@ -286,6 +371,7 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
 
     private fun readPrefs() {
         hudOn = SessionPrefs.hudEnabled(this)
+        fillScreen = SessionPrefs.forceFullscreen(this)
         touchMode = SessionPrefs.touchMode(this)
         frameGenLabel = FrameGen.label(this)
         frameGenEngine = FrameGen.engine(this)
@@ -293,6 +379,7 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
         fexPreset = SessionPrefs.fexPreset(this)
         oscMode = SessionPrefs.oscMode(this)
         shapeMode = SessionPrefs.shapeMode(this)
+        backActionsInverted = SessionPrefs.backActionsInverted(this)
     }
 
     // ── Compositor ──────────────────────────────────────────────────────────────────────────
@@ -481,7 +568,7 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
         // Wider than 16:9 is fine - games and the client cope with a phone's 20:9 - so the
         // panel's aspect is kept above that, unless the user pinned 16:9 for a foldable, and the
         // compositor letterboxes onto a squarer panel.
-        // "Exactly this panel" drops that floor, for a 4:3 or 3:2 handheld whose games should
+        // "Match screen" drops that floor, for a 4:3 or 3:2 handheld whose games should
         // fill it.
         val aspect = when (SessionPrefs.shapeMode(this)) {
             SessionPrefs.SHAPE_WIDE -> 16f / 9f
@@ -620,10 +707,41 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
             KeyEvent.KEYCODE_VOLUME_UP, KeyEvent.KEYCODE_VOLUME_DOWN, KeyEvent.KEYCODE_VOLUME_MUTE ->
                 return super.dispatchKeyEvent(event)
         }
-        // With the drawer open the controller drives the drawer, not the game: Android's own
-        // handling moves focus with the d-pad and stick, and its fallbacks make A select and B Back
-        // (which closes the drawer) - the same as on the app's main screen.
-        if ((drawerOpen || pcKeyboardOpen) && event.device != null && PadBridge.isFromController(event.device)) return super.dispatchKeyEvent(event)
+        val fromController = event.device != null && PadBridge.isFromController(event.device)
+        if (fromController && event.action == KeyEvent.ACTION_DOWN) {
+            if (drawerOpen && !drawerControllerActive) sessionOverlay.requestFocus()
+            drawerControllerActive = true
+        }
+        if (drawerOpen) {
+            if (fromController && (event.keyCode == KeyEvent.KEYCODE_BUTTON_L1 || event.keyCode == KeyEvent.KEYCODE_BUTTON_R1)) {
+                if (event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0) {
+                    drawerPage = (drawerPage + if (event.keyCode == KeyEvent.KEYCODE_BUTTON_R1) 1 else 2) % 3
+                    releaseDrawerDirection()
+                }
+                return true
+            }
+            val handled = super.dispatchKeyEvent(event)
+            if (event.action == KeyEvent.ACTION_DOWN) {
+                Log.i(TAG, "drawer key=${KeyEvent.keyCodeToString(event.keyCode)} handled=$handled viewFocused=${sessionOverlay.hasFocus()}")
+            }
+            if (event.keyCode == KeyEvent.KEYCODE_BUTTON_B || event.keyCode == KeyEvent.KEYCODE_BACK) {
+                if (!handled && event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0) drawerOpen = false
+                releaseDrawerDirection()
+            }
+            return true
+        }
+        val resumeKey = event.keyCode == KeyEvent.KEYCODE_BUTTON_A || event.keyCode == KeyEvent.KEYCODE_BUTTON_START
+        val resumeKeyId = event.deviceId to event.keyCode
+        if (fromController && resumeKey && (SessionState.suspended || resumeKeyId in resumeKeysDown)) {
+            if (event.action == KeyEvent.ACTION_DOWN) {
+                resumeKeysDown.add(resumeKeyId)
+                if (event.repeatCount == 0 && SessionState.suspended) SessionService.resume(this)
+            } else if (event.action == KeyEvent.ACTION_UP) {
+                resumeKeysDown.remove(resumeKeyId)
+            }
+            return true
+        }
+        if (pcKeyboardOpen && event.device != null && PadBridge.isFromController(event.device)) return super.dispatchKeyEvent(event)
         if (event.keyCode != KeyEvent.KEYCODE_BACK && padBridge?.onKeyEvent(event) == true) return true
         // A hardware keyboard, forwarded to the compositor's wl_keyboard. Back is left to the
         // activity, which opens the drawer.
@@ -665,18 +783,102 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
     }
 
     override fun dispatchGenericMotionEvent(event: MotionEvent): Boolean {
-        if ((drawerOpen || pcKeyboardOpen) && event.device != null && PadBridge.isFromController(event.device)) return super.dispatchGenericMotionEvent(event)
+        if (drawerOpen && event.device != null && PadBridge.isFromController(event.device)) {
+            if (!drawerControllerActive) sessionOverlay.requestFocus()
+            drawerControllerActive = true
+            if (event.actionMasked == MotionEvent.ACTION_MOVE &&
+                event.isFromSource(InputDevice.SOURCE_JOYSTICK)
+            ) {
+                dispatchDrawerDirection(event)
+            }
+            return true
+        }
+        if (drawerDirectionKey != KeyEvent.KEYCODE_UNKNOWN) releaseDrawerDirection()
+        if (pcKeyboardOpen && event.device != null && PadBridge.isFromController(event.device)) return super.dispatchGenericMotionEvent(event)
         if (padBridge?.onMotionEvent(event) == true) return true
         if (event.isFromSource(android.view.InputDevice.SOURCE_MOUSE) && !drawerOpen && onMouse(event)) return true
         return super.dispatchGenericMotionEvent(event)
     }
 
-    /**
-     * The pointer. Touch goes through [PointerGestures] (tap, hold, drag, two-finger scroll); a
-     * mouse arrives with real buttons and a wheel and is forwarded as it is. Every position is
-     * mapped through the letterboxed rectangle into the compositor's fixed 1920x1080 pointer
-     * space, and the arrow is drawn where the app last sent the pointer.
-     */
+    override fun dispatchTouchEvent(event: MotionEvent): Boolean {
+        if (event.actionMasked == MotionEvent.ACTION_DOWN && event.isFromSource(InputDevice.SOURCE_TOUCHSCREEN)) {
+            drawerControllerActive = false
+        }
+        return super.dispatchTouchEvent(event)
+    }
+
+    private fun dispatchDrawerDirection(event: MotionEvent) {
+        val hatX = event.getAxisValue(MotionEvent.AXIS_HAT_X)
+        val hatY = event.getAxisValue(MotionEvent.AXIS_HAT_Y)
+        val hatActive = maxOf(abs(hatX), abs(hatY)) >= DRAWER_HAT_THRESHOLD
+        val x = if (hatActive) hatX else centeredStickAxis(event, MotionEvent.AXIS_X)
+        val y = if (hatActive) hatY else centeredStickAxis(event, MotionEvent.AXIS_Y)
+        val directionThreshold = if (drawerDirectionKey == KeyEvent.KEYCODE_UNKNOWN) {
+            DRAWER_STICK_ENTER_THRESHOLD
+        } else {
+            DRAWER_STICK_EXIT_THRESHOLD
+        }
+        val previousWasHorizontal = drawerDirectionKey == KeyEvent.KEYCODE_DPAD_LEFT ||
+            drawerDirectionKey == KeyEvent.KEYCODE_DPAD_RIGHT
+        val horizontalWins = if (previousWasHorizontal) {
+            abs(x) >= abs(y) * DRAWER_ACTIVE_DIRECTION_MARGIN
+        } else {
+            abs(x) > abs(y) * DRAWER_DIRECTION_MARGIN
+        }
+        val keyCode = when {
+            maxOf(abs(x), abs(y)) < directionThreshold -> KeyEvent.KEYCODE_UNKNOWN
+            horizontalWins && x < 0f -> KeyEvent.KEYCODE_DPAD_LEFT
+            horizontalWins -> KeyEvent.KEYCODE_DPAD_RIGHT
+            y < 0f -> KeyEvent.KEYCODE_DPAD_UP
+            else -> KeyEvent.KEYCODE_DPAD_DOWN
+        }
+        val now = SystemClock.uptimeMillis()
+        if (keyCode == drawerDirectionKey) return
+
+        Log.i(TAG, "drawer axis source=${event.source} x=$x y=$y direction=$keyCode")
+        releaseDrawerDirection()
+        if (keyCode == KeyEvent.KEYCODE_UNKNOWN) return
+
+        drawerDirectionKey = keyCode
+        drawerDirectionDeviceId = event.deviceId
+        drawerDirectionDownTime = now
+        drawerDirectionRepeatCount = 0
+        dispatchDrawerKey(KeyEvent.ACTION_DOWN, 0, now)
+        uiHandler.postDelayed(drawerDirectionRepeat, drawerFirstRepeatDelayMs)
+    }
+
+    /** Use Android's per-device flat region, then rescale the remaining stick travel to 0..1. */
+    private fun centeredStickAxis(event: MotionEvent, axis: Int): Float {
+        val value = event.getAxisValue(axis)
+        val flat = (event.device?.getMotionRange(axis, event.source)?.flat ?: 0f)
+            .coerceIn(0f, 0.95f)
+        val magnitude = abs(value)
+        if (magnitude <= flat) return 0f
+
+        val centered = ((magnitude - flat) / (1f - flat)).coerceIn(0f, 1f)
+        return if (value < 0f) -centered else centered
+    }
+
+    private fun releaseDrawerDirection() {
+        uiHandler.removeCallbacks(drawerDirectionRepeat)
+        if (drawerDirectionKey == KeyEvent.KEYCODE_UNKNOWN) return
+        dispatchDrawerKey(KeyEvent.ACTION_UP, 0, SystemClock.uptimeMillis())
+        drawerDirectionKey = KeyEvent.KEYCODE_UNKNOWN
+        drawerDirectionDeviceId = -1
+        drawerDirectionRepeatCount = 0
+    }
+
+    private fun dispatchDrawerKey(action: Int, repeatCount: Int, eventTime: Long) {
+        val event = KeyEvent(
+            drawerDirectionDownTime, eventTime, action, drawerDirectionKey,
+            repeatCount, 0, drawerDirectionDeviceId, 0, 0, InputDevice.SOURCE_DPAD,
+        )
+        if (action == KeyEvent.ACTION_DOWN && repeatCount == 0) {
+            Log.i(TAG, "drawer synthetic key=${KeyEvent.keyCodeToString(drawerDirectionKey)} viewFocused=${sessionOverlay.hasFocus()}")
+        }
+        super.dispatchKeyEvent(event)
+    }
+
     private val pointerListener = object : PointerGestures.Listener {
         override fun onMove(x: Float, y: Float) = movePointer(x, y)
         override fun onButton(button: Int, pressed: Boolean, x: Float, y: Float) {
@@ -716,14 +918,7 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
     private fun refreshSecondScreenDisplays() {
         if (!::displayManager.isInitialized) return
         val primaryId = display?.displayId ?: windowManager.defaultDisplay.displayId
-        val candidates = displayManager.getDisplays(DisplayManager.DISPLAY_CATEGORY_PRESENTATION)
-            .asSequence()
-            .filter { it.isValid && it.displayId != primaryId && (it.flags and Display.FLAG_PRESENTATION) != 0 }
-            .map { target ->
-                val mode = target.mode
-                SecondScreenDisplay(target.displayId, "${target.name} · ${mode.physicalWidth}×${mode.physicalHeight}")
-            }
-            .toList()
+        val candidates = SecondScreenDisplays.available(displayManager, primaryId)
         val oldIds = secondScreenDisplays.map { it.id }.toSet()
         secondScreenDisplays = candidates
         val newIds = candidates.map { it.id }.toSet()
@@ -784,6 +979,7 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
                 onQam = {
                     if (SessionState.mode == SessionService.MODE_STEAM) padBridge?.triggerQam()
                 },
+                onClose = { selectSecondScreenMode(SecondScreenMode.NONE) },
             )
             secondScreenPresentation = presentation
         }
@@ -844,7 +1040,20 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
             }
             return touchpad.onTouch(event)
         }
-        return gestures.onTouch(event)
+        val rect = drawnRect() ?: return false
+        fun sendTouch(action: Int, index: Int) {
+            val x = ((event.getX(index) - rect.left) / rect.width()).coerceIn(0f, 1f)
+            val y = ((event.getY(index) - rect.top) / rect.height()).coerceIn(0f, 1f)
+            WaylandCompositor.nativeSendTouch(action, event.getPointerId(index), (x * 1919f).toInt(), (y * 1079f).toInt())
+        }
+        when (event.actionMasked) {
+            MotionEvent.ACTION_DOWN, MotionEvent.ACTION_POINTER_DOWN -> sendTouch(0, event.actionIndex)
+            MotionEvent.ACTION_MOVE -> for (index in 0 until event.pointerCount) sendTouch(1, index)
+            MotionEvent.ACTION_UP, MotionEvent.ACTION_POINTER_UP -> sendTouch(2, event.actionIndex)
+            MotionEvent.ACTION_CANCEL -> WaylandCompositor.nativeSendTouch(3, -1, 0, 0)
+            else -> return false
+        }
+        return true
     }
 
     /** A mouse: hover moves, buttons press, the wheel scrolls. Android sends buttons as touch
@@ -885,7 +1094,10 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
             SessionPrefs.OSC_ALWAYS -> true
             SessionPrefs.OSC_STEAM_QAM -> true
             SessionPrefs.OSC_NEVER -> false
-            else -> !PadBridge.anyControllerConnected()
+            // Auto: the touch pad when there is no controller - except on the desktop, where the
+            // screen is a touchpad for the pointer and a pad over it would be in the way. A game
+            // started from the rail, or Steam, gets it; the drawer turns it on anywhere.
+            else -> !PadBridge.anyControllerConnected() && SessionState.mode != SessionService.MODE_DESKTOP
         }
         if (show == (controls.visibility == View.VISIBLE)) return
         if (!show) controls.releaseAll()
@@ -941,6 +1153,7 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
 
     override fun onPause() {
         (getSystemService(INPUT_SERVICE) as? InputManager)?.unregisterInputDeviceListener(deviceListener)
+        releaseDrawerDirection()
         // A button held when the app goes away would stay held in the ring for the whole session.
         onScreenControls?.releaseAll()
         keyboard?.takeIf { it.shown }?.hide()
@@ -975,6 +1188,9 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
         // Deliberately does NOT end the session: this activity can be destroyed while the user is
         // in another app, and the whole point of the service is that Steam survives that.
         watching = false
+        releaseDrawerDirection()
+        pendingBackAction?.let(uiHandler::removeCallbacks)
+        pendingBackAction = null
         closeSecondScreen(reset = true)
         if (::hud.isInitialized) hud.stop()
         padBridge?.stop()
@@ -991,6 +1207,15 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
 
     companion object {
         private const val TAG = "SessionActivity"
+        private const val BACK_DOUBLE_PRESS_TIMEOUT_MS = 500L
+        private const val DRAWER_HAT_THRESHOLD = 0.5f
+        private const val DRAWER_STICK_ENTER_THRESHOLD = 0.55f
+        private const val DRAWER_STICK_EXIT_THRESHOLD = 0.35f
+        private const val DRAWER_DIRECTION_MARGIN = 1.15f
+        private const val DRAWER_ACTIVE_DIRECTION_MARGIN = 0.85f
+        private const val DRAWER_SLOW_REPEAT_FLOOR_MS = 240L
+        private const val DRAWER_FAST_REPEAT_INTERVAL_MS = 90L
+        private const val DRAWER_REPEAT_ACCELERATION_MS = 1_400L
         /** Compositor scale modes (Container.FULLSCREEN_* values): 1 = fit with bars, centred. */
         private const val SCALE_FIT = 1
         private const val ALIGN_CENTER = 0

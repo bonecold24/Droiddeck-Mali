@@ -1,5 +1,6 @@
 package com.droiddeck.launcher.ui
 
+import android.view.KeyEvent
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
@@ -39,6 +40,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -49,10 +51,15 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.InputMode
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalInputModeManager
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
@@ -68,6 +75,26 @@ import androidx.compose.ui.window.PopupProperties
 
 private val RowShape = RoundedCornerShape(12.dp)
 private val GroupShape = RoundedCornerShape(14.dp)
+
+internal fun Modifier.controllerConfirm(enabled: Boolean = true, onClick: () -> Unit): Modifier = onPreviewKeyEvent { event ->
+    val keyEvent = event.nativeKeyEvent
+    if (keyEvent.keyCode != KeyEvent.KEYCODE_BUTTON_A) {
+        false
+    } else {
+        if (enabled && keyEvent.action == KeyEvent.ACTION_DOWN && keyEvent.repeatCount == 0) onClick()
+        true
+    }
+}
+
+internal fun Modifier.controllerBack(onBack: () -> Unit): Modifier = onPreviewKeyEvent { event ->
+    val keyEvent = event.nativeKeyEvent
+    if (keyEvent.keyCode != KeyEvent.KEYCODE_BUTTON_B && keyEvent.keyCode != KeyEvent.KEYCODE_BACK) {
+        false
+    } else {
+        if (keyEvent.action == KeyEvent.ACTION_DOWN && keyEvent.repeatCount == 0) onBack()
+        true
+    }
+}
 
 class MenuHost {
     var open by mutableStateOf<String?>(null)
@@ -88,10 +115,19 @@ private class BelowEndProvider(private val gap: Int) : PopupPositionProvider {
 }
 
 @Composable
-fun AnchoredMenu(open: Boolean, onDismiss: () -> Unit, title: String? = null, note: String? = null, content: @Composable ColumnScope.() -> Unit) {
+fun AnchoredMenu(open: Boolean, onDismiss: () -> Unit, title: String? = null, note: String? = null, content: @Composable ColumnScope.(FocusRequester) -> Unit) {
     val state = remember { MutableTransitionState(false) }
     state.targetState = open
     if (!state.currentState && !state.targetState && state.isIdle) return
+    val firstItemFocus = remember { FocusRequester() }
+    val inputMode = LocalInputModeManager.current.inputMode
+    LaunchedEffect(open, inputMode) {
+        if (open && inputMode == InputMode.Keyboard) {
+            repeat(2) { androidx.compose.runtime.withFrameNanos { } }
+            runCatching { firstItemFocus.requestFocus() }
+            android.util.Log.i("AnchoredMenu", "requested first option focus")
+        }
+    }
     val gap = with(LocalDensity.current) { 6.dp.roundToPx() }
     val provider = remember(gap) { BelowEndProvider(gap) }
     val colors = MaterialTheme.colorScheme
@@ -114,13 +150,14 @@ fun AnchoredMenu(open: Boolean, onDismiss: () -> Unit, title: String? = null, no
                     .clip(RowShape)
                     .background(pal.surfaceVariant.copy(alpha = 0.95f))
                     .border(1.dp, pal.signal.copy(alpha = 0.22f), RowShape)
+                    .controllerBack(onDismiss)
                     .padding(6.dp),
             ) {
                 if (title != null) Text(
                     title.uppercase(), fontSize = 10.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 2.sp, color = colors.onSurfaceVariant,
                     modifier = Modifier.padding(start = 10.dp, top = 6.dp, bottom = 6.dp),
                 )
-                Column(Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState())) { content() }
+                Column(Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState())) { content(firstItemFocus) }
                 if (note != null) {
                     Spacer(Modifier.height(4.dp))
                     Box(Modifier.fillMaxWidth().height(1.dp).background(pal.line))
@@ -134,7 +171,8 @@ fun AnchoredMenu(open: Boolean, onDismiss: () -> Unit, title: String? = null, no
 @Composable
 fun MenuItem(
     label: String, checked: Boolean, enabled: Boolean = true, detail: String? = null,
-    trailing: (@Composable () -> Unit)? = null, leading: (@Composable () -> Unit)? = null, onClick: () -> Unit,
+    trailing: (@Composable () -> Unit)? = null, leading: (@Composable () -> Unit)? = null,
+    focusRequester: FocusRequester? = null, modifier: Modifier = Modifier, onClick: () -> Unit,
 ) {
     val colors = MaterialTheme.colorScheme
     val pal = LocalPalette.current
@@ -143,12 +181,14 @@ fun MenuItem(
     val shift by animateFloatAsState(if (hot) 2f else 0f, Motion.sp(0.5f), label = "miShift")
     Row(
         verticalAlignment = Alignment.CenterVertically,
-        modifier = Modifier.fillMaxWidth()
+        modifier = modifier.fillMaxWidth()
             .graphicsLayer { translationX = shift.dp.toPx() }
+            .then(focusRequester?.let { Modifier.focusRequester(it) } ?: Modifier)
             .clip(RoundedCornerShape(8.dp))
             .background(if (hot && enabled) Color.White.copy(alpha = 0.07f) else Color.Transparent)
             .alpha(if (enabled) 1f else 0.4f)
             .hoverable(src).clickable(interactionSource = src, indication = LocalIndication.current, enabled = enabled, onClick = onClick)
+            .controllerConfirm(enabled = enabled, onClick = onClick)
             .padding(horizontal = 10.dp, vertical = 9.dp),
     ) {
         Text("✓", fontSize = 12.sp, color = pal.signal, modifier = Modifier.width(18.dp).alpha(if (checked) 1f else 0f))
@@ -181,6 +221,7 @@ fun ValueChip(text: String, open: Boolean, enabled: Boolean = true, modifier: Mo
             .border(1.dp, edge, RoundedCornerShape(10.dp))
             .alpha(if (enabled) 1f else 0.5f)
             .hoverable(src).clickable(interactionSource = src, indication = LocalIndication.current, enabled = enabled, onClick = onClick)
+            .controllerConfirm(enabled = enabled, onClick = onClick)
             .padding(horizontal = 12.dp, vertical = 8.dp),
     ) {
         AnimatedContent(
@@ -234,8 +275,13 @@ fun <T> ChoiceRow(
     SettingsRow(label, hint, highlighted = open) {
         Box {
             ValueChip(options.firstOrNull { it.first == selected }?.second ?: "-", open, enabled, modifier = chipModifier) { host.open = if (open) null else key }
-            AnchoredMenu(open, onDismiss = { if (host.open == key) host.open = null }, title = label, note = note) {
-                for ((value, text) in options) MenuItem(text, checked = value == selected) { onPick(value); host.open = null }
+            AnchoredMenu(open, onDismiss = { if (host.open == key) host.open = null }, title = label, note = note) { firstItemFocus ->
+                options.forEachIndexed { index, (value, text) ->
+                    MenuItem(text, checked = value == selected, focusRequester = if (index == 0) firstItemFocus else null) {
+                        onPick(value)
+                        host.open = null
+                    }
+                }
             }
         }
     }
@@ -260,10 +306,10 @@ fun MultiRow(
     SettingsRow(label, hint, highlighted = open) {
         Box {
             ValueChip(summary, open, enabled) { host.open = if (open) null else key }
-            AnchoredMenu(open, onDismiss = { if (host.open == key) host.open = null }, title = label, note = note) {
-                for ((value, text) in items) {
+            AnchoredMenu(open, onDismiss = { if (host.open == key) host.open = null }, title = label, note = note) { firstItemFocus ->
+                items.forEachIndexed { index, (value, text) ->
                     val on = value in selected
-                    MenuItem(text, checked = on) { onToggle(value, !on) }
+                    MenuItem(text, checked = on, focusRequester = if (index == 0) firstItemFocus else null) { onToggle(value, !on) }
                 }
             }
         }

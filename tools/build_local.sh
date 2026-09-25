@@ -2,6 +2,15 @@
 set -euo pipefail
 
 repo_root=$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
+if tree_status=$(git -C "${repo_root}" status --porcelain 2>/dev/null); then
+    if [[ -n "${tree_status}" ]]; then
+        export DROIDDECK_BUILD_TREE_STATE=dirty
+    else
+        export DROIDDECK_BUILD_TREE_STATE=clean
+    fi
+else
+    export DROIDDECK_BUILD_TREE_STATE=unknown
+fi
 sdk_dir=${ANDROID_HOME:-${ANDROID_SDK_ROOT:-"${HOME}/Library/Android/sdk"}}
 java_dir=${JAVA_HOME:-"/opt/homebrew/opt/openjdk@17/libexec/openjdk.jdk/Contents/Home"}
 image_name=${DROIDDECK_BUILD_IMAGE:-droiddeck-local-cross:24.04-v2}
