@@ -34,7 +34,7 @@ object SessionLogShare {
         val zip = File(out, "DroidDeck-${folder.name}.zip")
         // Scrubbed on the way into the zip: a session shared while it runs has not had its end-of-
         // session pass yet, and the redactor changes nothing in a line that is already clean.
-        LogRedactor.learnOwnAddresses(File(LinuxRuntime.rootDir(context), "etc/bannerlator-net"))
+        LogRedactor.learnFromRuntime(LinuxRuntime.rootDir(context))
         ZipOutputStream(zip.outputStream().buffered()).use { z ->
             files.forEach { f ->
                 z.putNextEntry(ZipEntry(folder.name + "/" + f.relativeTo(folder).path))

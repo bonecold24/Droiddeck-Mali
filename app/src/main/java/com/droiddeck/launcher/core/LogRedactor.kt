@@ -19,7 +19,9 @@ package com.droiddeck.launcher.core
  * The device's OWN addresses are not kept: the client's IPv6 check logs "external address <ours>"
  * about twenty times a session, and a public IPv6 address is the user's. [learnOwnAddresses] reads
  * the link the session was given (etc/bannerlator-net) and every address on the same /64 - privacy
- * addresses rotate inside it - or an own public IPv4 is replaced wherever it appears.
+ * addresses rotate inside it - or an own public IPv4 is replaced wherever it appears. Likewise every
+ * Steam account and persona name on the device ([learnAccounts]), for users who sign in with an
+ * account name rather than an email.
  */
 object LogRedactor {
     private val EMAIL = Regex("[A-Za-z0-9._%+\\-]+@[A-Za-z0-9.\\-]+\\.[A-Za-z]{2,}")
@@ -58,6 +60,44 @@ object LogRedactor {
     private val IPV4 = Regex("(?<![0-9.])(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})(?![0-9.])")
     /** An IPv6 literal: "::" somewhere, or all eight groups (a clock's 10:03:05 is neither). */
     private val IPV6 = Regex("(?<![0-9A-Za-z:])[0-9A-Fa-f]{0,4}(?::[0-9A-Fa-f]{0,4}){2,7}(?:%[A-Za-z0-9_.]+)?(?![0-9A-Za-z:])")
+
+    /**
+     * The account a Steam UI login line names ("Login: OnLoginStateChange <account> 2 1 0 0"): a
+     * user who signs in with a plain account name, not an email, had it in every log. The single
+     * space then a non-space keeps "OnLoginStateChange  0 1 0 0" (no account yet) as it is.
+     */
+    private val LOGIN_STATE = Regex("(OnLoginStateChange )(\\S+)")
+    private val LOGIN_USERS = Regex("(OnLoginUsersChanged )(\\S.*)$")
+
+    /** The device's Steam accounts and persona names as patterns (see [learnAccounts]). */
+    @Volatile
+    private var accounts: List<Regex> = emptyList()
+
+    /**
+     * Learns every Steam account on the device from the client's loginusers.vdf - its AccountName
+     * and PersonaName - so they are replaced wherever a log mentions them, whoever the user is.
+     * Names under three characters are skipped: blanking every "a" would ruin a log.
+     */
+    fun learnAccounts(loginUsers: java.io.File) {
+        val found = ArrayList<Regex>()
+        try {
+            if (loginUsers.isFile) {
+                val kv = Regex("\"(AccountName|PersonaName)\"\\s+\"([^\"]*)\"")
+                kv.findAll(loginUsers.readText()).map { it.groupValues[2].trim() }.filter { it.length >= 3 }.distinct().forEach { name ->
+                    found += Regex("(?i)(?<![A-Za-z0-9_])" + Regex.escape(name) + "(?![A-Za-z0-9_])")
+                }
+            }
+        } catch (e: Exception) {
+            return
+        }
+        accounts = found
+    }
+
+    /** Everything the session's runtime can tell about whose logs these are: addresses and accounts. */
+    fun learnFromRuntime(root: java.io.File) {
+        learnOwnAddresses(java.io.File(root, "etc/bannerlator-net"))
+        learnAccounts(java.io.File(root, "root/.local/share/Steam/config/loginusers.vdf"))
+    }
 
     /** This device's public addresses as patterns (see [learnOwnAddresses]); empty until learned. */
     @Volatile
@@ -174,6 +214,9 @@ object LogRedactor {
             }
             out = EXTERNAL_ADDR.replace(out) { "${it.groupValues[1]}<redacted:ip>" }
             for (r in own) out = r.replace(out, "<redacted:ip>")
+            out = LOGIN_STATE.replace(out) { "${it.groupValues[1]}<redacted:account>" }
+            out = LOGIN_USERS.replace(out) { "${it.groupValues[1]}<redacted:account>" }
+            for (r in accounts) out = r.replace(out, "<redacted:account>")
             out = EMAIL.replace(out, "<redacted:email>")
             out = RESIDUAL.replace(out) { "${it.groupValues[1]}=<redacted:token>" }
             out = LONG_TOKEN.replace(out, "<redacted:token>")

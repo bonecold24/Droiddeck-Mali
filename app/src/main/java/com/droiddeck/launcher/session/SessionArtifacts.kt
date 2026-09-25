@@ -31,8 +31,8 @@ object SessionArtifacts {
     /** Written last; a folder without it did not get its ending. */
     const val COMPLETE_MARKER = ".complete"
 
-    /** Every file in the folder has been through the redactor, own addresses included. */
-    private const val SCRUBBED_MARKER = ".scrubbed"
+    /** Every file in the folder has been through the redactor, own addresses and accounts included (-2: accounts added). */
+    private const val SCRUBBED_MARKER = ".scrubbed-2"
 
     /** Everything the end of a session gathers, into [dir]. Safe to call for a dead session. */
     fun collect(context: Context, dir: File, reason: String) {
@@ -43,7 +43,7 @@ object SessionArtifacts {
                     src.copyTo(wayland, overwrite = true)
                 }
             }
-            LogRedactor.learnOwnAddresses(File(LinuxRuntime.rootDir(context), "etc/bannerlator-net"))
+            LogRedactor.learnFromRuntime(LinuxRuntime.rootDir(context))
             copySteamLogs(context, dir)
             // A session the system killed leaves its trace here and nowhere else.
             SessionLogCapture.dumpCrashBuffer(File(dir, "crash.log"))
@@ -69,7 +69,7 @@ object SessionArtifacts {
             f.isDirectory && f.name.startsWith("session-") && f != current && !File(f, SCRUBBED_MARKER).exists()
         } ?: return
         if (dirs.isEmpty()) return
-        LogRedactor.learnOwnAddresses(File(LinuxRuntime.rootDir(context), "etc/bannerlator-net"))
+        LogRedactor.learnFromRuntime(LinuxRuntime.rootDir(context))
         dirs.forEach { dir ->
             scrubFolder(dir)
             File(dir, "steam").takeIf { it.isDirectory }?.let { scrubFolder(it) }
@@ -128,7 +128,7 @@ object SessionArtifacts {
         }?.sortedBy { it.name } ?: return
         if (abandoned.isEmpty()) return
         val current = SessionPaths.current()
-        LogRedactor.learnOwnAddresses(File(LinuxRuntime.rootDir(context), "etc/bannerlator-net"))
+        LogRedactor.learnFromRuntime(LinuxRuntime.rootDir(context))
         abandoned.forEachIndexed { i, dir ->
             if (dir == current) return@forEachIndexed
             val newest = i == abandoned.lastIndex
