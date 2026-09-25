@@ -28,7 +28,9 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
@@ -76,6 +78,7 @@ import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import com.droiddeck.launcher.core.FexPreset
 import com.droiddeck.launcher.gpu.FrameGen
 import com.droiddeck.launcher.session.SessionPrefs
@@ -231,6 +234,7 @@ fun SessionDrawer(open: Boolean, page: Int, controllerActive: Boolean, onPageCha
     val host = rememberMenuHost()
     var androidAppsExpanded by rememberSaveable { mutableStateOf(false) }
     var appToChooseDisplay by remember { mutableStateOf<HomeApp.LaunchableApp?>(null) }
+    var confirmStop by remember { mutableStateOf(false) }
     val pageScroll = remember { List(3) { ScrollState(0) } }
     val veil by animateFloatAsState(if (open) 1f else 0f, Motion.tw(260), label = "veil")
     val focus = remember { DrawerFocus() }
@@ -239,16 +243,18 @@ fun SessionDrawer(open: Boolean, page: Int, controllerActive: Boolean, onPageCha
     BackHandler(enabled = open) {
         if (host.open != null) host.open = null else a.onClose()
     }
+    BackHandler(enabled = open && confirmStop) { confirmStop = false }
     LaunchedEffect(page) { host.open = null; appToChooseDisplay = null }
     LaunchedEffect(open, controllerActive) {
         if (open && !controllerActive) focusManager.clearFocus(force = true)
     }
-    LaunchedEffect(open, page, controllerActive, host.open, appToChooseDisplay) {
+    LaunchedEffect(open, page, controllerActive, host.open, appToChooseDisplay, confirmStop) {
         if (!open) {
             host.open = null
+            confirmStop = false
         } else if (controllerActive) {
             inputModeManager.requestInputMode(InputMode.Keyboard)
-            if (host.open != null || appToChooseDisplay != null) return@LaunchedEffect
+            if (host.open != null || appToChooseDisplay != null || confirmStop) return@LaunchedEffect
             val target = focus.target(page)
             repeat(24) {
                 androidx.compose.runtime.withFrameNanos { }
@@ -281,10 +287,12 @@ fun SessionDrawer(open: Boolean, page: Int, controllerActive: Boolean, onPageCha
                     }
                     .padding(horizontal = 14.dp, vertical = 16.dp),
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(start = 4.dp, bottom = 6.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().padding(start = 4.dp, bottom = 6.dp)) {
                     Box(modifier = Modifier.size(10.dp).clip(CircleShape).background(Brush.linearGradient(listOf(colors.primary, pal.primary2))))
                     Spacer(Modifier.width(10.dp))
-                    Text(a.title ?: if (a.steam) "Steam" else "Desktop", fontSize = 17.sp, fontWeight = FontWeight.Bold, color = colors.onBackground)
+                    Text(a.title ?: if (a.steam) "Steam" else "Desktop", fontSize = 17.sp, fontWeight = FontWeight.Bold,
+                        color = colors.onBackground, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                    StopSessionButton(modifier = focus.track(page, "stop")) { host.open = null; confirmStop = true }
                 }
                 if (a.onSteamMenu != null && a.onQam != null) {
                     val qamInteraction = remember { MutableInteractionSource() }
@@ -476,16 +484,8 @@ fun SessionDrawer(open: Boolean, page: Int, controllerActive: Boolean, onPageCha
                                     chipModifier = focus.track(page, "fex"), onPick = a.onFexPreset)
                             }
                             Spacer(Modifier.height(18.dp))
-                            Row(
-                                horizontalArrangement = if (a.isHomeApp) Arrangement.End else Arrangement.spacedBy(10.dp),
-                                modifier = Modifier.fillMaxWidth(),
-                            ) {
-                                if (!a.isHomeApp) DrawerOutlineButton("Background", modifier = focus.track(page, "background")) {
-                                    host.open = null; a.onBackground()
-                                }
-                                DangerButton("Stop session", modifier = focus.track(page, "stop")) {
-                                    host.open = null; a.onStop()
-                                }
+                            if (!a.isHomeApp) DrawerOutlineButton("Background", modifier = focus.track(page, "background")) {
+                                host.open = null; a.onBackground()
                             }
                         }
                     }
@@ -511,6 +511,33 @@ fun SessionDrawer(open: Boolean, page: Int, controllerActive: Boolean, onPageCha
             onDismiss = { appToChooseDisplay = null },
         )
     }
+    if (confirmStop) {
+        val cancelFocus = remember { FocusRequester() }
+        val cancel = { confirmStop = false }
+        val stop = { confirmStop = false; a.onStop() }
+        LaunchedEffect(controllerActive) {
+            if (controllerActive) {
+                androidx.compose.runtime.withFrameNanos { }
+                runCatching { cancelFocus.requestFocus() }
+            }
+        }
+        AlertDialog(
+            onDismissRequest = cancel,
+            modifier = Modifier.controllerBack(onBack = cancel),
+            title = { Text("Stop session?") },
+            confirmButton = {
+                TextButton(
+                    onClick = stop,
+                    modifier = Modifier.controllerConfirm(onClick = stop),
+                    colors = ButtonDefaults.textButtonColors(contentColor = colors.error),
+                ) { Text("Stop") }
+            },
+            dismissButton = {
+                TextButton(onClick = cancel, modifier = Modifier.focusRequester(cancelFocus)
+                    .controllerConfirm(onClick = cancel)) { Text("Cancel") }
+            },
+        )
+    }
 }
 
 @Composable
@@ -531,15 +558,16 @@ private fun DrawerOutlineButton(text: String, modifier: Modifier = Modifier, onC
 }
 
 @Composable
-private fun DangerButton(text: String, modifier: Modifier = Modifier, onClick: () -> Unit) {
+private fun StopSessionButton(modifier: Modifier = Modifier, onClick: () -> Unit) {
     val colors = MaterialTheme.colorScheme
     val src = remember { MutableInteractionSource() }
     val hot = src.collectIsFocusedAsState().value || src.collectIsHoveredAsState().value
     val fill by animateColorAsState(if (hot) colors.error.copy(alpha = 0.18f) else Color.Transparent, Motion.tw(220), label = "dangerFill")
     Box(
-        modifier = modifier.clip(RoundedCornerShape(12.dp)).background(fill).border(1.dp, colors.error.copy(alpha = if (hot) 0.9f else 0.5f), RoundedCornerShape(12.dp))
+        contentAlignment = Alignment.Center,
+        modifier = modifier.size(42.dp).semantics { contentDescription = "Stop session" }
+            .clip(RoundedCornerShape(12.dp)).background(fill).border(1.dp, colors.error.copy(alpha = if (hot) 0.9f else 0.5f), RoundedCornerShape(12.dp))
             .hoverable(src).clickable(interactionSource = src, indication = LocalIndication.current, onClick = onClick)
-            .controllerConfirm(onClick = onClick)
-            .padding(horizontal = 16.dp, vertical = 11.dp),
-    ) { Text(text, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 0.5.sp, color = colors.error, maxLines = 1) }
+            .controllerConfirm(onClick = onClick),
+    ) { Text("×", fontSize = 25.sp, fontWeight = FontWeight.Medium, color = colors.error) }
 }
