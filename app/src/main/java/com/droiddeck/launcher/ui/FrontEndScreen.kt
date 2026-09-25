@@ -426,14 +426,16 @@ private fun FrontEndScreenBody(s: FrontEndState, a: FrontEndActions, page: (@Com
         // the pad then had nothing to move from (a press landed back on the rail's first item). So
         // once the new page is in, a controller lands on its main button.
         val inputModeManager = LocalInputModeManager.current
-        LaunchedEffect(selected, s.pageKey) {
+        LaunchedEffect(selected, s.pageKey, showWirelessAdbFix) {
+            if (showWirelessAdbFix) return@LaunchedEffect
             kotlinx.coroutines.delay(450)
             if (!anyFocused && inputModeManager.inputMode == InputMode.Keyboard) runCatching {
                 if (frontFocus.primaryAttached > 0) frontFocus.primary.requestFocus()
                 else frontFocus.menuToggle.requestFocus()
             }
         }
-        LaunchedEffect(navOpen, railSelection) {
+        LaunchedEffect(navOpen, railSelection, showWirelessAdbFix) {
+            if (showWirelessAdbFix) return@LaunchedEffect
             if (navOpen) {
                 frontFocus.focusedRail = null
                 repeat(12) {
@@ -535,15 +537,17 @@ private fun FrontEndScreenBody(s: FrontEndState, a: FrontEndActions, page: (@Com
             )
         }
         if (showWirelessAdbFix) {
-            WirelessAdbFixDialog(
-                onDismiss = { showWirelessAdbFix = false },
-                desiredEnabled = wirelessAdbDesiredEnabled,
-                onOpenDeveloperOptions = requestDeveloperOptions,
-                onCopyCommand = a.onCopyPhantomCommand,
-                onPair = a.onWirelessAdbPair,
-                onFindConnectPort = a.onFindWirelessAdbPort,
-                onApply = a.onWirelessAdbApply,
-            )
+            Box(Modifier.fillMaxSize().background(colors.background)) {
+                WirelessAdbFixPage(
+                    onBack = { showWirelessAdbFix = false },
+                    desiredEnabled = wirelessAdbDesiredEnabled,
+                    onOpenDeveloperOptions = requestDeveloperOptions,
+                    onCopyCommand = a.onCopyPhantomCommand,
+                    onPair = a.onWirelessAdbPair,
+                    onFindConnectPort = a.onFindWirelessAdbPort,
+                    onApply = a.onWirelessAdbApply,
+                )
+            }
         }
         if (showDeveloperDisplayChoice) {
             androidx.compose.material3.AlertDialog(
@@ -1263,7 +1267,7 @@ private fun Chip(t: String, ok: Boolean) {
 private fun rememberHot(src: MutableInteractionSource): Boolean = src.collectIsFocusedAsState().value || src.collectIsHoveredAsState().value
 
 @Composable
-private fun PrimaryButton(text: String, enabled: Boolean = true, main: Boolean = false, onClick: () -> Unit) {
+internal fun PrimaryButton(text: String, enabled: Boolean = true, main: Boolean = false, onClick: () -> Unit) {
     val colors = MaterialTheme.colorScheme
     val pal = LocalPalette.current
     // The page's main button is where the pane is entered from the rail.
