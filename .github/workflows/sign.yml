@@ -1,12 +1,7 @@
 name: Sign APKs
 
-# Called, never run by itself: turns a "Build APK" apk into packages signed with DroidDeck's own key,
-# one matrix job per package in tools/release/variants.txt (tools/release/sign-apk.sh does the work
-# and checks it). The key lives only in the GitHub environment named by the caller:
-#   signing-main    main builds and maintainer-approved PR artifacts
-#   release         manually dispatched release.yml from main
-# PR Build APK jobs stay test-key-only. PR Release Publish calls this from main only after approval,
-# green CI, the exact current commit, and the stable versionCode have been checked.
+# Called from main to sign builds, approved PR artifacts, and releases. The key lives in
+# the caller's protected environment; PR build jobs use only the public test key.
 
 on:
   workflow_call:

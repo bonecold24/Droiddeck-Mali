@@ -3,9 +3,8 @@
 #
 #   - The key is made on this device, in ~/droiddeck-release-key (outside the repo), with a long
 #     random password written beside it. Nothing secret is printed.
-#   - The key and password go to GitHub as secrets of the two signing environments
-#     (signing-main and release). PR build jobs use the public test key; a separate workflow signs
-#     an approved PR artifact from main.
+#   - The key and password are secrets in the signing-main and release environments.
+#     PR build jobs use only the public test key.
 #   - The key's certificate digest - public, not a secret - goes to keystore/release-signer.sha256,
 #     which CI checks every signed apk against. That file is the only thing to commit.
 #
