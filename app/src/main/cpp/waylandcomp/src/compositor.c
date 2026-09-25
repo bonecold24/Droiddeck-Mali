@@ -686,9 +686,11 @@ static void take_shm(struct surface *s, struct wl_shm_buffer *shm, struct wl_res
     if (ci && ci->asked_feedback) ci->shm_frames++;  /* since it asked for GPU buffers */
 }
 
-/* The window the app's performance HUD follows: the latest one to start presenting GPU frames
- * (X11 binds the HUD to the _MESA_DRV window and counts X presents instead). JNI upcalls. */
+/* The window the app's performance HUD follows: the latest one at least as big as the last to
+ * start presenting GPU frames (take_dmabuf) (X11 binds the HUD to the _MESA_DRV window and counts X presents instead). JNI upcalls. */
 static struct surface *g_hud_surface;
+/* When the HUD's window last presented a frame (now_ns), to let a replacement take over. */
+static int64_t g_hud_last_ns;
 extern void banner_on_game_surface(const char *window, const char *gpu); /* window NULL = gone */
 extern void banner_on_game_frame(void);
 /* The program behind that window: its Linux pid (the Wayland client's credentials) and executable name
@@ -731,6 +733,7 @@ static void take_dmabuf(struct surface *s, struct dmabuf_buffer *b, struct wl_re
     s->buf_h = b->height;
     s->has_content = b->img != NULL;
     g_stat_dmabuf++;
+    const int announced_now = !s->announced_vulkan;
     if (!s->announced_vulkan) {
         char name[160];
         s->announced_vulkan = 1;
@@ -751,14 +754,23 @@ static void take_dmabuf(struct surface *s, struct dmabuf_buffer *b, struct wl_re
         else
             banner_log("error", "could not import GPU frames from %s (%dx%d, modifier %#llx)",
                        name, b->width, b->height, (unsigned long long)b->modifier);
-        /* The HUD follows the window whether its frames are copied or go straight to the layer:
-         * a zero-copy frame the compositor never imported is still a presented game frame. */
-        if (b->img || ahb_swapchain_has_ahb(b)) {
-            g_hud_surface = s;
-            banner_on_game_surface(name, vkp_gpu_name());
-            struct client_info *ci = client_info_of(wl_resource_get_client(s->resource));
-            if (ci) banner_on_game_program((int)ci->pid, strncmp(ci->name, "pid ", 4) ? ci->name : "");
-        }
+    }
+    /* The HUD follows the window whether its frames are copied or go straight to the layer: a
+     * zero-copy frame the compositor never imported is still a presented game frame. A
+     * program's small surfaces - gamescope's 1x1 cursor, Qt's menus and tooltips (melonDS) -
+     * came after the game's and drew too rarely to count, which left the HUD on 0 fps while the
+     * game ran at 60. So a new window takes the HUD only when it is at least as big (a
+     * full-screen gamescope over the desktop still does), and a window gone quiet for a second
+     * gives way to whatever draws next. */
+    if (s != g_hud_surface && (b->img || ahb_swapchain_has_ahb(b)) &&
+        (!g_hud_surface || now_ns() - g_hud_last_ns > 1000000000LL ||
+         (announced_now && (int64_t)b->width * b->height >= (int64_t)g_hud_surface->buf_w * g_hud_surface->buf_h))) {
+        char name[160];
+        describe(s, name, sizeof(name));
+        g_hud_surface = s;
+        banner_on_game_surface(name, vkp_gpu_name());
+        struct client_info *ci = client_info_of(wl_resource_get_client(s->resource));
+        if (ci) banner_on_game_program((int)ci->pid, strncmp(ci->name, "pid ", 4) ? ci->name : "");
     }
     /* HDR session (gate open): a DXVK game switches to HDR by REBUILDING its swapchain on the same
      * surface, so the one-shot line above never sees the 10-bit buffers - name every format change. */
@@ -780,7 +792,7 @@ static void take_dmabuf(struct surface *s, struct dmabuf_buffer *b, struct wl_re
      * Asking whether the compositor could import it, as this used to, is a question about the
      * copy path and not about whether a frame happened: a game whose buffers go straight to
      * the display layer draws on screen while the counter sat at 0.0 fps and 1000.0 ms. */
-    if (s == g_hud_surface) banner_on_game_frame();
+    if (s == g_hud_surface) { g_hud_last_ns = now_ns(); banner_on_game_frame(); }
 }
 
 /* ---- hooks for ahb_swapchain.c (zero-copy layers) */
