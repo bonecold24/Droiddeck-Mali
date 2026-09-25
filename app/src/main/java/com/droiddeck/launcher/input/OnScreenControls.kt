@@ -5,56 +5,46 @@ import android.content.Context
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
-import android.graphics.RectF
+import android.graphics.Path
+import android.graphics.Rect
+import android.os.Build
 import android.view.MotionEvent
 import android.view.View
+import android.view.WindowInsets
+import kotlin.math.max
+import kotlin.math.min
+import kotlin.math.sin
 import kotlin.math.sqrt
 
-/**
- * A pad drawn on the screen for devices that have no controller attached.
- *
- * It writes into the same [PadBridge] a physical pad does, so the Steam client sees one Xbox pad
- * whichever is being used, and the two can be used at once. A d-pad, two sticks, the four face
- * buttons, the bumpers, and the three centre buttons: enough to drive Big Picture and to play,
- * and no control editor.
- *
- * Where the controls go follows the picture. The compositor letterboxes the session's output onto
- * the panel, and a foldable or a wide phone has bars beside or above and below it that are empty
- * black: the controls take the bars first, and only overlay the picture when there are none wide
- * enough. Only the controls themselves take touches; everything else falls through to the
- * activity, where it moves the mouse pointer.
- */
 @SuppressLint("ViewConstructor")
-class OnScreenControls(context: Context, private val pad: PadBridge) : View(context) {
+class OnScreenControls(context: Context, private val pad: PadBridge?, private val editing: Boolean = false) : View(context) {
 
     private class Control(
         val id: String,
-        val label: String,
-        /** A PadState button number, or -1. */
-        val button: Int,
-        /** A d-pad direction (0 up, 1 right, 2 down, 3 left), or -1. */
-        val dpad: Int,
-        /** 0 = left stick, 1 = right stick, -1 = a button. */
+        val group: String,
         val stick: Int,
-        val radius: Float,
+        val radiusDp: Float,
+        val offsetXDp: Float,
+        val offsetYDp: Float,
     ) {
+        var target = id
+        var radius = 0f
         var cx = 0f
         var cy = 0f
-        var pressedBy = -1     // the pointer id holding it, or -1
-        /** A stick's knob offset from its centre, in [-radius, radius]. */
+        var pressedBy = -1
         var kx = 0f
         var ky = 0f
-        /** A stick that moved or was let go: its axes are written once, then left alone. */
         var dirty = false
-        fun contains(x: Float, y: Float, radius: Float = this.radius): Boolean {
+        var clicked = false
+        var lastUp = 0L
+
+        fun contains(x: Float, y: Float, r: Float): Boolean {
             val dx = x - cx
             val dy = y - cy
-            // A generous hit area: a finger on glass is not a mouse, and a miss in Big Picture
-            // means the user thinks the pad does not work.
-            val r = radius * 1.25f
-            return dx * dx + dy * dy <= r * r
+            val hit = r * 1.25f
+            return dx * dx + dy * dy <= hit * hit
         }
-        /** Moves the knob towards the finger, clamped to the base. */
+
         fun drag(x: Float, y: Float) {
             var dx = x - cx
             var dy = y - cy
@@ -64,192 +54,325 @@ class OnScreenControls(context: Context, private val pad: PadBridge) : View(cont
         }
     }
 
-    private val density = resources.displayMetrics.density
-    private fun dp(value: Float) = value * density
-
     private val controls = listOf(
-        Control("up", "▲", -1, 0, -1, dp(26f)),
-        Control("right", ">", -1, 1, -1, dp(26f)),
-        Control("down", "▼", -1, 2, -1, dp(26f)),
-        Control("left", "<", -1, 3, -1, dp(26f)),
-        Control("ls", "L", -1, -1, 0, dp(48f)),
-        Control("rs", "R", -1, -1, 1, dp(48f)),
-        Control("a", "A", 0, -1, -1, dp(30f)),
-        Control("b", "B", 1, -1, -1, dp(30f)),
-        Control("x", "X", 2, -1, -1, dp(30f)),
-        Control("y", "Y", 3, -1, -1, dp(30f)),
-        Control("lb", "LB", 4, -1, -1, dp(24f)),
-        Control("rb", "RB", 5, -1, -1, dp(24f)),
-        Control("select", "⧉", 6, -1, -1, dp(20f)),
-        Control("start", "☰", 7, -1, -1, dp(20f)),
-        // The client's own in-game menu; the interposer publishes it as BTN_MODE.
-        Control("guide", "◉", PadState.GUIDE, -1, -1, dp(22f)),
-        Control("qam", "⋯", -1, -1, -1, dp(22f)),
+        Control("up", "dpad", -1, 26f, 0f, -52f),
+        Control("right", "dpad", -1, 26f, 52f, 0f),
+        Control("down", "dpad", -1, 26f, 0f, 52f),
+        Control("left", "dpad", -1, 26f, -52f, 0f),
+        Control("ls", "ls", 0, 48f, 0f, 0f),
+        Control("rs", "rs", 1, 48f, 0f, 0f),
+        Control("a", "face", -1, 30f, 0f, 50f),
+        Control("b", "face", -1, 30f, 50f, 0f),
+        Control("x", "face", -1, 30f, -50f, 0f),
+        Control("y", "face", -1, 30f, 0f, -50f),
+        Control("lb", "lb", -1, 24f, 0f, 0f),
+        Control("rb", "rb", -1, 24f, 0f, 0f),
+        Control("lt", "lt", -1, 24f, 0f, 0f),
+        Control("rt", "rt", -1, 24f, 0f, 0f),
+        Control("select", "select", -1, 20f, 0f, 0f),
+        Control("start", "start", -1, 20f, 0f, 0f),
+        Control("guide", "guide", -1, 22f, 0f, 0f),
+        Control("qam", "qam", -1, 22f, 0f, 0f),
     )
 
+    private val groups = controls.map { it.group }.distinct()
+
     private var buttonsOnly = false
+    private var settings = ControllerPrefs.read(context)
+    private var safe = Rect()
+    private var selected: String? = null
+    private var grabX = 0f
+    private var grabY = 0f
+    private var ignoreSaved = false
+
+    private var idleFill = 0
+    private var heldFill = 0
+    private var idleStroke = 0
+    private var heldStroke = 0
+    private var idleText = 0
+    private var stickFill = 0
+    private var knobFill = 0
 
     private val fill = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
-    private val stroke = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        style = Paint.Style.STROKE
-        strokeWidth = dp(1.5f)
-    }
+    private val stroke = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE }
+    private val arrow = Path()
     private val text = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         textAlign = Paint.Align.CENTER
         typeface = android.graphics.Typeface.DEFAULT_BOLD
     }
 
-    /** Where the session's picture is drawn on this view, or null when the whole view is picture. */
-    private var picture: RectF? = null
+    init {
+        applySettings()
+    }
 
-    /** The activity tells the controls where the picture lands; the layout follows it. */
-    fun setPicture(rect: RectF?) {
-        val same = (rect == null && picture == null) || (rect != null && picture != null && rect == picture)
-        if (same) return
-        picture = rect?.let { RectF(it) }
-        if (width > 0 && height > 0) { layoutControls(width.toFloat(), height.toFloat()); invalidate() }
+    private fun dp(value: Float) = value * resources.displayMetrics.density
+
+    private fun scaled(value: Float) = dp(value) * settings.size / 100f
+
+    fun reload() {
+        releaseAll()
+        settings = ControllerPrefs.read(context)
+        applySettings()
+        relayout()
+    }
+
+    private fun applySettings() {
+        for (control in controls) control.target = settings.mapping[control.id] ?: control.id
+        val tint = settings.tint
+        val alpha = settings.opacity / 100f
+        fun shade(a: Int, f: Float) = Color.argb((a * alpha).toInt(), (Color.red(tint) * f).toInt(), (Color.green(tint) * f).toInt(), (Color.blue(tint) * f).toInt())
+        fun light(a: Int, f: Float) = Color.argb(
+            (a * alpha).toInt(),
+            (Color.red(tint) + (255 - Color.red(tint)) * f).toInt(),
+            (Color.green(tint) + (255 - Color.green(tint)) * f).toInt(),
+            (Color.blue(tint) + (255 - Color.blue(tint)) * f).toInt(),
+        )
+        idleFill = shade(80, 0.12f)
+        heldFill = shade(160, 1f)
+        idleStroke = light(150, 0.25f)
+        heldStroke = light(230, 0.7f)
+        idleText = light(210, 0.75f)
+        stickFill = shade(60, 0.12f)
+        knobFill = shade(120, 0.35f)
+        stroke.strokeWidth = dp(1.5f)
     }
 
     fun setButtonsOnly(enabled: Boolean) {
         if (buttonsOnly == enabled) return
         releaseAll()
         buttonsOnly = enabled
-        if (width > 0 && height > 0) layoutControls(width.toFloat(), height.toFloat())
-        invalidate()
+        relayout()
     }
 
     override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
         super.onSizeChanged(w, h, oldw, oldh)
-        layoutControls(w.toFloat(), h.toFloat())
+        relayout()
     }
 
-    /**
-     * Three layouts: side bars (a wide panel showing 16:9), bottom band (a squarer panel showing
-     * a wide picture), and the overlay when neither bar is wide enough for a cluster. Thumbs reach
-     * the bottom corners in every one; nothing is placed where a game's own HUD usually is.
-     */
-    private fun layoutControls(w: Float, h: Float) {
-        if (buttonsOnly) {
+    override fun onApplyWindowInsets(insets: WindowInsets): WindowInsets {
+        val cutout = if (Build.VERSION.SDK_INT >= 28) insets.displayCutout else null
+        val fresh = Rect(cutout?.safeInsetLeft ?: 0, cutout?.safeInsetTop ?: 0, cutout?.safeInsetRight ?: 0, cutout?.safeInsetBottom ?: 0)
+        if (fresh != safe) { safe = fresh; relayout() }
+        return super.onApplyWindowInsets(insets)
+    }
+
+    override fun onDetachedFromWindow() {
+        releaseAll()
+        super.onDetachedFromWindow()
+    }
+
+    private fun relayout() {
+        if (width <= 0 || height <= 0) return
+        for (control in controls) control.radius = if (buttonsOnly && !editing && (control.id == "guide" || control.id == "qam")) dp(30f) else scaled(control.radiusDp)
+        if (buttonsOnly && !editing) {
             val inset = dp(44f)
-            place("guide", inset, h - inset)
-            place("qam", w - inset, h - inset)
-            return
+            put("guide", safe.left + inset, height - safe.bottom - inset)
+            put("qam", width - safe.right - inset, height - safe.bottom - inset)
+        } else {
+            placeAuto(width.toFloat(), height.toFloat())
+            if (!ignoreSaved) for ((group, pos) in ControllerPrefs.layout(context, width, height)) {
+                if (group in groups) put(group, pos.first * width, pos.second * height)
+            }
         }
-        val p = picture
-        val sideBar = if (p != null) minOf(p.left, w - p.right) else 0f
-        val bottomBand = if (p != null) h - p.bottom else 0f
-        val margin = dp(34f)
-        when {
-            // A cluster (d-pad or face buttons) is ~156 dp across; a stick above it needs the height.
-            sideBar >= dp(160f) && p != null -> {
-                val lx = p.left / 2f
-                val rx = p.right + (w - p.right) / 2f
-                val bottom = h - margin - dp(74f)
-                dpadAt(lx, bottom)
-                faceAt(rx, bottom)
-                place("ls", lx, bottom - dp(196f))
-                place("rs", rx, bottom - dp(196f))
-                place("lb", lx, bottom - dp(196f) - dp(96f))
-                place("rb", rx, bottom - dp(196f) - dp(96f))
-                place("select", lx, h - margin + dp(8f))
-                place("start", rx, h - margin + dp(8f))
-                place("guide", w / 2f, h - dp(22f))
-            }
-            bottomBand >= dp(190f) && p != null -> {
-                val cy = p.bottom + bottomBand / 2f + dp(12f)
-                val dx = margin + dp(74f)
-                val fx = w - margin - dp(74f)
-                dpadAt(dx, cy)
-                faceAt(fx, cy)
-                place("ls", dx + dp(150f), cy)
-                place("rs", fx - dp(150f), cy)
-                place("lb", dx, p.bottom + dp(30f))
-                place("rb", fx, p.bottom + dp(30f))
-                val centre = w / 2f
-                place("select", centre - dp(60f), h - dp(30f))
-                place("guide", centre, h - dp(30f))
-                place("start", centre + dp(60f), h - dp(30f))
-            }
-            else -> {
-                val dx = margin + dp(74f)
-                val fx = w - margin - dp(74f)
-                val bottom = h - margin - dp(74f)
-                dpadAt(dx, bottom)
-                faceAt(fx, bottom)
-                place("ls", dx + dp(142f), bottom)
-                place("rs", fx - dp(142f), bottom)
-                place("lb", margin + dp(46f), h - margin - dp(196f))
-                place("rb", w - margin - dp(46f), h - margin - dp(196f))
-                val centre = w / 2f
-                place("select", centre - dp(60f), h - margin - dp(26f))
-                place("guide", centre, h - margin - dp(26f))
-                place("start", centre + dp(60f), h - margin - dp(26f))
-            }
+        groups.forEach { clamp(it) }
+        invalidate()
+    }
+
+    private fun pxPerMm(dpi: Float): Float {
+        val nominal = resources.displayMetrics.densityDpi.toFloat()
+        return (if (dpi > nominal * 0.6f && dpi < nominal * 1.6f) dpi else nominal) / 25.4f
+    }
+
+    private fun placeAuto(w: Float, h: Float) {
+        val metrics = resources.displayMetrics
+        val mmX = pxPerMm(metrics.xdpi)
+        val mmY = pxPerMm(metrics.ydpi)
+        val usableW = w - safe.left - safe.right
+        val usableH = h - safe.top - safe.bottom
+        val inboard = (0.17f * usableW / mmX).coerceIn(24f, 40f) * mmX
+        val lift = (0.285f * usableH / mmY).coerceIn(22f, 45f) * mmY
+        val gap = dp(12f)
+        val restY = h - safe.bottom - lift
+        put("ls", safe.left + inboard, restY)
+        put("face", w - safe.right - inboard, restY)
+        besideBelow("dpad", "ls", 1f, gap)
+        besideBelow("rs", "face", -1f, gap)
+        val shoulderY = min(centre("ls").second - extent("ls"), centre("face").second - extent("face")) - gap - extent("lb")
+        shoulders("ls", "lb", "lt", 1f, gap, shoulderY)
+        shoulders("face", "rb", "rt", -1f, gap, shoulderY)
+        val bottom = h - safe.bottom - dp(8f) - extent("guide")
+        val spread = extent("guide") + gap / 2f
+        put("guide", w / 2f - spread, bottom)
+        put("qam", w / 2f + spread, bottom)
+        val inner = max(centre("dpad").first + extent("dpad"), w - centre("rs").first + extent("rs")) + gap + extent("select")
+        put("select", inner, restY)
+        put("start", w - inner, restY)
+        if (crowded("select", gap) || crowded("start", gap)) {
+            above("select", "dpad", gap)
+            val (sx, sy) = centre("select")
+            put("start", w - sx, sy)
+            if (crowded("start", gap)) above("start", "rs", gap)
         }
     }
 
-    private fun dpadAt(x: Float, y: Float) {
-        val step = dp(52f)
-        place("up", x, y - step)
-        place("down", x, y + step)
-        place("left", x - step, y)
-        place("right", x + step, y)
+    private fun besideBelow(group: String, anchor: String, inward: Float, gap: Float) {
+        val (ax, ay) = centre(anchor)
+        val reach = extent(anchor) + extent(group) + gap
+        val floor = height - safe.bottom - dp(8f) - extent(group)
+        val dy = min(reach * sin(Math.toRadians(35.0)).toFloat(), floor - ay)
+        val dx = sqrt(max(0f, reach * reach - dy * dy))
+        put(group, ax + inward * dx, ay + dy)
     }
 
-    private fun faceAt(x: Float, y: Float) {
-        val step = dp(50f)
-        place("a", x, y + step)
-        place("b", x + step, y)
-        place("x", x - step, y)
-        place("y", x, y - step)
+    private fun shoulders(anchor: String, bumper: String, trigger: String, inward: Float, gap: Float, y: Float) {
+        val (ax, _) = centre(anchor)
+        val spread = extent(bumper) + gap / 2f
+        put(bumper, ax + inward * spread, y)
+        put(trigger, ax - inward * spread, y)
     }
 
-    private fun place(id: String, x: Float, y: Float) {
-        val control = controls.firstOrNull { it.id == id } ?: return
-        control.cx = x
-        control.cy = y
+    private fun above(group: String, anchor: String, gap: Float) {
+        val (ax, ay) = centre(anchor)
+        put(group, ax, ay - extent(anchor) - gap - extent(group))
+    }
+
+    private fun crowded(group: String, gap: Float): Boolean {
+        val (x, y) = centre(group)
+        return groups.any { other ->
+            if (other == group) return@any false
+            val (ox, oy) = centre(other)
+            val dx = x - ox
+            val dy = y - oy
+            sqrt(dx * dx + dy * dy) < extent(group) + extent(other) + gap / 2f
+        }
+    }
+
+    private fun members(group: String) = controls.filter { it.group == group }
+
+    private fun centre(group: String): Pair<Float, Float> {
+        val first = members(group).first()
+        return (first.cx - scaled(first.offsetXDp)) to (first.cy - scaled(first.offsetYDp))
+    }
+
+    private fun extent(group: String): Float = members(group).maxOf { control ->
+        sqrt(scaled(control.offsetXDp).let { it * it } + scaled(control.offsetYDp).let { it * it }) + control.radius
+    }
+
+    private fun put(group: String, x: Float, y: Float) {
+        for (control in members(group)) {
+            control.cx = x + scaled(control.offsetXDp)
+            control.cy = y + scaled(control.offsetYDp)
+        }
+    }
+
+    private fun clamp(group: String) {
+        val list = members(group)
+        val margin = dp(4f)
+        val minX = list.minOf { it.cx - it.radius } - safe.left - margin
+        val maxX = list.maxOf { it.cx + it.radius } - (width - safe.right - margin)
+        val minY = list.minOf { it.cy - it.radius } - safe.top - margin
+        val maxY = list.maxOf { it.cy + it.radius } - (height - safe.bottom - margin)
+        val dx = if (minX < 0) -minX else if (maxX > 0) -maxX else 0f
+        val dy = if (minY < 0) -minY else if (maxY > 0) -maxY else 0f
+        if (dx == 0f && dy == 0f) return
+        for (control in list) { control.cx += dx; control.cy += dy }
+    }
+
+    fun saveLayout() {
+        if (width <= 0 || height <= 0) return
+        if (ignoreSaved) { ControllerPrefs.resetLayout(context, width, height); return }
+        ControllerPrefs.setLayout(context, width, height, groups.associateWith { group ->
+            val (x, y) = centre(group)
+            x / width to y / height
+        })
+    }
+
+    fun resetLayout() {
+        ControllerPrefs.resetLayout(context, width, height)
+        ignoreSaved = true
+        selected = null
+        relayout()
+    }
+
+    private fun label(control: Control): String = when (control.target) {
+        "ls" -> "L"
+        "rs" -> "R"
+        "select" -> "⧉"
+        "start" -> "☰"
+        "guide" -> if (buttonsOnly && !editing) "Steam" else "◉"
+        "qam" -> "⋯"
+        else -> control.target.uppercase()
     }
 
     override fun onDraw(canvas: Canvas) {
         for (control in controls) {
             if (!isVisible(control)) continue
             val held = control.pressedBy != -1
-            val radius = controlRadius(control)
+            val radius = control.radius
             if (control.stick >= 0) {
-                // The base, then the knob where the finger holds it.
-                fill.color = if (held) Color.argb(60, 199, 125, 255) else Color.argb(50, 20, 12, 30)
+                fill.color = if (held) heldFill else stickFill
                 canvas.drawCircle(control.cx, control.cy, radius, fill)
-                stroke.color = if (held) Color.argb(200, 235, 212, 255) else Color.argb(90, 201, 160, 255)
+                stroke.color = if (held) heldStroke else idleStroke
                 canvas.drawCircle(control.cx, control.cy, radius, stroke)
                 val knob = radius * 0.46f
-                fill.color = if (held) Color.argb(170, 199, 125, 255) else Color.argb(110, 60, 40, 90)
+                fill.color = if (held || control.clicked) heldFill else knobFill
                 canvas.drawCircle(control.cx + control.kx, control.cy + control.ky, knob, fill)
-                stroke.color = if (held) Color.argb(230, 245, 230, 255) else Color.argb(140, 201, 160, 255)
+                stroke.color = if (held) heldStroke else idleStroke
                 canvas.drawCircle(control.cx + control.kx, control.cy + control.ky, knob, stroke)
-                text.color = if (held) Color.WHITE else Color.argb(150, 225, 210, 245)
+                text.color = if (held) Color.WHITE else idleText
                 text.textSize = knob * 0.8f
-                canvas.drawText(control.label, control.cx + control.kx, control.cy + control.ky + text.textSize * 0.35f, text)
-                continue
+                canvas.drawText(label(control), control.cx + control.kx, control.cy + control.ky + text.textSize * 0.35f, text)
+            } else {
+                fill.color = if (held) heldFill else idleFill
+                canvas.drawCircle(control.cx, control.cy, radius, fill)
+                stroke.color = if (held) heldStroke else idleStroke
+                canvas.drawCircle(control.cx, control.cy, radius, stroke)
+                text.color = if (held) Color.WHITE else idleText
+                val direction = directions.indexOf(control.target)
+                if (direction >= 0) {
+                    drawArrow(canvas, control.cx, control.cy, radius * 0.34f, direction)
+                    continue
+                }
+                val name = label(control)
+                text.textSize = if (name.length > 2) dp(11f) else radius * if (name.length == 2) 0.62f else 0.85f
+                canvas.drawText(name, control.cx, control.cy + text.textSize * 0.35f, text)
             }
-            fill.color = if (held) Color.argb(150, 199, 125, 255) else Color.argb(70, 20, 12, 30)
-            canvas.drawCircle(control.cx, control.cy, radius, fill)
-            stroke.color = if (held) Color.argb(220, 235, 212, 255) else Color.argb(110, 201, 160, 255)
-            canvas.drawCircle(control.cx, control.cy, radius, stroke)
-            text.color = if (held) Color.WHITE else Color.argb(190, 225, 210, 245)
-            val label = if (buttonsOnly && control.id == "guide") "Steam" else control.label
-            text.textSize = if (buttonsOnly && control.id == "guide") dp(11f) else radius * 0.85f
-            canvas.drawText(label, control.cx, control.cy + text.textSize * 0.35f, text)
         }
+        val group = selected ?: return
+        val (x, y) = centre(group)
+        stroke.color = heldStroke
+        canvas.drawCircle(x, y, extent(group) + dp(6f), stroke)
+    }
+
+    private fun drawArrow(canvas: Canvas, x: Float, y: Float, size: Float, direction: Int) {
+        val (fx, fy) = when (direction) {
+            0 -> 0f to -1f
+            1 -> 1f to 0f
+            2 -> 0f to 1f
+            else -> -1f to 0f
+        }
+        arrow.reset()
+        arrow.moveTo(x + fx * size, y + fy * size)
+        arrow.lineTo(x - fx * size * 0.7f - fy * size, y - fy * size * 0.7f + fx * size)
+        arrow.lineTo(x - fx * size * 0.7f + fy * size, y - fy * size * 0.7f - fx * size)
+        arrow.close()
+        fill.color = text.color
+        canvas.drawPath(arrow, fill)
     }
 
     @SuppressLint("ClickableViewAccessibility")
     override fun onTouchEvent(event: MotionEvent): Boolean {
+        if (editing) return onEditTouch(event)
         when (event.actionMasked) {
             MotionEvent.ACTION_DOWN, MotionEvent.ACTION_POINTER_DOWN -> {
                 val index = event.actionIndex
                 val control = controlAt(event.getX(index), event.getY(index)) ?: return false
                 control.pressedBy = event.getPointerId(index)
-                if (control.stick >= 0) control.drag(event.getX(index), event.getY(index))
+                if (control.stick >= 0) {
+                    control.clicked = settings.stickClick && event.eventTime - control.lastUp < DOUBLE_TAP_MS
+                    control.drag(event.getX(index), event.getY(index))
+                }
+                requestUnbufferedDispatch(event)
                 apply()
                 return true
             }
@@ -259,11 +382,8 @@ class OnScreenControls(context: Context, private val pad: PadBridge) : View(cont
                     val pointer = event.getPointerId(index)
                     val x = event.getX(index)
                     val y = event.getY(index)
-                    // A stick keeps its finger wherever it goes: the knob follows, clamped.
                     val stick = controls.firstOrNull { it.stick >= 0 && it.pressedBy == pointer }
                     if (stick != null) { stick.drag(x, y); changed = true; continue }
-                    // A finger that slides off a button releases it, and one that slides onto
-                    // another presses that - which is how a d-pad is used in practice.
                     val over = controlAt(x, y)?.takeIf { it.stick < 0 }
                     for (control in controls) {
                         if (control.stick < 0 && control.pressedBy == pointer && control !== over) {
@@ -285,7 +405,9 @@ class OnScreenControls(context: Context, private val pad: PadBridge) : View(cont
                 for (control in controls) {
                     if (control.pressedBy == pointer || event.actionMasked == MotionEvent.ACTION_CANCEL) {
                         if (control.pressedBy != -1) changed = true
+                        if (control.stick >= 0 && control.pressedBy != -1) control.lastUp = if (control.clicked) 0L else event.eventTime
                         control.pressedBy = -1
+                        control.clicked = false
                         if (control.stick >= 0 && (control.kx != 0f || control.ky != 0f)) control.dirty = true
                         control.kx = 0f; control.ky = 0f
                     }
@@ -297,45 +419,106 @@ class OnScreenControls(context: Context, private val pad: PadBridge) : View(cont
         return false
     }
 
+    private fun onEditTouch(event: MotionEvent): Boolean {
+        when (event.actionMasked) {
+            MotionEvent.ACTION_DOWN -> {
+                val control = controlAt(event.x, event.y)
+                selected = control?.group
+                val group = selected ?: run { invalidate(); return false }
+                val (x, y) = centre(group)
+                grabX = x - event.x
+                grabY = y - event.y
+                invalidate()
+            }
+            MotionEvent.ACTION_MOVE -> {
+                val group = selected ?: return true
+                ignoreSaved = false
+                put(group, event.x + grabX, event.y + grabY)
+                clamp(group)
+                invalidate()
+            }
+        }
+        return true
+    }
+
     private fun controlAt(x: Float, y: Float): Control? =
-        controls.firstOrNull { isVisible(it) && it.contains(x, y, controlRadius(it)) }
+        controls.firstOrNull { isVisible(it) && it.contains(x, y, it.radius) }
 
-    private fun isVisible(control: Control): Boolean =
-        !buttonsOnly || control.id == "guide" || control.id == "qam"
-
-    private fun controlRadius(control: Control): Float =
-        if (buttonsOnly && (control.id == "guide" || control.id == "qam")) dp(30f) else control.radius
+    private fun isVisible(control: Control): Boolean = when {
+        buttonsOnly && !editing -> control.id == "guide" || control.id == "qam"
+        else -> control.target != ControllerPrefs.OFF
+    }
 
     private fun apply() {
+        val bridge = pad
+        if (bridge == null || editing) { invalidate(); return }
+        val qamHeld = controls.any { it.id == "qam" && it.pressedBy != -1 }
         if (buttonsOnly) {
-            val guidePressed = controls.first { it.id == "guide" }.pressedBy != -1
-            val qamPressed = controls.first { it.id == "qam" }.pressedBy != -1
-            pad.setSystemButtons(guidePressed, qamPressed)
+            bridge.setSystemButtons(controls.any { it.id == "guide" && it.pressedBy != -1 }, qamHeld)
         } else {
-            pad.setSystemButtons(false, false)
-            pad.applyTouch { state ->
+            bridge.setSystemButtons(false, qamHeld)
+            bridge.applyTouch { state ->
+                val used = HashSet<String>()
+                val held = HashSet<String>()
                 for (control in controls) {
-                    val held = control.pressedBy != -1
                     when {
-                        control.stick >= 0 && !control.dirty -> {}
-                        control.stick == 0 -> { state.leftX = control.kx / control.radius; state.leftY = control.ky / control.radius; control.dirty = false }
-                        control.stick == 1 -> { state.rightX = control.kx / control.radius; state.rightY = control.ky / control.radius; control.dirty = false }
-                        control.dpad == 0 -> state.up = held
-                        control.dpad == 1 -> state.right = held
-                        control.dpad == 2 -> state.down = held
-                        control.dpad == 3 -> state.left = held
-                        control.button >= 0 -> state.press(control.button, held)
+                        control.stick >= 0 -> {
+                            val click = if (control.stick == 0) "l3" else "r3"
+                            if (settings.stickClick) used.add(click)
+                            if (control.clicked) held.add(click)
+                            if (!control.dirty) continue
+                            if (control.stick == 0) { state.leftX = control.kx / control.radius; state.leftY = control.ky / control.radius }
+                            else { state.rightX = control.kx / control.radius; state.rightY = control.ky / control.radius }
+                            control.dirty = false
+                        }
+                        control.id == "qam" || control.target == ControllerPrefs.OFF -> {}
+                        else -> {
+                            used.add(control.target)
+                            if (control.pressedBy != -1) held.add(control.target)
+                        }
                     }
                 }
+                for (target in used) write(state, target, target in held)
             }
         }
         invalidate()
     }
 
-    /** Everything up, for when the controls are hidden mid-press. */
+    private fun write(state: PadState, target: String, down: Boolean) {
+        when (target) {
+            "a" -> state.press(PadState.A, down)
+            "b" -> state.press(PadState.B, down)
+            "x" -> state.press(PadState.X, down)
+            "y" -> state.press(PadState.Y, down)
+            "lb" -> state.press(PadState.LB, down)
+            "rb" -> state.press(PadState.RB, down)
+            "select" -> state.press(PadState.SELECT, down)
+            "start" -> state.press(PadState.START, down)
+            "l3" -> state.press(PadState.L3, down)
+            "r3" -> state.press(PadState.R3, down)
+            "guide" -> state.press(PadState.GUIDE, down)
+            "lt" -> state.leftTrigger = if (down) 1f else 0f
+            "rt" -> state.rightTrigger = if (down) 1f else 0f
+            "up" -> state.up = down
+            "right" -> state.right = down
+            "down" -> state.down = down
+            "left" -> state.left = down
+        }
+    }
+
     fun releaseAll() {
-        if (controls.none { it.pressedBy != -1 } && !buttonsOnly) return
-        controls.forEach { it.pressedBy = -1; if (it.stick >= 0 && (it.kx != 0f || it.ky != 0f)) it.dirty = true; it.kx = 0f; it.ky = 0f }
+        if (controls.none { it.pressedBy != -1 || it.clicked } && !buttonsOnly) return
+        controls.forEach {
+            it.pressedBy = -1
+            it.clicked = false
+            if (it.stick >= 0 && (it.kx != 0f || it.ky != 0f)) it.dirty = true
+            it.kx = 0f; it.ky = 0f
+        }
         apply()
+    }
+
+    private companion object {
+        const val DOUBLE_TAP_MS = 300L
+        val directions = listOf("up", "right", "down", "left")
     }
 }

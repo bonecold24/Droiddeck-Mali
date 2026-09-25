@@ -169,6 +169,8 @@ class FrontEndState(
     val sessionRunning: Boolean = false,
     val backActionsInverted: Boolean = false,
     val buildLabel: String = "local",
+    val oscMode: String = SessionPrefs.OSC_AUTO,
+    val controller: com.droiddeck.launcher.input.ControllerPrefs.Settings? = null,
 )
 
 class FrontEndActions(
@@ -200,6 +202,7 @@ class FrontEndActions(
     val onAndroidApp: (HomeApp.LaunchableApp, Int?) -> Unit = { _, _ -> },
     val onBackActionsInverted: (Boolean) -> Unit = {},
     val onCheckLatestBuild: () -> Unit = {},
+    val controller: ControllerActions? = null,
 )
 
 
@@ -356,7 +359,7 @@ private fun FrontEndScreenBody(s: FrontEndState, a: FrontEndActions, page: (@Com
     BoxWithConstraints(modifier = Modifier.fillMaxSize().background(colors.background).systemBarsPadding().onFocusChanged { anyFocused = it.hasFocus }) {
         val wide = maxWidth >= 640.dp
         val railSelection = when {
-            s.pageKey == "performance" || s.pageKey == "protons" -> "setup"
+            s.pageKey == "performance" || s.pageKey == "protons" || s.pageKey == "controller-mapping" -> "setup"
             s.pageKey?.startsWith("settings:steam") == true -> "steam"
             s.pageKey?.startsWith("settings:") == true -> "desktop"
             selected.startsWith("app:") -> "steam"
@@ -929,6 +932,10 @@ private fun SetupPanel(s: FrontEndState, a: FrontEndActions) {
                     ActionRow("Compatibility tools", "Install ARM64 Proton builds", "Manage", a.onProtons)
                     ActionRow("Performance", "CPU core assignment", "Configure", a.onPerformance)
                     ActionRow("ROMs folder", s.romsDir ?: "Choose where emulator games are stored", "Choose", a.onRoms)
+                }
+                val controller = s.controller
+                if (controller != null && a.controller != null) SettingsGroup("Controller") {
+                    ControllerRows(host, s.oscMode, controller, a.controller)
                 }
                 SettingsGroup("Session") {
                     ChoiceRow(
