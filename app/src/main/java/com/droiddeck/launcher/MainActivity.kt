@@ -272,8 +272,11 @@ class MainActivity : ComponentActivity() {
                     ),
                     FrontEndActions(
                         onPlay = { startSession(Intent(this, SessionActivity::class.java)) },
+                        // Steam's desktop client as a window on the desktop: under gamescope the
+                        // client puts itself into Big Picture whatever it is started with.
                         onPlayDesktopUi = {
                             startSession(Intent(this, SessionActivity::class.java)
+                                .putExtra(SessionService.EXTRA_MODE, SessionService.MODE_DESKTOP)
                                 .putExtra(SessionService.EXTRA_STEAM_UI, "desktop"))
                         },
                         onSteamGame = { g ->
