@@ -748,7 +748,7 @@ private fun Content(
                 }
                 Rise(4) { SectionTitle("Installed", "${s.steamGames.size} game${if (s.steamGames.size == 1) "" else "s"}") }
                 if (s.steamGames.isEmpty()) Rise(5) { Note("No games installed.") }
-                else Rise(5, Modifier.weight(1f).fillMaxWidth()) { ArtGrid(s.steamGames.map { g -> Tile(g.name, g.library, g.art, "steam:${g.appId}", null) { onSelect("app:${g.appId}") } }) }
+                else Rise(5, Modifier.weight(1f).fillMaxWidth()) { ArtGrid(s.steamGames.map { g -> Tile(g.name, g.library, g.art, "steam:${g.appId}", null, showFooter = false) { onSelect("app:${g.appId}") } }) }
             }
             selected.startsWith("app:") -> {
                 val g = s.steamGames.firstOrNull { "app:${it.appId}" == selected }
@@ -778,7 +778,7 @@ private fun Content(
                     val others = s.steamGames.filter { it !== g }
                     if (others.isNotEmpty()) {
                         Rise(3) { SectionTitle("More from the library", null) }
-                        Rise(4, Modifier.weight(1f).fillMaxWidth()) { ArtGrid(others.map { x -> Tile(x.name, x.library, x.art, "steam:${x.appId}", null) { onSelect("app:${x.appId}") } }) }
+                        Rise(4, Modifier.weight(1f).fillMaxWidth()) { ArtGrid(others.map { x -> Tile(x.name, x.library, x.art, "steam:${x.appId}", null, showFooter = false) { onSelect("app:${x.appId}") } }) }
                     }
                 }
             }
@@ -997,6 +997,7 @@ private fun SetupPanel(s: FrontEndState, a: FrontEndActions) {
 private class Tile(
     val title: String, val sub: String?, val art: File?, val key: String,
     val iconRes: Int? = null, val dim: Boolean = false, val iconBitmap: Bitmap? = null,
+    val showFooter: Boolean = true,
     val onClick: () -> Unit,
 )
 
@@ -1182,9 +1183,11 @@ private fun GameTile(t: Tile, wide: Boolean, square: Boolean, src: MutableIntera
                 ) { Text("›", fontSize = if (square) 16.sp else 20.sp, color = Color.White) }
             }
         }
-        Column(modifier = Modifier.padding(horizontal = 6.dp, vertical = 5.dp)) {
-            Text(t.title, fontSize = 10.sp, fontWeight = FontWeight.SemiBold, color = colors.onBackground, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            if (t.sub != null) Text(t.sub, fontSize = 8.sp, color = colors.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        if (t.showFooter) {
+            Column(modifier = Modifier.padding(horizontal = 6.dp, vertical = 5.dp)) {
+                Text(t.title, fontSize = 10.sp, fontWeight = FontWeight.SemiBold, color = colors.onBackground, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                if (t.sub != null) Text(t.sub, fontSize = 8.sp, color = colors.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
         }
     }
 }
