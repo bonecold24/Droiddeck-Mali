@@ -516,7 +516,6 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
         // was 16:9 - the picture came back squashed sideways. While a session runs, keep its size.
         val size = if (SessionState.running) SessionState.outputSize else outputSize()
         SessionState.outputSize = size
-        onScreenControls?.setPicture(drawnRect())
         if (!SessionState.running) SessionState.refreshHz = refreshHz()
         // Letterbox, never stretch or crop: the output can be a different shape from the panel,
         // and a game's picture must keep its proportions with bars, not lose its edges.
@@ -592,8 +591,6 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
         val resized = surfaceW != 0 && (width != surfaceW || height != surfaceH)
         surfaceW = width
         surfaceH = height
-        // The on-screen controls follow the picture: into the bars beside or under it when there are any.
-        onScreenControls?.setPicture(drawnRect())
         if (resized) {
             Log.i(TAG, "surface resized to ${width}x$height - rebinding the compositor")
             CompositorHost.resize(holder.surface) { applyFrameGen() }
@@ -1222,6 +1219,7 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
         }
         (getSystemService(INPUT_SERVICE) as? InputManager)
             ?.registerInputDeviceListener(deviceListener, Handler(Looper.getMainLooper()))
+        onScreenControls?.reload()
         updateOnScreenControls()
         readPrefs()
         if (CompositorHost.isStarted) applyFrameGen()
@@ -1234,6 +1232,14 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
         onScreenControls?.releaseAll()
         keyboard?.takeIf { it.shown }?.hide()
         super.onPause()
+    }
+
+    override fun onAttachedToWindow() {
+        super.onAttachedToWindow()
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return
+        val decor = window.decorView
+        decor.requestUnbufferedDispatch(UNBUFFERED_SOURCES)
+        decor.viewTreeObserver.addOnGlobalFocusChangeListener { _, _ -> decor.post { decor.requestUnbufferedDispatch(UNBUFFERED_SOURCES) } }
     }
 
     override fun onWindowFocusChanged(hasFocus: Boolean) {
@@ -1283,6 +1289,7 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
 
     companion object {
         private const val TAG = "SessionActivity"
+        private const val UNBUFFERED_SOURCES = InputDevice.SOURCE_CLASS_JOYSTICK or InputDevice.SOURCE_CLASS_TRACKBALL or InputDevice.SOURCE_CLASS_POSITION
         private const val BACK_DOUBLE_PRESS_TIMEOUT_MS = 500L
         private const val DRAWER_HAT_THRESHOLD = 0.5f
         private const val DRAWER_STICK_ENTER_THRESHOLD = 0.55f
