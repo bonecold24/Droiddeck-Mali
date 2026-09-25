@@ -22,6 +22,11 @@ library list, before anything is published.
   `up`) - the one a Steam Deck's touchscreen drives - so what a touch does follows the client's
   touch mode (Steam's Big Picture sets Passthrough: a real touch, rows scroll under a finger).
   Finger ids are offset by one, since the nested pointer already moves wlserver's touch 0.
+- `0111-wayland-pointer-warps-in-passthrough.patch` - this app: the nested pointer's motion goes to
+  wlserver as touch 0, and in Passthrough (Big Picture's touch mode) a motion for a touch that is not
+  down moves nothing - so in the app's touchpad mode the Steam client saw no hover and a click landed
+  wherever the pointer had last been. The motion now always warps the real pointer as well
+  (`bAlwaysWarpCursor`), which the other touch modes did already.
 
 Sixteen more of Armada's patches are DRM/lease/HDR-on-KMS work for a native display, which this
 app's Wayland-hosted gamescope never reaches, or need a newer gamescope than the runtime has.
