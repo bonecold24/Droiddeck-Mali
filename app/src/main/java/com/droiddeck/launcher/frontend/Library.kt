@@ -221,13 +221,16 @@ object Library {
         "duckstation" -> listOf("-batch", "-bigpicture", "-fullscreen", "--", guestPath)
         // Dolphin: full screen, drawn inside its own main window, without its "stop the emulation?"
         // question; no warning boxes either, which wait for a click a controller cannot give
-        // (they still go to Dolphin's log). The guide button toggles full screen (SessionActivity),
-        // which shows Dolphin's window and its settings - so no -b, which hides that window.
-        // Closing Dolphin ends the session. -C sets a Dolphin.ini value for this run only, so
-        // Dolphin started from the desktop keeps its own window and its warnings.
+        // (they still go to Dolphin's log). The guide button is Dolphin's Toggle Fullscreen hotkey
+        // (bannerlator-pad-defaults), which shows Dolphin's window and its settings - so no -b, which
+        // hides that window; closing Dolphin ends the session. Under gamescope Dolphin does not
+        // always see its window as focused, and by default both its hotkeys and the game's
+        // controller then stop: HotkeysRequireFocus off, BackgroundInput on. -C sets a Dolphin.ini
+        // value for this run only, so Dolphin started from the desktop keeps its own settings.
         "dolphin" -> listOf(
             "-C", "Dolphin.Display.Fullscreen=True", "-C", "Dolphin.Display.RenderToMain=True",
             "-C", "Dolphin.Interface.ConfirmStop=False", "-C", "Dolphin.Interface.UsePanicHandlers=False",
+            "-C", "Dolphin.General.HotkeysRequireFocus=False", "-C", "Dolphin.Input.BackgroundInput=True",
             "-e", guestPath,
         )
         "cemu" -> listOf("-g", guestPath)

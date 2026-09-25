@@ -736,20 +736,6 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
             return super.dispatchKeyEvent(event)
         }
         if (pcKeyboardOpen && event.device != null && PadBridge.isFromController(event.device)) return super.dispatchKeyEvent(event)
-        // Dolphin (PC) has no controller menu of its own: in a Dolphin game from the rail the guide
-        // button is its Toggle Fullscreen hotkey (Alt+Return, Dolphin's default) instead, which
-        // brings up Dolphin's window with its Config / Graphics / Stop buttons, and back again.
-        if (event.keyCode == KeyEvent.KEYCODE_BUTTON_MODE && guideIsDolphinFullscreen() &&
-            event.device != null && PadBridge.isFromController(event.device)
-        ) {
-            if (event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0 && CompositorHost.isStarted) {
-                WaylandCompositor.nativeSendKey(KEY_LEFTALT, 1)
-                WaylandCompositor.nativeSendKey(KEY_ENTER, 1)
-                WaylandCompositor.nativeSendKey(KEY_ENTER, 0)
-                WaylandCompositor.nativeSendKey(KEY_LEFTALT, 0)
-            }
-            return true
-        }
         if (event.keyCode != KeyEvent.KEYCODE_BACK && padBridge?.onKeyEvent(event) == true) return true
         // A hardware keyboard, forwarded to the compositor's wl_keyboard. Back is left to the
         // activity, which opens the drawer.
@@ -1008,10 +994,6 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
         if (reset) secondScreenMode = SecondScreenMode.NONE
     }
 
-    private fun guideIsDolphinFullscreen(): Boolean =
-        SessionState.mode == SessionService.MODE_RUN &&
-            SessionState.program?.substringAfterLast('/')?.startsWith("dolphin") == true
-
     /** Touchpad on the desktop, direct in Steam, unless the drawer says otherwise. */
     private fun usingTouchpad(): Boolean = when (SessionPrefs.touchMode(this)) {
         SessionPrefs.TOUCH_PAD -> true
@@ -1209,9 +1191,6 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
     }
 
     companion object {
-        // evdev codes (linux/input-event-codes.h) for the Alt+Return sent to Dolphin.
-        private const val KEY_LEFTALT = 56
-        private const val KEY_ENTER = 28
         private const val TAG = "SessionActivity"
         private const val BACK_DOUBLE_PRESS_TIMEOUT_MS = 500L
         private const val DRAWER_HAT_THRESHOLD = 0.5f

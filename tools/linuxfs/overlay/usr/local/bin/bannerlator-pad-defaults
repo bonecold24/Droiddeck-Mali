@@ -383,7 +383,7 @@ Buttons/1 = `Button W`
 Buttons/2 = `Button N`
 Buttons/- = `Back`
 Buttons/+ = `Start`
-Buttons/Home = `Guide`
+Buttons/Home = `Shoulder R`
 D-Pad/Up = `Pad N`
 D-Pad/Down = `Pad S`
 D-Pad/Left = `Pad W`
@@ -510,6 +510,63 @@ def armsx2_bios(ini):
     print(f"bannerlator-pad-defaults: ARMSX2: BIOS {pick}")
 
 
+# Dolphin (PC) has no controller menu, so the guide button is its Toggle Fullscreen hotkey: out of full
+# screen is Dolphin's own window with its Config / Graphics / Stop buttons. Hotkeys.ini is all-or-
+# nothing - a file with one line drops every other default - so a new one carries Dolphin's defaults,
+# generated from HotkeyManager.cpp's LoadDefaults (Linux branch, RetroAchievements on) plus the guide;
+# an existing one only gets the guide added to its Toggle Fullscreen. The Wii remote's Home, which
+# was on the guide button, is on the right shoulder button instead.
+DOLPHIN_GUIDE = "`SDL/0/Xbox 360 Controller:Guide`"
+DOLPHIN_HOTKEYS = """[Hotkeys]
+Device = XInput2/0/Virtual core pointer
+General/Open = @(Ctrl+O)
+General/Toggle Pause = F10
+General/Stop = Escape
+General/Toggle Fullscreen = @(Alt+Return) | `SDL/0/Xbox 360 Controller:Guide`
+General/Take Screenshot = F9
+General/Open Achievements = @(Alt+A)
+Emulation Speed/Disable Emulation Speed Limit = Tab
+Stepping/Step Into = F11
+Stepping/Step Over = @(Shift+F10)
+Stepping/Step Out = @(Shift+F11)
+Breakpoint/Toggle Breakpoint = @(Shift+F9)
+Wii/Connect Wii Remote 1 = @(Alt+F5)
+Wii/Connect Wii Remote 2 = @(Alt+F6)
+Wii/Connect Wii Remote 3 = @(Alt+F7)
+Wii/Connect Wii Remote 4 = @(Alt+F8)
+Wii/Connect Balance Board = @(Alt+F9)
+Load State/Load State Slot 1 = F1
+Load State/Load State Slot 2 = F2
+Load State/Load State Slot 3 = F3
+Load State/Load State Slot 4 = F4
+Load State/Load State Slot 5 = F5
+Load State/Load State Slot 6 = F6
+Load State/Load State Slot 7 = F7
+Load State/Load State Slot 8 = F8
+Save State/Save State Slot 1 = @(Shift+F1)
+Save State/Save State Slot 2 = @(Shift+F2)
+Save State/Save State Slot 3 = @(Shift+F3)
+Save State/Save State Slot 4 = @(Shift+F4)
+Save State/Save State Slot 5 = @(Shift+F5)
+Save State/Save State Slot 6 = @(Shift+F6)
+Save State/Save State Slot 7 = @(Shift+F7)
+Save State/Save State Slot 8 = @(Shift+F8)
+Other State Hotkeys/Undo Load State = F12
+Other State Hotkeys/Undo Save State = @(Shift+F12)
+GBA Core/Load ROM = @(`Ctrl`+`Shift`+`O`)
+GBA Core/Unload ROM = @(`Ctrl`+`Shift`+`W`)
+GBA Core/Reset = @(`Ctrl`+`Shift`+`R`)
+GBA Volume/Volume Down = `KP_Subtract`
+GBA Volume/Volume Up = `KP_Add`
+GBA Volume/Volume Toggle Mute = `M`
+GBA Window Size/1x = `KP_1`
+GBA Window Size/2x = `KP_2`
+GBA Window Size/3x = `KP_3`
+GBA Window Size/4x = `KP_4`
+USB Emulation Devices/Show Skylanders Portal = @(Ctrl+P)
+USB Emulation Devices/Show Infinity Base = @(Ctrl+I)
+"""
+
 DOLPHIN_APPIMAGE = "/opt/appimages/dolphin.AppImage"
 DOLPHIN_DATA = "/usr/share/dolphin-emu"
 
@@ -562,6 +619,19 @@ def dolphin():
     d = os.path.join(CONFIG, "dolphin-emu")
     seed(os.path.join(d, "GCPadNew.ini"), DOLPHIN_GC, "Dolphin (GameCube)")
     seed(os.path.join(d, "WiimoteNew.ini"), DOLPHIN_WII, "Dolphin (Wii)")
+    wii_pad = os.path.join(d, "WiimoteNew.ini")
+    if ini_get(wii_pad, "Wiimote1", "Buttons/Home") == "`Guide`":
+        ini_set(wii_pad, "Wiimote1", "Buttons/Home", "`Shoulder R`")
+        print("bannerlator-pad-defaults: Dolphin (Wii): Home on the right shoulder button (guide = Dolphin's window)")
+    hotkeys = os.path.join(d, "Hotkeys.ini")
+    if not os.path.isfile(hotkeys):
+        seed(hotkeys, DOLPHIN_HOTKEYS, "Dolphin", "the guide button shows Dolphin's window (Toggle Fullscreen)")
+    else:
+        current = ini_get(hotkeys, "Hotkeys", "General/Toggle Fullscreen")
+        if current is not None and DOLPHIN_GUIDE not in current:
+            ini_set(hotkeys, "Hotkeys", "General/Toggle Fullscreen",
+                    (current + " | " if current else "") + DOLPHIN_GUIDE)
+            print("bannerlator-pad-defaults: Dolphin: the guide button shows Dolphin's window (Toggle Fullscreen)")
     # Games from the ROMs folder's gamecube and wii folders, subfolders included; Vulkan; no
     # NKit warning (it will not let a game start until a box is ticked - games run either way,
     # the warning is about loading times, netplay and save states); no statistics question.
