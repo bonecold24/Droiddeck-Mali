@@ -1207,7 +1207,7 @@ private fun ArtGrid(tiles: List<Tile>, wide: Boolean = false) {
         val avail = maxWidth - 8.dp
         val cols = ((avail + gap) / (minSize + gap)).toInt().coerceAtLeast(1)
         val tileWidth = (avail - gap * (cols - 1)) / cols
-        Column(modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(top = 6.dp, bottom = 14.dp, start = 4.dp, end = 4.dp)) {
+        Column(modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(top = 16.dp, bottom = 14.dp, start = 4.dp, end = 4.dp)) {
             for (row in tiles.chunked(cols)) {
                 Row(horizontalArrangement = Arrangement.spacedBy(gap), modifier = Modifier.fillMaxWidth().padding(bottom = gap)) {
                     for (t in row) key(t.key) {
