@@ -213,6 +213,9 @@ class FrontEndActions(
     val onCheckLatestBuild: () -> Unit = {},
     val onRefreshPhantomStatus: () -> Unit = {},
     val onOpenDeveloperOptions: () -> Unit = {},
+    val onWirelessAdbPair: (String, Int, String, (String?) -> Unit) -> Unit = { _, _, _, done -> done("Wireless ADB is unavailable") },
+    val onFindWirelessAdbPort: (String, (Int?) -> Unit) -> Unit = { _, done -> done(null) },
+    val onWirelessAdbApply: (String, Int, (String?) -> Unit) -> Unit = { _, _, done -> done("Wireless ADB is unavailable") },
     val onCopyPhantomCommand: () -> Unit = {},
     val onDismissPhantomGate: () -> Unit = {},
     val controller: ControllerActions? = null,
@@ -351,6 +354,7 @@ fun FrontEndScreen(s: FrontEndState, a: FrontEndActions, page: (@Composable () -
 private fun FrontEndScreenBody(s: FrontEndState, a: FrontEndActions, page: (@Composable () -> Unit)?, frontFocus: FrontFocus) {
     var selected by rememberSaveable { mutableStateOf("steam") }
     var navOpen by rememberSaveable { mutableStateOf(false) }
+    var showWirelessAdbFix by rememberSaveable { mutableStateOf(false) }
     var appToChooseDisplay by remember { mutableStateOf<HomeApp.LaunchableApp?>(null) }
     val colors = MaterialTheme.colorScheme
     val ctx = LocalContext.current
@@ -503,9 +507,19 @@ private fun FrontEndScreenBody(s: FrontEndState, a: FrontEndActions, page: (@Com
                 confirmButton = {
                     Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                         androidx.compose.material3.TextButton(onClick = a.onOpenDeveloperOptions) { Text("Developer options") }
+                        androidx.compose.material3.TextButton(onClick = { showWirelessAdbFix = true }) { Text("Fix over Wi-Fi") }
                         androidx.compose.material3.TextButton(onClick = a.onCopyPhantomCommand) { Text("Copy ADB") }
                     }
                 },
+            )
+        }
+        if (showWirelessAdbFix) {
+            WirelessAdbFixDialog(
+                onDismiss = { showWirelessAdbFix = false },
+                onOpenDeveloperOptions = a.onOpenDeveloperOptions,
+                onPair = a.onWirelessAdbPair,
+                onFindConnectPort = a.onFindWirelessAdbPort,
+                onApply = a.onWirelessAdbApply,
             )
         }
     }

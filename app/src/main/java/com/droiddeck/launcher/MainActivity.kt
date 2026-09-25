@@ -42,6 +42,7 @@ import com.droiddeck.launcher.ui.ProtonRow
 import com.droiddeck.launcher.core.CpuCores
 import com.droiddeck.launcher.core.PhantomProcessLimit
 import com.droiddeck.launcher.core.PhantomProcessStatus
+import com.droiddeck.launcher.core.WirelessAdbFix
 import com.droiddeck.launcher.ui.CoreRow
 import com.droiddeck.launcher.ui.PerformancePage
 import com.droiddeck.launcher.ui.ModeSettingsPage
@@ -354,6 +355,31 @@ class MainActivity : ComponentActivity() {
                         },
                         onRefreshPhantomStatus = { refreshPhantomStatus() },
                         onOpenDeveloperOptions = { openDeveloperOptions() },
+                        onWirelessAdbPair = { host, port, code, complete ->
+                            Thread({
+                                val result = runCatching {
+                                    kotlinx.coroutines.runBlocking { WirelessAdbFix.pair(this@MainActivity, host, port, code) }
+                                }
+                                val error = result.exceptionOrNull()?.let { it.localizedMessage ?: "Wireless ADB pairing failed" }
+                                ui.post { complete(error) }
+                            }, "wireless-adb-pair").start()
+                        },
+                        onFindWirelessAdbPort = { host, complete ->
+                            Thread({
+                                val port = WirelessAdbFix.findConnectPort(this@MainActivity, host)
+                                ui.post { complete(port) }
+                            }, "wireless-adb-discovery").start()
+                        },
+                        onWirelessAdbApply = { host, port, complete ->
+                            Thread({
+                                val result = runCatching { WirelessAdbFix.disableChildProcessLimit(this@MainActivity, host, port) }
+                                val error = result.exceptionOrNull()?.let { it.localizedMessage ?: "Wireless ADB command failed" }
+                                ui.post {
+                                    if (error == null) refreshPhantomStatus()
+                                    complete(error)
+                                }
+                            }, "wireless-adb-fix").start()
+                        },
                         onCopyPhantomCommand = {
                             (getSystemService(CLIPBOARD_SERVICE) as ClipboardManager).setPrimaryClip(
                                 ClipData.newPlainText("DroidDeck child-process setting", PhantomProcessLimit.ADB_COMMAND),

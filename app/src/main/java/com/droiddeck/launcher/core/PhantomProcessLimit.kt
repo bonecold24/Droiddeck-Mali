@@ -15,6 +15,7 @@ enum class PhantomProcessStatus {
 
 object PhantomProcessLimit {
     const val ADB_COMMAND = "adb shell settings put global settings_enable_monitor_phantom_procs false"
+    const val SHELL_COMMAND = "settings put global settings_enable_monitor_phantom_procs false"
     private const val SETTING = "settings_enable_monitor_phantom_procs"
 
     fun read(resolver: ContentResolver, sdk: Int = Build.VERSION.SDK_INT): PhantomProcessStatus {
