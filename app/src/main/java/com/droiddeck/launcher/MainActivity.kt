@@ -403,7 +403,10 @@ class MainActivity : ComponentActivity() {
         }
         if (wanted.isNotEmpty()) requestPermissions(wanted.toTypedArray(), 1)
         // A session folder left without its ending - the process was killed - gets it now.
-        if (!SessionState.running) Thread({ SessionArtifacts.finishAbandoned(this) }, "finish-abandoned").start()
+        if (!SessionState.running) Thread({
+            SessionArtifacts.finishAbandoned(this)
+            SessionArtifacts.scrubOlder(this)
+        }, "finish-abandoned").start()
     }
 
     override fun onResume() {
