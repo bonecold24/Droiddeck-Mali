@@ -332,6 +332,7 @@ fun SettingsPage(
     action: (@Composable () -> Unit)? = null,
     /** Pass one held above the page to keep its scroll position across a page opened over it. */
     scroll: androidx.compose.foundation.ScrollState? = null,
+    scrollContent: Boolean = true,
     content: @Composable ColumnScope.() -> Unit,
 ) {
     val scrollState = scroll ?: rememberScrollState()
@@ -365,7 +366,13 @@ fun SettingsPage(
         }
         if (lede != null) Rise(2) { Lede(lede) }
         Rise(3, Modifier.weight(1f).fillMaxWidth()) {
-            Column(modifier = Modifier.fillMaxSize().graphicsLayer { alpha = dim }.verticalScroll(scrollState).padding(bottom = 24.dp)) { content() }
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .graphicsLayer { alpha = dim }
+                    .then(if (scrollContent) Modifier.verticalScroll(scrollState) else Modifier)
+                    .padding(bottom = 24.dp),
+            ) { content() }
         }
     }
 }
