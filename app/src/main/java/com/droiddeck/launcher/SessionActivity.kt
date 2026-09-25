@@ -740,11 +740,15 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
         if (status == 0) {
             runOnUiThread {
                 if (isFinishing || isDestroyed) return@runOnUiThread
-                // A session the guest asked for (the desktop's Steam launchers) takes this one's
-                // place: the compositor stays, a new activity attaches and starts the service.
+                // A session asked for in this one's place (the desktop's Steam launchers, the
+                // drawer's DESKTOP) starts here: this activity restarts on its intent, as an agent
+                // start does. startActivity(next) could not do it - the activity is singleTop, so
+                // the request landed in this instance's onNewIntent and went with its finish().
                 SessionState.relaunch?.let { next ->
                     SessionState.relaunch = null
-                    startActivity(next)
+                    setIntent(next)
+                    recreate()
+                    return@runOnUiThread
                 }
                 finish()
             }
