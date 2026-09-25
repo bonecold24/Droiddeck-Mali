@@ -180,7 +180,8 @@ class SessionService : Service() {
         }
         // Another Steam client on the device signs ours out seconds after every login; the one that
         // does it here runs from boot without being opened. Only the Steam session signs in.
-        if (SessionState.mode == MODE_STEAM) RivalClients.stopBeforeSession(this)
+        // The desktop too: its Steam launchers run the client right there (bannerlator-steam-launch).
+        if (SessionState.mode == MODE_STEAM || SessionState.mode == MODE_DESKTOP) RivalClients.stopBeforeSession(this)
         SessionState.firstFrameSeen = false
         SessionState.guestPid = -1
         SessionEvents.transition(SessionPhase.STARTING_GUEST, "service.started", mapOf("mode" to SessionState.mode))
@@ -318,7 +319,10 @@ class SessionService : Service() {
         if (SessionPrefs.glThread(this)) guest.add("mesa_glthread=true")
         if (SessionPrefs.noGlError(this)) guest.add("MESA_NO_ERROR=1")
         if (SessionState.mode == MODE_STEAM) guest.add("BL_STEAMDECK=" + (if (SessionPrefs.steamDeckMode(this)) "1" else "0"))
-        if (SessionState.mode == MODE_STEAM) guest.add("BL_STEAM_CHANNEL=" + SessionPrefs.steamChannel(this))
+        // The desktop's Steam launchers start the client there (bannerlator-steam-launch), through the
+        // same set-up as a Steam session: it gets what the client and its games are started with.
+        val steamHere = SessionState.mode == MODE_STEAM || SessionState.mode == MODE_DESKTOP
+        if (steamHere) guest.add("BL_STEAM_CHANNEL=" + SessionPrefs.steamChannel(this))
         if (SessionState.mode == MODE_STEAM) {
             guest.add("BL_GAMESCOPE_FORCE_FULLSCREEN=" + (if (SessionPrefs.forceFullscreen(this)) "1" else "0"))
             SessionPrefs.writeForceFullscreenFlag(this)
@@ -330,7 +334,7 @@ class SessionService : Service() {
         // The FEXCore preset for the x86 games the client launches: its FEX_* variables go in
         // here, before the script, so every game process inherits them from the client. The
         // default preset sets nothing, which is what every session ran on before.
-        if (SessionState.mode == MODE_STEAM) {
+        if (steamHere) {
             val preset = SessionPrefs.fexPreset(this)
             val vars = com.droiddeck.launcher.core.FexPreset.env(preset)
             vars.forEach { guest.add(it) }
@@ -345,7 +349,7 @@ class SessionService : Service() {
         // on, even naming every core: it exists to undo the pin Steam applies to its own interface
         // renderer, and the scheduler's default is exactly what that pin takes away. A game's is
         // sent only when it is a real restriction - a game has no pin of its own to undo.
-        if (SessionState.mode == MODE_STEAM && SessionPrefs.clientCpusOverride(this)) {
+        if (steamHere && SessionPrefs.clientCpusOverride(this)) {
             guest.add("BL_CLIENT_CPUS=" + CpuCores.listOrAll(SessionPrefs.clientCpus(this)))
         }
         // The game cores also pin the desktop and a program from the rail; without a choice the
@@ -447,7 +451,7 @@ class SessionService : Service() {
         }
         // The user's own games, for the runtime's shortcuts writer to put in the client's library
         // before the client starts (see frontend/AddedGames and bannerlator-steam-shortcuts).
-        if (SessionState.mode == MODE_STEAM) {
+        if (steamHere) {
             val added = com.droiddeck.launcher.frontend.AddedGames.scan(this)
             val listing = com.droiddeck.launcher.frontend.AddedGames.writeListing(this, added)
             guest.add("BL_ADDED_GAMES=" + listing.path)
@@ -582,7 +586,7 @@ class SessionService : Service() {
 
         // Whether the client signs in to Valve or starts offline: read once, while it starts, and
         // rewritten by the client when it exits, so it is set again here at every session start.
-        if (SessionState.mode == MODE_STEAM) OfflineMode.apply(this, root)
+        if (SessionState.mode == MODE_STEAM || SessionState.mode == MODE_DESKTOP) OfflineMode.apply(this, root)
 
         val networkLink = LinuxNetworkLinkComponent(this, root)
         networkLink.attach(this)
