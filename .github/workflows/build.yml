@@ -453,7 +453,7 @@ jobs:
               success)
                 echo "###  Build passed"
                 echo
-                echo "The apk is the \`droiddeck-apk\` artifact on [this run]($RUN_URL) A pull request's build is signed only with the public test key: it installs on a phone without an official DroidDeck. To install it over one, sign it with DroidDeck's key or ask for a test build of the branch."
+                echo "The unprivileged apk is the \`droiddeck-apk\` artifact on [this run]($RUN_URL), signed with the public test key. After a maintainer approves this exact commit and CI is green, a maintainer can run **PR Release Publish** from \`main\` with this PR number. That workflow signs the artifact with the release identity, checks that its versionCode matches main's stable baseline, and publishes it for in-place update testing. The release key is never available to this PR build."
                 ;;
               failure)
                 echo "### ERROR: Build failed"

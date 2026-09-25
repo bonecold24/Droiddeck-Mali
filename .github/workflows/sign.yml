@@ -5,7 +5,8 @@ name: Sign APKs
 # and checks it). The key lives only in the GitHub environment named by the caller:
 #   signing-main    builds of main
 #   release         manually dispatched release.yml from main
-# Pull requests and other branches never call this workflow with the release key.
+# PR CI stays test-key-only. The main-only PR Release Publish workflow may call this after it checks
+# for an approving maintainer review, green CI, the exact current PR commit, and the stable versionCode.
 
 on:
   workflow_call:

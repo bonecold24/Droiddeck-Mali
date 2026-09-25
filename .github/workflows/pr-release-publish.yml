@@ -1,169 +1,258 @@
 name: PR Release Publish
+run-name: sign PR #${{ inputs.pr_number }} with the release key
 
+# This is deliberately manual and exists on main. PR CI builds without secrets. A maintainer
+# dispatches this workflow after reviewing the PR; it checks that the current head has a fresh
+# maintainer approval and a successful Build APK run before it calls the release signer.
 on:
-  workflow_run:
-    workflows:
-      - Build APK
-    types:
-      - completed
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: Open, approved pull request to sign and publish
+        required: true
+        type: number
+
+permissions:
+  actions: read
+  contents: read
+  pull-requests: read
 
 concurrency:
-  group: pr-release-${{ github.event.workflow_run.head_repository.full_name }}-${{ github.event.workflow_run.head_branch }}
+  group: pr-release-${{ inputs.pr_number }}
   cancel-in-progress: false
 
-permissions: {}
-
 jobs:
-  publish:
-    if: >-
-      github.event.workflow_run.conclusion == 'success' &&
-      contains(fromJSON('["pull_request", "pull_request_target"]'), github.event.workflow_run.event)
+  authorize:
+    name: verify maintainer approval and PR build
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    outputs:
+      run_id: ${{ steps.authorize.outputs.run_id }}
+      pr_number: ${{ steps.authorize.outputs.pr_number }}
+      head_sha: ${{ steps.authorize.outputs.head_sha }}
+      label: ${{ steps.authorize.outputs.label }}
+      apk_name: ${{ steps.authorize.outputs.apk_name }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          persist-credentials: false
+
+      - name: Authorize this exact PR revision
+        id: authorize
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ inputs.pr_number }}
+        run: |
+          set -euo pipefail
+          [[ "$GITHUB_REF" == refs/heads/main ]] || { echo "::error::Run this workflow from main"; exit 1; }
+          [[ "$PR_NUMBER" =~ ^[1-9][0-9]*$ ]] || { echo "::error::PR number must be a positive integer"; exit 1; }
+
+          pr=$(gh api "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER")
+          state=$(jq -r '.state' <<<"$pr")
+          draft=$(jq -r '.draft' <<<"$pr")
+          base_ref=$(jq -r '.base.ref' <<<"$pr")
+          base_sha=$(jq -r '.base.sha' <<<"$pr")
+          head_sha=$(jq -r '.head.sha' <<<"$pr")
+          [[ "$state" == open && "$draft" == false && "$base_ref" == main ]] || {
+            echo "::error::PR #$PR_NUMBER must be open, ready for review, and target main"; exit 1;
+          }
+
+          # Branch protection requires an approval. Repeat the check here so manually dispatching
+          # this workflow cannot bypass it. The review must approve this exact head commit, and the
+          # reviewer must be a repository owner, member, or collaborator with review access.
+          decision=$(gh pr view "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --json reviewDecision --jq '.reviewDecision')
+          [[ "$decision" == APPROVED ]] || {
+            echo "::error::PR #$PR_NUMBER does not currently have its required approving review"; exit 1;
+          }
+          reviews=$(gh api --paginate --slurp "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER/reviews?per_page=100" | jq 'add')
+          maintainer_approvals=$(jq --arg sha "$head_sha" '
+            [ .[]
+              | select(.commit_id == $sha)
+              | select(.author_association == "OWNER" or .author_association == "MEMBER" or .author_association == "COLLABORATOR")
+              | { login: .user.login, state: .state, submitted_at: .submitted_at }
+            ]
+            | sort_by(.submitted_at)
+            | group_by(.login)
+            | map(last)
+            | map(select(.state == "APPROVED"))
+            | length
+          ' <<<"$reviews")
+          (( maintainer_approvals > 0 )) || {
+            echo "::error::No maintainer has approved the current PR commit $head_sha"; exit 1;
+          }
+
+          # Find the newest PR CI run for this commit. A newer failed or in-progress run prevents
+          # signing even if an older attempt for the same commit passed.
+          runs=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow build.yml \
+            --event pull_request --commit "$head_sha" \
+            --json databaseId,headSha,status,conclusion,attempt,createdAt -L 100)
+          latest=$(jq -ce --arg sha "$head_sha" '
+            [ .[] | select(.headSha == $sha) ]
+            | sort_by([.createdAt, .attempt])
+            | last
+          ' <<<"$runs")
+          [[ $(jq -r '.status' <<<"$latest") == completed && $(jq -r '.conclusion' <<<"$latest") == success ]] || {
+            echo "::error::The latest Build APK run for this PR commit is not green"; exit 1;
+          }
+          run_id=$(jq -r '.databaseId' <<<"$latest")
+          run=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$run_id")
+          run_pr=$(jq -ce --argjson number "$PR_NUMBER" '
+            [ .pull_requests[]? | select(.number == $number) ] | first
+          ' <<<"$run")
+          [[ $(jq -r '.event' <<<"$run") == pull_request && \
+             $(jq -r '.head_sha' <<<"$run") == "$head_sha" && \
+             $(jq -r '.status' <<<"$run") == completed && \
+             $(jq -r '.conclusion' <<<"$run") == success && \
+             $(jq -r '.head.sha' <<<"$run_pr") == "$head_sha" && \
+             $(jq -r '.base.ref' <<<"$run_pr") == main && \
+             $(jq -r '.base.sha' <<<"$run_pr") == "$base_sha" ]] || {
+            echo "::error::The successful CI artifact is not for the current PR head and base"; exit 1;
+          }
+
+          # Keep test builds at main's current stable versionCode so stable and PR builds can be
+          # installed over one another. A code bump belongs in a release, not in this test APK.
+          sdk=${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}
+          [[ -n "$sdk" && -d "$sdk/build-tools" ]] || { echo "::error::Android build-tools are unavailable"; exit 1; }
+          build_tools=$(find "$sdk/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -1)
+          expected_code=$(sed -nE 's/^[[:space:]]*versionCode[[:space:]]+([0-9]+).*$/\1/p' app/build.gradle | head -1)
+          [[ "$expected_code" =~ ^[0-9]+$ ]] || { echo "::error::Could not read main's versionCode"; exit 1; }
+          mkdir -p "$RUNNER_TEMP/pr-apk"
+          gh run download "$run_id" --repo "$GITHUB_REPOSITORY" --name droiddeck-apk --dir "$RUNNER_TEMP/pr-apk"
+          mapfile -t apks < <(find "$RUNNER_TEMP/pr-apk" -type f -name '*.apk' -print)
+          [[ ${#apks[@]} -eq 1 ]] || { echo "::error::Expected exactly one APK in droiddeck-apk"; exit 1; }
+          badging=$("$build_tools/aapt" dump badging "${apks[0]}")
+          apk_package=$(sed -n "s/^package: name='\\([^']*\\)'.*/\\1/p" <<<"$badging")
+          apk_code=$(sed -n "s/^package:.*versionCode='\\([^']*\\)'.*/\\1/p" <<<"$badging")
+          [[ "$apk_package" == com.droiddeck.launcher ]] || {
+            echo "::error::Expected the standard package, got '$apk_package'"; exit 1;
+          }
+          [[ "$apk_code" == "$expected_code" ]] || {
+            echo "::error::PR APK versionCode $apk_code differs from main's stable baseline $expected_code; keep PR builds at the stable code so testers can switch back in place"; exit 1;
+          }
+
+          # Close the race with a new push/base update while approval and CI were being checked.
+          latest_pr=$(gh api "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER")
+          [[ $(jq -r '.state' <<<"$latest_pr") == open && \
+             $(jq -r '.head.sha' <<<"$latest_pr") == "$head_sha" && \
+             $(jq -r '.base.sha' <<<"$latest_pr") == "$base_sha" ]] || {
+            echo "::error::The PR changed while authorization was being checked; wait for fresh approval and CI"; exit 1;
+          }
+
+          short_sha=${head_sha:0:7}
+          label="PR-$PR_NUMBER-$short_sha"
+          apk_name="DroidDeck-$label.apk"
+          {
+            echo "run_id=$run_id"
+            echo "pr_number=$PR_NUMBER"
+            echo "head_sha=$head_sha"
+            echo "label=$label"
+            echo "apk_name=$apk_name"
+          } >> "$GITHUB_OUTPUT"
+          {
+            echo "### Authorized PR signing"
+            echo
+            printf 'PR #%s at %s has an approving maintainer review and a green Build APK run (%s).\n' "$PR_NUMBER" "$short_sha" "$run_id"
+            printf 'The APK versionCode matches the main stable baseline (%s).\n' "$expected_code"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  sign:
+    name: sign with the release identity
+    needs: authorize
+    if: needs.authorize.result == 'success'
+    uses: ./.github/workflows/sign.yml
+    with:
+      environment: signing-main
+      variants: '["standard"]'
+      run_id: ${{ needs.authorize.outputs.run_id }}
+      label: ${{ needs.authorize.outputs.label }}
+      artifact: droiddeck-pr-signed
+    secrets: inherit
+
+  publish:
+    name: publish the approved PR APK
+    needs: [authorize, sign]
+    if: needs.authorize.result == 'success' && needs.sign.result == 'success'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
     permissions:
       actions: read
+      contents: read
       pull-requests: read
-    env:
-      SOURCE_REPO: ${{ github.repository }}
-      TARGET_REPO: Droid-Deck/DroidDeck-CI
-      RUN_ID: ${{ github.event.workflow_run.id }}
-      HEAD_REPO: ${{ github.event.workflow_run.head_repository.full_name }}
-      HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
-      HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
-      SIGNING_CERT_SHA256: a40da80a59d170caa950cf15c18c454d47a39b26989d8b640ecd745ba71bf5dc
     steps:
-      - name: Resolve the pull request
-        id: scope
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          CI_TOKEN: ${{ secrets.DROIDDECK_CI_TOKEN }}
-          RUN_PR_NUMBER: ${{ github.event.workflow_run.pull_requests[0].number }}
-        run: |
-          set -euo pipefail
-          if [ -z "$CI_TOKEN" ]; then
-            echo "::warning::DROIDDECK_CI_TOKEN is not set; nothing is published to $TARGET_REPO"
-            echo "allowed=false" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-          pr_number="$RUN_PR_NUMBER"
-          if [ -z "$pr_number" ]; then
-            head_owner=${HEAD_REPO%%/*}
-            pr_number=$(gh pr list --repo "$SOURCE_REPO" --state all --head "$HEAD_BRANCH" \
-              --json number,headRefOid,headRepositoryOwner \
-              --jq "map(select(.headRepositoryOwner.login == \"$head_owner\" and .headRefOid == \"$HEAD_SHA\")) | first | .number // \"\"")
-          fi
-          if [ -z "$pr_number" ]; then
-            echo "No pull request found for $HEAD_REPO $HEAD_BRANCH at $HEAD_SHA"
-            echo "allowed=false" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-          gh api "repos/$SOURCE_REPO/pulls/$pr_number" > pr.json
-          base_repo=$(jq -r '.base.repo.full_name // ""' pr.json)
-          pr_head=$(jq -r '.head.sha' pr.json)
-          if [ "$base_repo" != "$SOURCE_REPO" ]; then
-            echo "PR #$pr_number targets $base_repo, not $SOURCE_REPO"
-            echo "allowed=false" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-          if [ "$pr_head" != "$HEAD_SHA" ]; then
-            echo "PR #$pr_number has moved on to $pr_head; its own build publishes it"
-            echo "allowed=false" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-          short_sha=$(printf '%s' "$HEAD_SHA" | cut -c1-5)
-          {
-            echo "allowed=true"
-            echo "pr_number=$pr_number"
-            echo "tag=pr-$pr_number"
-            echo "apk=DroidDeck-PR.$pr_number-$short_sha.apk"
-          } >> "$GITHUB_OUTPUT"
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          persist-credentials: false
 
-      - name: Download the APK
-        if: steps.scope.outputs.allowed == 'true'
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          APK_NAME: ${{ steps.scope.outputs.apk }}
-        run: |
-          set -euo pipefail
-          gh run download "$RUN_ID" --repo "$SOURCE_REPO" --name droiddeck-apk --dir downloaded
-          found=$(find downloaded -name '*.apk')
-          test "$(printf '%s\n' "$found" | grep -c .)" = 1
-          mkdir -p release-assets
-          mv "$found" "release-assets/$APK_NAME"
+      - uses: actions/download-artifact@v4
+        with:
+          name: droiddeck-pr-signed-standard
+          path: signed
 
-      - name: Check the signing key
-        if: steps.scope.outputs.allowed == 'true'
+      - name: Verify the release signer and checksum
         env:
-          APK_NAME: ${{ steps.scope.outputs.apk }}
+          EXPECTED_SHA256: b241ea7d7e8180e2e58a8a2cc6e819eedc36eff5a0a04f382a34cabba4b5d3f0
+          APK_NAME: ${{ needs.authorize.outputs.apk_name }}
         run: |
           set -euo pipefail
-          build_tools=$(find "$ANDROID_SDK_ROOT/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -1)
-          certs=$("$build_tools/apksigner" verify --print-certs "release-assets/$APK_NAME")
-          printf '%s\n' "$certs"
-          signers=$(printf '%s\n' "$certs" | grep -c 'certificate SHA-256 digest')
-          digest=$(printf '%s\n' "$certs" | sed -n 's/.*certificate SHA-256 digest: //p' | head -1)
-          if [ "$signers" != 1 ] || [ "$digest" != "$SIGNING_CERT_SHA256" ]; then
-            echo "::error::$APK_NAME is not signed with the CI key, so it would not install over earlier builds"
-            exit 1
+          apk="signed/$APK_NAME"
+          test -s "$apk" || { echo "::error::Signed APK is missing: $APK_NAME"; exit 1; }
+          sdk=${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}
+          [[ -n "$sdk" && -d "$sdk/build-tools" ]] || { echo "::error::Android build-tools are unavailable"; exit 1; }
+          tools=$(find "$sdk/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -1)
+          certs=$("$tools/apksigner" verify --min-sdk-version 28 --print-certs "$apk")
+          digest=$(sed -n 's/.*certificate SHA-256 digest: //p' <<<"$certs" | sort -u)
+          [[ "$digest" == "$EXPECTED_SHA256" ]] || {
+            printf '%s\n' "$certs" >&2
+            echo "::error::PR APK is not signed with the release certificate"; exit 1;
+          }
+          (cd signed && sha256sum -- "$APK_NAME" > SHA256SUMS.txt)
+          cat signed/SHA256SUMS.txt
+
+      - name: Publish to DroidDeck-CI when its token is configured
+        env:
+          GH_TOKEN: ${{ secrets.DROIDDECK_CI_TOKEN }}
+          PR_NUMBER: ${{ needs.authorize.outputs.pr_number }}
+          HEAD_SHA: ${{ needs.authorize.outputs.head_sha }}
+          APK_NAME: ${{ needs.authorize.outputs.apk_name }}
+          SOURCE_REPO: ${{ github.repository }}
+          TARGET_REPO: Droid-Deck/DroidDeck-CI
+          SIGNING_CERT_SHA256: b241ea7d7e8180e2e58a8a2cc6e819eedc36eff5a0a04f382a34cabba4b5d3f0
+        run: |
+          set -euo pipefail
+          if [ -z "$GH_TOKEN" ]; then
+            echo "::warning::DROIDDECK_CI_TOKEN is not configured; the release-signed APK remains available as this workflow run's artifact"
+            exit 0
           fi
-
-      - name: Write the release notes
-        if: steps.scope.outputs.allowed == 'true'
-        id: notes
-        env:
-          PR_NUMBER: ${{ steps.scope.outputs.pr_number }}
-          APK_NAME: ${{ steps.scope.outputs.apk }}
-        run: |
-          set -euo pipefail
-          title=$(jq -r '.title' pr.json | tr '\r\n' '  ' | sed 's/[[:space:]]\+/ /g; s/ $//')
-          author=$(jq -r '.user.login // "unknown"' pr.json)
-          url=$(jq -r '.html_url' pr.json)
-          body=$(jq -r '.body // ""' pr.json)
-          head_ref=$(jq -r '.head.ref' pr.json)
-          echo "title=$title" >> "$GITHUB_OUTPUT"
+          pr=$(gh api "repos/$SOURCE_REPO/pulls/$PR_NUMBER")
+          title=$(jq -r '.title' <<<"$pr" | tr '\r\n' '  ' | sed 's/[[:space:]]\+/ /g; s/ $//')
+          url=$(jq -r '.html_url' <<<"$pr")
+          tag="pr-$PR_NUMBER"
+          notes=$(mktemp)
+          trap 'rm -f "$notes"' EXIT
           {
             printf '# PR #%s\n\n' "$PR_NUMBER"
             printf 'Title: %s\n\n' "$title"
-            printf 'Author: @%s\n\n' "$author"
             printf 'Source PR: %s\n' "$url"
-            printf 'Source branch: %s\n' "$head_ref"
-            printf 'Source commit: `%s`\n' "$HEAD_SHA"
-            printf 'Build workflow run: https://github.com/%s/actions/runs/%s\n\n' "$SOURCE_REPO" "$RUN_ID"
-            printf '## What This PR Is About\n\n'
-            if [ -n "$body" ]; then
-              printf '%s\n' "$body"
-            else
-              printf 'No PR description was provided.\n'
-            fi
-            printf '\n## Attached Artifacts\n\n'
-            printf -- '- %s\n' "$APK_NAME"
-            printf '\nBuilt from source commit `%s`, signed with the CI key (SHA-256 `%s`), so it installs over any other DroidDeck CI build.\n' \
-              "$(printf '%s' "$HEAD_SHA" | cut -c1-5)" "$SIGNING_CERT_SHA256"
-          } > release-notes.md
-
-      - name: Publish to DroidDeck-CI
-        if: steps.scope.outputs.allowed == 'true'
-        env:
-          GH_TOKEN: ${{ secrets.DROIDDECK_CI_TOKEN }}
-          PR_NUMBER: ${{ steps.scope.outputs.pr_number }}
-          TAG: ${{ steps.scope.outputs.tag }}
-          APK_NAME: ${{ steps.scope.outputs.apk }}
-          PR_TITLE: ${{ steps.notes.outputs.title }}
-        run: |
-          set -euo pipefail
-          title="PR #$PR_NUMBER: $PR_TITLE"
-          if view_out=$(gh api "repos/$TARGET_REPO/releases/tags/$TAG" 2>&1); then
-            gh release edit "$TAG" --repo "$TARGET_REPO" --title "$title" --notes-file release-notes.md --prerelease
+            printf "Source commit: \`%s\`\n" "$HEAD_SHA"
+            printf "Signed with DroidDeck release certificate SHA-256 \`%s\`.\n" "$SIGNING_CERT_SHA256"
+            printf 'This is a review-approved test build. Back up app data before installing test builds.\n'
+          } > "$notes"
+          if view_out=$(gh api "repos/$TARGET_REPO/releases/tags/$tag" 2>&1); then
+            gh release edit "$tag" --repo "$TARGET_REPO" --title "PR #$PR_NUMBER: $title" --notes-file "$notes" --prerelease
           elif printf '%s' "$view_out" | grep -qi 'Not Found'; then
-            gh release create "$TAG" --repo "$TARGET_REPO" --target main --title "$title" --notes-file release-notes.md --prerelease \
-              || gh release edit "$TAG" --repo "$TARGET_REPO" --title "$title" --notes-file release-notes.md --prerelease
+            gh release create "$tag" --repo "$TARGET_REPO" --target main \
+              --title "PR #$PR_NUMBER: $title" --notes-file "$notes" --prerelease
           else
             printf '%s\n' "$view_out"
             exit 1
           fi
-          gh api "repos/$TARGET_REPO/releases/tags/$TAG" \
+          gh api "repos/$TARGET_REPO/releases/tags/$tag" \
             --jq '.assets[] | select(.name | endswith(".apk")) | .id' |
             while IFS= read -r asset_id; do
               gh api --method DELETE "repos/$TARGET_REPO/releases/assets/$asset_id" >/dev/null
             done
-          gh release upload "$TAG" "release-assets/$APK_NAME" --repo "$TARGET_REPO" --clobber
-          gh release view "$TAG" --repo "$TARGET_REPO" --json url --jq '"Published: \(.url)"'
+          gh release upload "$tag" "signed/$APK_NAME" "signed/SHA256SUMS.txt" --repo "$TARGET_REPO" --clobber
+          gh release view "$tag" --repo "$TARGET_REPO" --json url --jq '"Published: \(.url)"'
