@@ -94,6 +94,8 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
     private var cursorPos by mutableStateOf(androidx.compose.ui.geometry.Offset(-100f, -100f))
     private var cursorVisible by mutableStateOf(false)
     private val cursorHide = Runnable { cursorVisible = false }
+    /** When the pad or the on-screen controls were last used (uptimeMillis); see [showCursor]. */
+    private var lastPadInputMs = 0L
     private val uiHandler = Handler(Looper.getMainLooper())
     private var pendingBackAction: Runnable? = null
     private var drawerDirectionKey = KeyEvent.KEYCODE_UNKNOWN
@@ -197,6 +199,13 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
 
         val bridge = PadBridge(File(LinuxRuntime.sessionRoot(this), "dev/input"))
         padBridge = bridge
+        // A player on the pad or the on-screen controls has no use for the mouse arrow; the next
+        // touchpad or mouse move brings it back (showCursor), once the pad has been quiet a moment.
+        bridge.setOnPlayerInput {
+            lastPadInputMs = android.os.SystemClock.uptimeMillis()
+            uiHandler.removeCallbacks(cursorHide)
+            cursorVisible = false
+        }
         onScreenControls = OnScreenControls(this, bridge).also { root.addView(it) }
         keyboard = KeyboardHost(this).also { root.addView(it) }
         touchpad = TouchpadGestures(PointerGestures.slop(this), pointerListener)
@@ -984,9 +993,14 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
         showCursor(x.coerceIn(left, left + drawnW), y.coerceIn(top, top + drawnH))
     }
 
-    /** The arrow stays on a desktop; in a Steam session it shows for a moment after each move. */
+    /**
+     * The arrow stays on a desktop; in a Steam session it shows for a moment after each move. While
+     * a controller is driving (input in the last [CURSOR_PAD_HOLD_MS]) it stays hidden, so a touch
+     * during play does not flash it up - Bannerlator's rule for its Wayland pointer.
+     */
     private fun showCursor(x: Float, y: Float) {
         cursorPos = androidx.compose.ui.geometry.Offset(x, y)
+        if (android.os.SystemClock.uptimeMillis() - lastPadInputMs < CURSOR_PAD_HOLD_MS) return
         cursorVisible = true
         uiHandler.removeCallbacks(cursorHide)
         if (SessionState.mode == SessionService.MODE_STEAM && SessionState.steamUi != "desktop") uiHandler.postDelayed(cursorHide, 2500)
@@ -1304,6 +1318,7 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
         private const val TAG = "SessionActivity"
         private const val UNBUFFERED_SOURCES = InputDevice.SOURCE_CLASS_JOYSTICK or InputDevice.SOURCE_CLASS_TRACKBALL or InputDevice.SOURCE_CLASS_POSITION
         private const val BACK_DOUBLE_PRESS_TIMEOUT_MS = 500L
+        private const val CURSOR_PAD_HOLD_MS = 1200L
         private const val DRAWER_HAT_THRESHOLD = 0.5f
         private const val DRAWER_STICK_ENTER_THRESHOLD = 0.55f
         private const val DRAWER_STICK_EXIT_THRESHOLD = 0.35f
