@@ -157,7 +157,7 @@ jobs:
           }
 
           short_sha=${head_sha:0:7}
-          label="PR-$PR_NUMBER-$short_sha"
+          label="PR.$PR_NUMBER-$short_sha"
           apk_name="DroidDeck-$label.apk"
           {
             echo "run_id=$run_id"
@@ -248,6 +248,7 @@ jobs:
           title=$(jq -r '.title' <<<"$pr" | tr '\r\n' '  ' | sed 's/[[:space:]]\+/ /g; s/ $//')
           url=$(jq -r '.html_url' <<<"$pr")
           signing_cert_sha256=$(tr -d '[:space:]' < keystore/release-signer.sha256)
+          apk_sha256=$(awk 'NR == 1 { print $1 }' signed/SHA256SUMS.txt)
           tag="pr-$PR_NUMBER"
           notes=$(mktemp)
           trap 'rm -f "$notes"' EXIT
@@ -256,11 +257,12 @@ jobs:
             printf 'Title: %s\n\n' "$title"
             printf 'Source PR: %s\n' "$url"
             printf "Source commit: \`%s\`\n" "$HEAD_SHA"
+            printf "APK SHA-256: \`%s\`\n" "$apk_sha256"
             printf "Signed with DroidDeck release certificate SHA-256 \`%s\`.\n" "$signing_cert_sha256"
             printf 'This is a review-approved test build. Back up app data before installing test builds.\n'
           } > "$notes"
           if view_out=$(gh api "repos/$TARGET_REPO/releases/tags/$tag" 2>&1); then
-            gh release edit "$tag" --repo "$TARGET_REPO" --title "PR #$PR_NUMBER: $title" --notes-file "$notes" --prerelease
+            :
           elif printf '%s' "$view_out" | grep -qi 'Not Found'; then
             gh release create "$tag" --repo "$TARGET_REPO" --target main \
               --title "PR #$PR_NUMBER: $title" --notes-file "$notes" --prerelease
@@ -268,10 +270,11 @@ jobs:
             printf '%s\n' "$view_out"
             exit 1
           fi
-          gh api "repos/$TARGET_REPO/releases/tags/$tag" \
-            --jq '.assets[] | select(.name | endswith(".apk")) | .id' |
+          gh release upload "$tag" "signed/$APK_NAME" --repo "$TARGET_REPO" --clobber
+          gh release edit "$tag" --repo "$TARGET_REPO" --title "PR #$PR_NUMBER: $title" --notes-file "$notes" --prerelease
+          gh api "repos/$TARGET_REPO/releases/tags/$tag" |
+            jq -r --arg keep "$APK_NAME" '.assets[] | select(.name | endswith(".apk")) | select(.name != $keep) | .id' |
             while IFS= read -r asset_id; do
               gh api --method DELETE "repos/$TARGET_REPO/releases/assets/$asset_id" >/dev/null
             done
-          gh release upload "$tag" "signed/$APK_NAME" "signed/SHA256SUMS.txt" --repo "$TARGET_REPO" --clobber
           gh release view "$tag" --repo "$TARGET_REPO" --json url --jq '"Published: \(.url)"'
