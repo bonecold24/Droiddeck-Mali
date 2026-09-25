@@ -217,7 +217,7 @@ class FrontEndActions(
     val onFindWirelessAdbPort: (String, (Int?) -> Unit) -> Unit = { _, done -> done(null) },
     val onWirelessAdbApply: (String, Int, Boolean, (String?) -> Unit) -> Unit = { _, _, _, done -> done("Wireless ADB is unavailable") },
     val onSetPhantomProcessLimit: (Boolean, (String?) -> Unit) -> Unit = { _, done -> done("Wireless ADB is unavailable") },
-    val onCopyPhantomCommand: () -> Unit = {},
+    val onCopyPhantomCommand: (Boolean) -> Unit = {},
     val onDismissPhantomGate: () -> Unit = {},
     val controller: ControllerActions? = null,
 )
@@ -514,25 +514,22 @@ private fun FrontEndScreenBody(s: FrontEndState, a: FrontEndActions, page: (@Com
                 onDismiss = { appToChooseDisplay = null },
             )
         }
-        if (phantomGateVisible && !showWirelessAdbFix && !showDeveloperDisplayChoice) {
+        if (phantomGateVisible && !showWirelessAdbFix) {
             Box(Modifier.fillMaxSize().background(colors.background)) {
                 PhantomProcessGatePage(
                     status = s.phantomProcessStatus,
                     onDismiss = a.onDismissPhantomGate,
-                    onRefresh = a.onRefreshPhantomStatus,
                     onOpenDeveloperOptions = requestDeveloperOptions,
-                    onFixOverWifi = { requestWirelessAdbFix(false) },
-                    onCopyCommand = a.onCopyPhantomCommand,
+                    onSetUpWirelessAdb = { requestWirelessAdbFix(false) },
                 )
             }
         }
-        if (showWirelessAdbFix && !showDeveloperDisplayChoice) {
+        if (showWirelessAdbFix) {
             Box(Modifier.fillMaxSize().background(colors.background)) {
                 WirelessAdbFixPage(
                     onBack = { showWirelessAdbFix = false },
                     desiredEnabled = wirelessAdbDesiredEnabled,
                     onOpenDeveloperOptions = requestDeveloperOptions,
-                    onCopyCommand = a.onCopyPhantomCommand,
                     onPair = a.onWirelessAdbPair,
                     onFindConnectPort = a.onFindWirelessAdbPort,
                     onApply = a.onWirelessAdbApply,
@@ -540,22 +537,20 @@ private fun FrontEndScreenBody(s: FrontEndState, a: FrontEndActions, page: (@Com
             }
         }
         if (showDeveloperDisplayChoice) {
-            Box(Modifier.fillMaxSize().background(colors.background)) {
-                DeveloperDisplayChoicePage(
-                    displays = s.secondScreenDisplays.map { display ->
-                        display.id to if (s.secondScreenDisplays.size == 1) "Bottom screen" else display.label
-                    },
-                    onMainScreen = {
-                        showDeveloperDisplayChoice = false
-                        a.onOpenDeveloperOptions(null)
-                    },
-                    onSecondaryScreen = { displayId ->
-                        showDeveloperDisplayChoice = false
-                        a.onOpenDeveloperOptions(displayId)
-                    },
-                    onBack = { showDeveloperDisplayChoice = false },
-                )
-            }
+            DeveloperDisplayChoiceDialog(
+                displays = s.secondScreenDisplays.map { display ->
+                    display.id to if (s.secondScreenDisplays.size == 1) "Bottom screen" else display.label
+                },
+                onMainScreen = {
+                    showDeveloperDisplayChoice = false
+                    a.onOpenDeveloperOptions(null)
+                },
+                onSecondaryScreen = { displayId ->
+                    showDeveloperDisplayChoice = false
+                    a.onOpenDeveloperOptions(displayId)
+                },
+                onDismiss = { showDeveloperDisplayChoice = false },
+            )
         }
     }
     BackHandler(enabled = navOpen && !processSettingsPageVisible) { navOpen = false }
@@ -1133,7 +1128,7 @@ private fun SetupPanel(
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp)) {
                         SecondaryButton("Developer options", onClick = onOpenDeveloperOptions)
                         SecondaryButton("Check again", onClick = a.onRefreshPhantomStatus)
-                        SecondaryButton("Copy ADB", onClick = a.onCopyPhantomCommand)
+                        SecondaryButton("Copy ADB", onClick = { a.onCopyPhantomCommand(false) })
                     }
                 }
                 SettingsGroup("Launcher tools") {
@@ -1249,7 +1244,13 @@ private fun Chip(t: String, ok: Boolean) {
 private fun rememberHot(src: MutableInteractionSource): Boolean = src.collectIsFocusedAsState().value || src.collectIsHoveredAsState().value
 
 @Composable
-internal fun PrimaryButton(text: String, enabled: Boolean = true, main: Boolean = false, onClick: () -> Unit) {
+internal fun PrimaryButton(
+    text: String,
+    enabled: Boolean = true,
+    main: Boolean = false,
+    compact: Boolean = false,
+    onClick: () -> Unit,
+) {
     val colors = MaterialTheme.colorScheme
     val pal = LocalPalette.current
     // The page's main button is where the pane is entered from the rail.
@@ -1276,14 +1277,14 @@ internal fun PrimaryButton(text: String, enabled: Boolean = true, main: Boolean 
             // controller is on it, as the other controls are.
             .border(2.dp, if (hot) pal.signal else Color.Transparent, Shape12)
             .hoverable(src).clickable(interactionSource = src, indication = LocalIndication.current, enabled = enabled, onClick = onClick)
-            .padding(horizontal = 18.dp, vertical = 11.dp),
+            .padding(horizontal = if (compact) 10.dp else 18.dp, vertical = if (compact) 7.dp else 11.dp),
     ) {
-        Text(text, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 0.5.sp, color = if (enabled) colors.onPrimary else colors.onSurfaceVariant, maxLines = 1)
+        Text(text, fontSize = if (compact) 12.sp else 15.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 0.5.sp, color = if (enabled) colors.onPrimary else colors.onSurfaceVariant, maxLines = 1)
     }
 }
 
 @Composable
-internal fun SecondaryButton(text: String, enabled: Boolean = true, onClick: () -> Unit) {
+internal fun SecondaryButton(text: String, enabled: Boolean = true, compact: Boolean = false, onClick: () -> Unit) {
     val colors = MaterialTheme.colorScheme
     val src = remember { MutableInteractionSource() }
     val hot = rememberHot(src) && enabled
@@ -1297,8 +1298,8 @@ internal fun SecondaryButton(text: String, enabled: Boolean = true, onClick: () 
             .alpha(if (enabled) 1f else 0.5f)
             .hoverable(src).clickable(interactionSource = src, indication = LocalIndication.current, enabled = enabled, onClick = onClick)
             .controllerConfirm(enabled = enabled, onClick = onClick)
-            .padding(horizontal = 16.dp, vertical = 11.dp),
-    ) { Text(text, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 0.5.sp, color = colors.onBackground, maxLines = 1) }
+            .padding(horizontal = if (compact) 10.dp else 16.dp, vertical = if (compact) 7.dp else 11.dp),
+    ) { Text(text, fontSize = if (compact) 12.sp else 15.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 0.5.sp, color = colors.onBackground, maxLines = 1) }
 }
 
 @Composable

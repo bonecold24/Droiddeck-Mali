@@ -18,6 +18,9 @@ object PhantomProcessLimit {
     const val SHELL_COMMAND = "settings put global settings_enable_monitor_phantom_procs false"
     private const val SETTING = "settings_enable_monitor_phantom_procs"
 
+    fun adbCommand(enabled: Boolean): String =
+        "adb shell settings put global $SETTING ${if (enabled) "true" else "false"}"
+
     fun read(resolver: ContentResolver, sdk: Int = Build.VERSION.SDK_INT): PhantomProcessStatus {
         if (sdk < Build.VERSION_CODES.S) return PhantomProcessStatus.NOT_APPLICABLE
         val value = try {

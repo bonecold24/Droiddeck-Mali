@@ -399,9 +399,9 @@ class MainActivity : ComponentActivity() {
                                 }
                             }, "wireless-adb-setting").start()
                         },
-                        onCopyPhantomCommand = {
+                        onCopyPhantomCommand = { enabled ->
                             (getSystemService(CLIPBOARD_SERVICE) as ClipboardManager).setPrimaryClip(
-                                ClipData.newPlainText("DroidDeck child-process setting", PhantomProcessLimit.ADB_COMMAND),
+                                ClipData.newPlainText("DroidDeck child-process setting", PhantomProcessLimit.adbCommand(enabled)),
                             )
                             android.widget.Toast.makeText(this, "ADB command copied", android.widget.Toast.LENGTH_SHORT).show()
                         },
