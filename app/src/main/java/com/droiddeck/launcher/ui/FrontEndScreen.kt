@@ -114,6 +114,7 @@ import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.platform.LocalInputModeManager
@@ -786,6 +787,7 @@ private fun Content(
     onSelect: (String) -> Unit, onAndroidAppClick: (HomeApp.LaunchableApp) -> Unit,
 ) {
     val colors = MaterialTheme.colorScheme
+    val detailPosterWidth = if (LocalConfiguration.current.screenHeightDp < 600) 72.dp else 120.dp
     Column(modifier = modifier.padding(horizontal = 22.dp, vertical = 18.dp)) {
         when {
             selected == "android-apps" && s.isHomeApp -> {
@@ -842,7 +844,7 @@ private fun Content(
                                     Chip(if (s.ready) "● ready" else "runtime missing", ok = s.ready)
                                 }
                             }
-                            Poster(g.art, g.name, Modifier.width(120.dp))
+                            Poster(g.art, g.name, Modifier.width(detailPosterWidth))
                         }
                     }
                     val others = s.steamGames.filter { it !== g }
@@ -964,7 +966,7 @@ private fun Content(
                                     Chip(g.hostPath.extension.uppercase().ifEmpty { "folder" }, ok = false)
                                 }
                             }
-                            if (g.art != null) Poster(g.art, g.name, Modifier.width(120.dp))
+                            if (g.art != null) Poster(g.art, g.name, Modifier.width(detailPosterWidth))
                         }
                     }
                     val others = e.games.filter { it !== g }
