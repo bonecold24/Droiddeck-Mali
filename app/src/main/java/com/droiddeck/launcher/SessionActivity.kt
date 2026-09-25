@@ -30,6 +30,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.ComposeView
 import com.droiddeck.launcher.core.FileUtils
+import com.droiddeck.launcher.frontend.Library
 import com.droiddeck.launcher.gpu.FrameGen
 import com.droiddeck.launcher.gpu.LsfgNative
 import com.droiddeck.launcher.gpu.TurnipDriver
@@ -646,7 +647,12 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
         val mode = SessionPrefs.prefMode(intent.getStringExtra(SessionService.EXTRA_MODE) ?: SessionService.MODE_STEAM)
         // A custom resolution is taken as given; the compositor fits it to the panel.
         SessionPrefs.customResolution(this, mode)?.let { return it }
-        val cap = SessionPrefs.resolutionCap(this, mode)
+        // An emulator whose frames cost next to nothing (Library.drawsAtPanel) gets the panel,
+        // unless the user chose a resolution for the mode.
+        val program = intent.getStringExtra(SessionService.EXTRA_PROGRAM)
+        val cap = if (intent.getStringExtra(SessionService.EXTRA_MODE) == SessionService.MODE_RUN &&
+            Library.drawsAtPanel(program) && !SessionPrefs.resolutionChosen(this, mode)) 0
+        else SessionPrefs.resolutionCap(this, mode)
         val height = (if (cap <= 0) panelH else minOf(panelH, cap.toFloat())).toInt()
         val width = (height * aspect).toInt()
         // Odd sizes upset the scaler; both dimensions even is what every mode here would be.
