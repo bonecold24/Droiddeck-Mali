@@ -487,6 +487,23 @@ BUSCONF
     # An update that cannot install asks for a restart (rc=42) every time; the count is capped so a
     # session can never again loop in silence, which reads as a menu opening and closing by itself.
     steam_updates=0
+    # A session bus for the client under gamescope (the desktop's labwc already runs in one). Big
+    # Picture's "Switch to Desktop" asks SteamOS Manager on it first and only then falls back to
+    # steamos-session-select (steamui.so: "No SteamOSManager support for SwitchToDesktop, using
+    # legacy path"); with no session bus at all the ask never finished and the screen sat on
+    # "Switching to Desktop..." for ever. On a bus with nothing on it the ask fails at once.
+    if [ -z "${DBUS_SESSION_BUS_ADDRESS:-}" ] && [ -z "${BL_DESKTOP:-}" ] && command -v dbus-daemon >/dev/null 2>&1; then
+      _bl_bus=/tmp/bl-session-bus-$$
+      rm -f "$_bl_bus"
+      dbus-daemon --session --address="unix:path=$_bl_bus" --nofork --nopidfile >/dev/null 2>&1 &
+      for _i in 1 2 3 4 5 6 7 8 9 10; do [ -S "$_bl_bus" ] && break; sleep 0.2; done
+      if [ -S "$_bl_bus" ]; then
+        export DBUS_SESSION_BUS_ADDRESS="unix:path=$_bl_bus"
+        echo "== steam: session bus at $_bl_bus"
+      else
+        echo "== steam: the session bus did not come up; Switch to Desktop will not work"
+      fi
+    fi
     while :; do
       rm -f "$HOME/.bl-restart-once"
       if [ -f "$steam_beta" ] && [ "$(cat "$steam_beta" 2>/dev/null)" != "$steam_channel" ]; then
