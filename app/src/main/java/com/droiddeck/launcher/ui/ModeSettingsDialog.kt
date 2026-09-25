@@ -59,8 +59,7 @@ class ModeSettings(
     val forceFullscreen: Boolean? = null,
     /** Steam only: the client branch forced on the command line. */
     val steamChannel: String? = null,
-    /** Steam only: the user's own games folder and what was found in it. */
-    /** The chosen Games folders (null = not a Steam page). */
+    /** Steam only: the user's chosen Games folders; null outside Steam. */
     val addedGamesDirs: List<String>? = null,
     val addedGames: List<AddedGameRow> = emptyList(),
     val addedGamesArt: Boolean = true,
