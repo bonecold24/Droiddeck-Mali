@@ -219,7 +219,14 @@ object Library {
         "armsx2" -> listOf("-batch", "-bigpicture", "-fullscreen", "--", guestPath)
         // DuckStation shares PCSX2's flags (src/duckstation-qt/qthost.cpp): the same launch and exit.
         "duckstation" -> listOf("-batch", "-bigpicture", "-fullscreen", "--", guestPath)
-        "dolphin" -> listOf("-e", guestPath)
+        // Dolphin: full screen, and gone when the game stops (-b), without its "stop the emulation?"
+        // question; no warning boxes either, which wait for a click a controller cannot give
+        // (they still go to Dolphin's log). -C sets a Dolphin.ini value for this run only, so
+        // Dolphin started from the desktop keeps its window and its warnings.
+        "dolphin" -> listOf(
+            "-b", "-C", "Dolphin.Display.Fullscreen=True", "-C", "Dolphin.Interface.ConfirmStop=False",
+            "-C", "Dolphin.Interface.UsePanicHandlers=False", "-e", guestPath,
+        )
         "cemu" -> listOf("-g", guestPath)
         else -> listOf(guestPath)
     }
