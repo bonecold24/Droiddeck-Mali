@@ -301,6 +301,16 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
                         onHardwareKeyboard = { drawerOpen = false; pcKeyboardOpen = !pcKeyboardOpen },
                         onSteamMenu = if (SessionState.mode == SessionService.MODE_STEAM) ({ sendSteamGuide() }) else null,
                         onQam = if (SessionState.mode == SessionService.MODE_STEAM) ({ triggerSteamQam() }) else null,
+                        // The desktop with Steam's desktop client in it, in this session's place: the
+                        // session ends with status 0 and onSessionEnded starts the relaunch (Stop's
+                        // finish() would skip it).
+                        onSwitchToDesktop = if (SessionState.mode == SessionService.MODE_STEAM) ({
+                            drawerOpen = false
+                            SessionState.relaunch = Intent(this@SessionActivity, SessionActivity::class.java)
+                                .putExtra(SessionService.EXTRA_MODE, SessionService.MODE_DESKTOP)
+                                .putExtra(SessionService.EXTRA_STEAM_UI, "desktop")
+                            SessionService.stop(this@SessionActivity)
+                        }) else null,
                         backActionsInverted = backActionsInverted,
                         onBackActionsInverted = { inverted ->
                             SessionPrefs.setBackActionsInverted(this@SessionActivity, inverted)

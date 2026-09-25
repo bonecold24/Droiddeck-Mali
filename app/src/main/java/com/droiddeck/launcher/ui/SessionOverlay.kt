@@ -213,6 +213,8 @@ class DrawerActions(
     val onHardwareKeyboard: () -> Unit,
     val onSteamMenu: (() -> Unit)?,
     val onQam: (() -> Unit)?,
+    /** Steam sessions: end Big Picture and open the desktop with Steam's desktop client in it. */
+    val onSwitchToDesktop: (() -> Unit)? = null,
     val onOsc: (String) -> Unit,
     val onSuspendPolicy: (String) -> Unit,
     val onBackActionsInverted: (Boolean) -> Unit,
@@ -345,6 +347,26 @@ fun SessionDrawer(open: Boolean, page: Int, controllerActive: Boolean, onPageCha
                             colors = ButtonDefaults.outlinedButtonColors(containerColor = if (qamHot) pal.signal.copy(alpha = 0.16f) else Color.Transparent),
                         ) {
                             Text("QAM", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 0.5.sp)
+                        }
+                        // Big Picture's own "Switch to Desktop" waits on SteamOS Manager for ever
+                        // here; this does the switch without the client.
+                        if (a.onSwitchToDesktop != null) {
+                            val deskSrc = remember { MutableInteractionSource() }
+                            val deskHot = deskSrc.collectIsFocusedAsState().value || deskSrc.collectIsHoveredAsState().value
+                            OutlinedButton(
+                                onClick = { host.open = null; a.onSwitchToDesktop.invoke() },
+                                interactionSource = deskSrc,
+                                modifier = Modifier.weight(1f).height(48.dp).then(focus.track(page, "desktop"))
+                                    .semantics { contentDescription = "Switch to Desktop" }.controllerConfirm {
+                                        host.open = null
+                                        a.onSwitchToDesktop.invoke()
+                                    },
+                                shape = RoundedCornerShape(12.dp),
+                                border = BorderStroke(if (deskHot) 2.dp else 1.dp, if (deskHot) pal.signal else colors.outline),
+                                colors = ButtonDefaults.outlinedButtonColors(containerColor = if (deskHot) pal.signal.copy(alpha = 0.16f) else Color.Transparent),
+                            ) {
+                                Text("DESKTOP", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 0.5.sp)
+                            }
                         }
                     }
                 }
