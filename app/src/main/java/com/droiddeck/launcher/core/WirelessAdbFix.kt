@@ -17,6 +17,7 @@ import java.util.ArrayDeque
 object WirelessAdbFix {
     private const val CERT_FILE = "wireless-adb-cert.pem"
     private const val KEY_FILE = "wireless-adb-key.pem"
+    private const val HOST_FILE = "wireless-adb-host.txt"
 
     @Synchronized
     private fun loadOrCreateIdentity(context: Context) {
@@ -43,6 +44,7 @@ object WirelessAdbFix {
     suspend fun pair(context: Context, host: String, port: Int, pairingCode: String) {
         loadOrCreateIdentity(context.applicationContext)
         Kadb.pair(host, port, pairingCode, "DroidDeck")
+        writeAtomically(File(context.noBackupFilesDir, HOST_FILE), host.toByteArray())
     }
 
     /** Finds this paired device's separate TLS connection port from Android's ADB mDNS record. */
@@ -115,15 +117,28 @@ object WirelessAdbFix {
         return resolvedPort.get().takeIf { it in 1..65535 }
     }
 
-    fun disableChildProcessLimit(context: Context, host: String, port: Int) {
+    fun setChildProcessLimit(context: Context, host: String, port: Int, enabled: Boolean) {
         loadOrCreateIdentity(context.applicationContext)
         Kadb.create(host, port).use { adb ->
-            val change = adb.shell(PhantomProcessLimit.SHELL_COMMAND)
+            val value = if (enabled) "true" else "false"
+            val change = adb.shell("settings put global settings_enable_monitor_phantom_procs $value")
             check(change.exitCode == 0) { change.allOutput.ifBlank { "ADB command failed (${change.exitCode})" } }
             val result = adb.shell("settings get global settings_enable_monitor_phantom_procs")
-            check(result.exitCode == 0 && result.output.trim() == "false") {
-                "Android did not confirm the child-process limit was disabled: ${result.allOutput.trim()}"
+            check(result.exitCode == 0 && result.output.trim() == value) {
+                "Android did not confirm the child-process limit was changed: ${result.allOutput.trim()}"
             }
         }
+    }
+
+    /** Tries the app's saved pairing without asking for a new pairing code. */
+    fun setUsingSavedPairing(context: Context, enabled: Boolean) {
+        val appContext = context.applicationContext
+        val hostFile = File(appContext.noBackupFilesDir, HOST_FILE)
+        check(hostFile.isFile) { "No Wireless debugging pairing is saved" }
+        val host = hostFile.readText().trim()
+        check(host.isNotEmpty()) { "No Wireless debugging host is saved" }
+        val port = findConnectPort(appContext, host)
+        check(port != null) { "Wireless debugging is unavailable on this network" }
+        setChildProcessLimit(appContext, host, port, enabled)
     }
 }

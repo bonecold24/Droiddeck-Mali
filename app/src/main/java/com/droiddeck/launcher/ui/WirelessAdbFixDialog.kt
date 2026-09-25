@@ -24,10 +24,12 @@ import androidx.compose.ui.unit.dp
 @Composable
 fun WirelessAdbFixDialog(
     onDismiss: () -> Unit,
+    desiredEnabled: Boolean,
     onOpenDeveloperOptions: () -> Unit,
+    onCopyCommand: () -> Unit,
     onPair: (String, Int, String, (String?) -> Unit) -> Unit,
     onFindConnectPort: (String, (Int?) -> Unit) -> Unit,
-    onApply: (String, Int, (String?) -> Unit) -> Unit,
+    onApply: (String, Int, Boolean, (String?) -> Unit) -> Unit,
 ) {
     var step by rememberSaveable { mutableStateOf(0) }
     var host by rememberSaveable { mutableStateOf("") }
@@ -45,17 +47,21 @@ fun WirelessAdbFixDialog(
                 when (step) {
                     0 -> {
                         Text("Enable Developer options and Wireless debugging on this device, and connect to Wi-Fi. Keep DroidDeck visible beside the pairing-code screen, such as in split screen. Android may close the code if you leave that screen.")
+                        Text(
+                            if (desiredEnabled) "This will restore Android’s child-process limit." else "This will disable Android’s child-process limit for Steam.",
+                            style = MaterialTheme.typography.bodySmall,
+                        )
                         Text("Enter the IP address and pairing port shown with the code.", style = MaterialTheme.typography.bodySmall)
                         OutlinedTextField(host, { host = it.trim() }, label = { Text("Device IP address") }, singleLine = true, modifier = Modifier.fillMaxWidth())
                         OutlinedTextField(pairingPort, { pairingPort = it.filter(Char::isDigit).take(5) }, label = { Text("Pairing port") }, singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), modifier = Modifier.fillMaxWidth())
                         OutlinedTextField(pairingCode, { pairingCode = it.filter(Char::isDigit).take(6) }, label = { Text("Pairing code") }, singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), modifier = Modifier.fillMaxWidth())
                     }
                     1 -> {
-                        Text("Paired. Return to the Wireless debugging screen and enter the current IP address and port shown there. This connect port is different from the pairing port.")
+                        Text("Paired. If automatic discovery did not work, enter the current Wireless debugging port shown in Settings. It differs from the pairing port.")
                         OutlinedTextField(host, { host = it.trim() }, label = { Text("Device IP address") }, singleLine = true, modifier = Modifier.fillMaxWidth())
                         OutlinedTextField(connectPort, { connectPort = it.filter(Char::isDigit).take(5) }, label = { Text("Wireless debugging port") }, singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), modifier = Modifier.fillMaxWidth())
                     }
-                    else -> Text(message ?: "Android confirmed the child-process limit is disabled. You can start Steam now.")
+                    else -> Text(message ?: "Android confirmed the child-process limit is ${if (desiredEnabled) "enabled" else "disabled"}.")
                 }
                 message?.let { Text(it, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall) }
                 if (busy) Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -83,7 +89,7 @@ fun WirelessAdbFixDialog(
                                 } else {
                                     connectPort = discoveredPort.toString()
                                     message = "Device found. Applying the setting…"
-                                    onApply(host, discoveredPort) { applyError ->
+                                    onApply(host, discoveredPort, desiredEnabled) { applyError ->
                                         busy = false
                                         if (applyError == null) { step = 2; message = null }
                                         else message = "Could not apply automatically. Check the port below and retry. $applyError"
@@ -96,17 +102,20 @@ fun WirelessAdbFixDialog(
                 1 -> TextButton(enabled = !busy && validPort(connectPort), onClick = {
                     busy = true
                     message = null
-                    onApply(host, connectPort.toInt()) { error ->
+                    onApply(host, connectPort.toInt(), desiredEnabled) { error ->
                         busy = false
                         if (error == null) { step = 2; message = null } else message = error
                     }
-                }) { Text("Disable child-process limit") }
+                }) { Text(if (desiredEnabled) "Enable child-process limit" else "Disable child-process limit") }
                 else -> TextButton(onClick = onDismiss) { Text("Done") }
             }
         },
         dismissButton = {
-            Row {
-                if (step < 2) TextButton(enabled = !busy, onClick = onOpenDeveloperOptions) { Text("Developer options") }
+            Column(horizontalAlignment = androidx.compose.ui.Alignment.End) {
+                if (step < 2) Row {
+                    TextButton(enabled = !busy, onClick = onOpenDeveloperOptions) { Text("Developer options") }
+                    TextButton(enabled = !busy, onClick = onCopyCommand) { Text("Copy ADB") }
+                }
                 TextButton(enabled = !busy, onClick = onDismiss) { Text(if (step == 2) "Close" else "Cancel") }
             }
         },

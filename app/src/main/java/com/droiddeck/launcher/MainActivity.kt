@@ -1,6 +1,7 @@
 package com.droiddeck.launcher
 
 import android.Manifest
+import android.app.ActivityOptions
 import android.content.Intent
 import android.content.ClipData
 import android.content.ClipboardManager
@@ -354,7 +355,7 @@ class MainActivity : ComponentActivity() {
                             startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/The412Banner/DroidDeck/actions/workflows/build.yml")))
                         },
                         onRefreshPhantomStatus = { refreshPhantomStatus() },
-                        onOpenDeveloperOptions = { openDeveloperOptions() },
+                        onOpenDeveloperOptions = { displayId -> openDeveloperOptions(displayId) },
                         onWirelessAdbPair = { host, port, code, complete ->
                             Thread({
                                 val result = runCatching {
@@ -370,15 +371,25 @@ class MainActivity : ComponentActivity() {
                                 ui.post { complete(port) }
                             }, "wireless-adb-discovery").start()
                         },
-                        onWirelessAdbApply = { host, port, complete ->
+                        onWirelessAdbApply = { host, port, enabled, complete ->
                             Thread({
-                                val result = runCatching { WirelessAdbFix.disableChildProcessLimit(this@MainActivity, host, port) }
+                                val result = runCatching { WirelessAdbFix.setChildProcessLimit(this@MainActivity, host, port, enabled) }
                                 val error = result.exceptionOrNull()?.let { it.localizedMessage ?: "Wireless ADB command failed" }
                                 ui.post {
                                     if (error == null) refreshPhantomStatus()
                                     complete(error)
                                 }
                             }, "wireless-adb-fix").start()
+                        },
+                        onSetPhantomProcessLimit = { enabled, complete ->
+                            Thread({
+                                val result = runCatching { WirelessAdbFix.setUsingSavedPairing(this@MainActivity, enabled) }
+                                val error = result.exceptionOrNull()?.let { it.localizedMessage ?: "Wireless ADB is unavailable" }
+                                ui.post {
+                                    if (error == null) refreshPhantomStatus()
+                                    complete(error)
+                                }
+                            }, "wireless-adb-setting").start()
                         },
                         onCopyPhantomCommand = {
                             (getSystemService(CLIPBOARD_SERVICE) as ClipboardManager).setPrimaryClip(
@@ -1069,12 +1080,20 @@ class MainActivity : ComponentActivity() {
         } else null
     }
 
-    private fun openDeveloperOptions() {
-        runCatching {
-            startActivity(Intent(android.provider.Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS))
-        }.onFailure {
-            startActivity(Intent(android.provider.Settings.ACTION_SETTINGS))
-            android.widget.Toast.makeText(this, "Open Developer options in Settings", android.widget.Toast.LENGTH_LONG).show()
+    private fun openDeveloperOptions(displayId: Int?) {
+        val intent = Intent(android.provider.Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        try {
+            if (displayId == null) startActivity(intent)
+            else startActivity(intent, ActivityOptions.makeBasic().setLaunchDisplayId(displayId).toBundle())
+        } catch (error: Exception) {
+            if (displayId != null) {
+                runCatching { startActivity(intent) }
+                android.widget.Toast.makeText(this, "Could not open Settings on the bottom screen; opened it on the main screen.", android.widget.Toast.LENGTH_LONG).show()
+            } else {
+                startActivity(Intent(android.provider.Settings.ACTION_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                android.widget.Toast.makeText(this, "Open Developer options in Settings", android.widget.Toast.LENGTH_LONG).show()
+            }
         }
     }
 

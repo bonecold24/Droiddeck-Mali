@@ -212,10 +212,11 @@ class FrontEndActions(
     val onBackActionsInverted: (Boolean) -> Unit = {},
     val onCheckLatestBuild: () -> Unit = {},
     val onRefreshPhantomStatus: () -> Unit = {},
-    val onOpenDeveloperOptions: () -> Unit = {},
+    val onOpenDeveloperOptions: (Int?) -> Unit = {},
     val onWirelessAdbPair: (String, Int, String, (String?) -> Unit) -> Unit = { _, _, _, done -> done("Wireless ADB is unavailable") },
     val onFindWirelessAdbPort: (String, (Int?) -> Unit) -> Unit = { _, done -> done(null) },
-    val onWirelessAdbApply: (String, Int, (String?) -> Unit) -> Unit = { _, _, done -> done("Wireless ADB is unavailable") },
+    val onWirelessAdbApply: (String, Int, Boolean, (String?) -> Unit) -> Unit = { _, _, _, done -> done("Wireless ADB is unavailable") },
+    val onSetPhantomProcessLimit: (Boolean, (String?) -> Unit) -> Unit = { _, done -> done("Wireless ADB is unavailable") },
     val onCopyPhantomCommand: () -> Unit = {},
     val onDismissPhantomGate: () -> Unit = {},
     val controller: ControllerActions? = null,
@@ -355,9 +356,19 @@ private fun FrontEndScreenBody(s: FrontEndState, a: FrontEndActions, page: (@Com
     var selected by rememberSaveable { mutableStateOf("steam") }
     var navOpen by rememberSaveable { mutableStateOf(false) }
     var showWirelessAdbFix by rememberSaveable { mutableStateOf(false) }
+    var showDeveloperDisplayChoice by rememberSaveable { mutableStateOf(false) }
+    var wirelessAdbDesiredEnabled by rememberSaveable { mutableStateOf(false) }
     var appToChooseDisplay by remember { mutableStateOf<HomeApp.LaunchableApp?>(null) }
     val colors = MaterialTheme.colorScheme
     val ctx = LocalContext.current
+    val requestDeveloperOptions = {
+        if (s.secondScreenDisplays.isEmpty()) a.onOpenDeveloperOptions(null)
+        else showDeveloperDisplayChoice = true
+    }
+    val requestWirelessAdbFix: (Boolean) -> Unit = { enabled ->
+        wirelessAdbDesiredEnabled = enabled
+        showWirelessAdbFix = true
+    }
     LaunchedEffect(s.showPhantomGate, s.phantomProcessStatus) {
         if (s.showPhantomGate && PhantomProcessLimit.blocksSteam(s.phantomProcessStatus)) {
             while (true) {
@@ -443,10 +454,15 @@ private fun FrontEndScreenBody(s: FrontEndState, a: FrontEndActions, page: (@Com
             .focusProperties { enter = { frontFocus.paneEntry() } }
             .focusGroup()
         val content: @Composable (Modifier) -> Unit = { m ->
-            Pane(s, selected, a, page, m.then(paneFocus), { selected = it }) { app ->
-                if (s.secondScreenDisplays.isEmpty()) a.onAndroidApp(app, null)
-                else appToChooseDisplay = app
-            }
+            Pane(
+                s, selected, a, page, m.then(paneFocus), { selected = it },
+                onAndroidAppClick = { app ->
+                    if (s.secondScreenDisplays.isEmpty()) a.onAndroidApp(app, null)
+                    else appToChooseDisplay = app
+                },
+                onOpenDeveloperOptions = requestDeveloperOptions,
+                onRequestWirelessAdb = requestWirelessAdbFix,
+            )
         }
         Box(modifier = Modifier.fillMaxSize()) {
             Column(modifier = Modifier.fillMaxSize()) {
@@ -498,16 +514,21 @@ private fun FrontEndScreenBody(s: FrontEndState, a: FrontEndActions, page: (@Com
                 onDismissRequest = a.onDismissPhantomGate,
                 title = { Text("Steam cannot start yet") },
                 text = {
-                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Column(
+                        modifier = Modifier.heightIn(max = 320.dp).verticalScroll(rememberScrollState()),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
                         Text(PhantomProcessLimit.title(s.phantomProcessStatus))
                         Text(PhantomProcessLimit.gateInstructions(s.phantomProcessStatus))
                         Text(PhantomProcessLimit.ADB_COMMAND, style = MaterialTheme.typography.bodySmall)
                     }
                 },
                 confirmButton = {
-                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                        androidx.compose.material3.TextButton(onClick = a.onOpenDeveloperOptions) { Text("Developer options") }
-                        androidx.compose.material3.TextButton(onClick = { showWirelessAdbFix = true }) { Text("Fix over Wi-Fi") }
+                    Column(horizontalAlignment = Alignment.End) {
+                        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                            androidx.compose.material3.TextButton(onClick = requestDeveloperOptions) { Text("Developer options") }
+                            androidx.compose.material3.TextButton(onClick = { requestWirelessAdbFix(false) }) { Text("Fix over Wi-Fi") }
+                        }
                         androidx.compose.material3.TextButton(onClick = a.onCopyPhantomCommand) { Text("Copy ADB") }
                     }
                 },
@@ -516,10 +537,38 @@ private fun FrontEndScreenBody(s: FrontEndState, a: FrontEndActions, page: (@Com
         if (showWirelessAdbFix) {
             WirelessAdbFixDialog(
                 onDismiss = { showWirelessAdbFix = false },
-                onOpenDeveloperOptions = a.onOpenDeveloperOptions,
+                desiredEnabled = wirelessAdbDesiredEnabled,
+                onOpenDeveloperOptions = requestDeveloperOptions,
+                onCopyCommand = a.onCopyPhantomCommand,
                 onPair = a.onWirelessAdbPair,
                 onFindConnectPort = a.onFindWirelessAdbPort,
                 onApply = a.onWirelessAdbApply,
+            )
+        }
+        if (showDeveloperDisplayChoice) {
+            androidx.compose.material3.AlertDialog(
+                onDismissRequest = { showDeveloperDisplayChoice = false },
+                title = { Text("Open Developer options") },
+                text = { Text("Choose where Settings should open.") },
+                confirmButton = {
+                    Column(horizontalAlignment = Alignment.End) {
+                        androidx.compose.material3.TextButton(onClick = {
+                            showDeveloperDisplayChoice = false
+                            a.onOpenDeveloperOptions(null)
+                        }) { Text("Main screen") }
+                        s.secondScreenDisplays.forEach { display ->
+                            androidx.compose.material3.TextButton(onClick = {
+                                showDeveloperDisplayChoice = false
+                                a.onOpenDeveloperOptions(display.id)
+                            }) {
+                                Text(if (s.secondScreenDisplays.size == 1) "Bottom screen" else display.label)
+                            }
+                        }
+                    }
+                },
+                dismissButton = {
+                    androidx.compose.material3.TextButton(onClick = { showDeveloperDisplayChoice = false }) { Text("Cancel") }
+                },
             )
         }
     }
@@ -740,6 +789,7 @@ private fun NavItem(
 private fun Pane(
     s: FrontEndState, selected: String, a: FrontEndActions, page: (@Composable () -> Unit)?, modifier: Modifier,
     onSelect: (String) -> Unit, onAndroidAppClick: (HomeApp.LaunchableApp) -> Unit,
+    onOpenDeveloperOptions: () -> Unit, onRequestWirelessAdb: (Boolean) -> Unit,
 ) {
     Box(modifier = modifier) {
         val wash: Pair<File?, Float> = when {
@@ -761,7 +811,10 @@ private fun Pane(
                     .apply { targetContentZIndex = 1f }
             },
             label = "pane",
-        ) { key -> if (page != null && key == s.pageKey) page() else Content(s, key, a, Modifier.fillMaxSize(), onSelect, onAndroidAppClick) }
+        ) { key ->
+            if (page != null && key == s.pageKey) page()
+            else Content(s, key, a, Modifier.fillMaxSize(), onSelect, onAndroidAppClick, onOpenDeveloperOptions, onRequestWirelessAdb)
+        }
     }
 }
 
@@ -834,6 +887,7 @@ private fun romFor(s: FrontEndState, selected: String): Pair<Library.Emulator, L
 private fun Content(
     s: FrontEndState, selected: String, a: FrontEndActions, modifier: Modifier,
     onSelect: (String) -> Unit, onAndroidAppClick: (HomeApp.LaunchableApp) -> Unit,
+    onOpenDeveloperOptions: () -> Unit, onRequestWirelessAdb: (Boolean) -> Unit,
 ) {
     val colors = MaterialTheme.colorScheme
     val detailPosterWidth = if (LocalConfiguration.current.screenHeightDp < 600) 72.dp else 120.dp
@@ -917,7 +971,7 @@ private fun Content(
                     ArtGrid(s.emulators.map { e -> Tile(e.name, if (e.installed) (if (e.id == "retroarch") null else "${e.games.size} game${if (e.games.size == 1) "" else "s"}") else "Select to install", null, "emu:${e.id}", e.iconRes, dim = !e.installed) { onSelect("emu:${e.id}") } })
                 }
             }
-            selected == "setup" -> SetupPanel(s, a)
+            selected == "setup" -> SetupPanel(s, a, onOpenDeveloperOptions, onRequestWirelessAdb)
             selected.startsWith("emu:") -> {
                 val e = s.emulators.firstOrNull { "emu:${it.id}" == selected }
                 if (e == null) Note("Not installed.") else {
@@ -1036,8 +1090,28 @@ private fun Content(
 }
 
 @Composable
-private fun SetupPanel(s: FrontEndState, a: FrontEndActions) {
+private fun SetupPanel(
+    s: FrontEndState,
+    a: FrontEndActions,
+    onOpenDeveloperOptions: () -> Unit,
+    onRequestWirelessAdb: (Boolean) -> Unit,
+) {
     val host = rememberMenuHost()
+    var processLimitBusy by remember { mutableStateOf(false) }
+    var processLimitMessage by remember { mutableStateOf<String?>(null) }
+    val setProcessLimit: (Boolean) -> Unit = { enabled ->
+        processLimitBusy = true
+        processLimitMessage = null
+        a.onSetPhantomProcessLimit(enabled) { error ->
+            processLimitBusy = false
+            if (error == null) {
+                a.onRefreshPhantomStatus()
+            } else {
+                processLimitMessage = "Wireless ADB is unavailable. Pair this device or use Developer options."
+                onRequestWirelessAdb(enabled)
+            }
+        }
+    }
     val runtime = when {
         s.busy -> "Working…"
         !s.ready -> "Install"
@@ -1048,22 +1122,32 @@ private fun SetupPanel(s: FrontEndState, a: FrontEndActions) {
         Column(modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(bottom = 24.dp)) {
                 Rise(0) { Eyebrow("Setup") }
                 Rise(1) { Title("Setup") }
-                if (PhantomProcessLimit.blocksSteam(s.phantomProcessStatus)) {
-                    SettingsGroup("Android process limit") {
-                        Text(
-                            PhantomProcessLimit.title(s.phantomProcessStatus),
-                            fontWeight = FontWeight.SemiBold,
-                            color = MaterialTheme.colorScheme.error,
-                        )
-                        Text(PhantomProcessLimit.instructions(s.phantomProcessStatus), color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        Text(PhantomProcessLimit.ADB_COMMAND, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            SecondaryButton("Developer options", onClick = a.onOpenDeveloperOptions)
-                            SecondaryButton("Check again", onClick = a.onRefreshPhantomStatus)
+                SettingsGroup("Android process limit") {
+                    Text(
+                        PhantomProcessLimit.title(s.phantomProcessStatus),
+                        fontWeight = FontWeight.SemiBold,
+                        color = if (PhantomProcessLimit.blocksSteam(s.phantomProcessStatus)) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onBackground,
+                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
+                    )
+                    Text(
+                        "Enabling restores Android’s child-process limit. Disabling it is recommended for Steam sessions.",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(horizontal = 14.dp),
+                    )
+                    if (s.phantomProcessStatus != PhantomProcessStatus.NOT_APPLICABLE) {
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp)) {
+                            SecondaryButton("Enable limit", enabled = !processLimitBusy && s.phantomProcessStatus != PhantomProcessStatus.ENABLED) { setProcessLimit(true) }
+                            SecondaryButton("Disable limit", enabled = !processLimitBusy && s.phantomProcessStatus != PhantomProcessStatus.DISABLED) { setProcessLimit(false) }
                         }
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            SecondaryButton("Copy ADB command", onClick = a.onCopyPhantomCommand)
-                        }
+                        if (processLimitBusy) LinearProgressIndicator(modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 8.dp))
+                        processLimitMessage?.let { Text(it, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(horizontal = 14.dp, vertical = 4.dp)) }
+                    }
+                    Text(PhantomProcessLimit.instructions(s.phantomProcessStatus), color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(horizontal = 14.dp, vertical = 4.dp))
+                    Text(PhantomProcessLimit.ADB_COMMAND, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(horizontal = 14.dp, vertical = 4.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp)) {
+                        SecondaryButton("Developer options", onClick = onOpenDeveloperOptions)
+                        SecondaryButton("Check again", onClick = a.onRefreshPhantomStatus)
+                        SecondaryButton("Copy ADB", onClick = a.onCopyPhantomCommand)
                     }
                 }
                 SettingsGroup("Launcher tools") {
