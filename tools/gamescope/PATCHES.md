@@ -16,6 +16,12 @@ library list, before anything is published.
   3.16.29: realtime-priority Vulkan queues on request (`GAMESCOPE_FORCE_VULKAN_REALTIME=1`)
   without CAP_SYS_NICE, which proot can never have; and the gamepad-driven cursor sprite following
   the X pointer that XTest moves (it sat frozen).
+- `0110-wayland-backend-touch.patch` - this app: the nested Wayland backend bound only the host's
+  pointer and keyboard, so a finger on the phone's screen never reached Steam. It now binds
+  `wl_touch` too and hands each finger to wlserver's touch path (`wlserver_touchdown` / `motion` /
+  `up`) - the one a Steam Deck's touchscreen drives - so what a touch does follows the client's
+  touch mode (Steam's Big Picture sets Passthrough: a real touch, rows scroll under a finger).
+  Finger ids are offset by one, since the nested pointer already moves wlserver's touch 0.
 
 Sixteen more of Armada's patches are DRM/lease/HDR-on-KMS work for a native display, which this
 app's Wayland-hosted gamescope never reaches, or need a newer gamescope than the runtime has.
