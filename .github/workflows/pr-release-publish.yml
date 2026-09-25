@@ -65,8 +65,6 @@ jobs:
           done <<<"$approved"
           [[ "$maintainer_approved" == true ]] || { echo '::error::A maintainer must approve this commit'; exit 1; }
 
-          # PR builds use the public test key. Keep their versionCode at the shipped release
-          # so testers can install the stable APK over a signed PR build.
           sdk=${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}
           tools=$(find "$sdk/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -1)
           stable_tag=$(gh api repos/The412Banner/DroidDeck/releases/latest --jq .tag_name)

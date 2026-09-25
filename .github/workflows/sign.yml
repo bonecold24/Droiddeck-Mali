@@ -1,8 +1,5 @@
 name: Sign APKs
 
-# Called from main to sign builds, approved PR artifacts, and releases. The key lives in
-# the caller's protected environment; PR build jobs use only the public test key.
-
 on:
   workflow_call:
     inputs:
@@ -62,7 +59,6 @@ jobs:
         env:
           RELEASE_KEYSTORE_B64: ${{ secrets.RELEASE_KEYSTORE_B64 }}
           RELEASE_STORE_PASSWORD: ${{ secrets.RELEASE_STORE_PASSWORD }}
-          # The alias is not a secret (and as one, GitHub would mask 'droiddeck' all over the logs).
           RELEASE_KEY_ALIAS: droiddeck
           ENVIRONMENT: ${{ inputs.environment }}
           VARIANT: ${{ matrix.variant }}
