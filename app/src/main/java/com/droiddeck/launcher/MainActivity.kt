@@ -1230,7 +1230,7 @@ class MainActivity : ComponentActivity() {
         // The libraries, off the main thread: manifests and a folder scan.
         Thread({
             val games = if (ready) Library.steamGames(this) + com.droiddeck.launcher.frontend.AddedGames.scan(this).map { g ->
-                com.droiddeck.launcher.frontend.AddedGameArt.resolve(this, g).let { art -> Library.SteamGame(g.appId.toInt(), g.name, art.portrait ?: art.header, "added", g.gameId) }
+                com.droiddeck.launcher.frontend.AddedGameArt.resolve(this, g).let { art -> Library.SteamGame(g.appId.toInt(), g.name, art.portrait ?: art.header, "added", g.gameId, hero = art.hero ?: art.header) }
             } else emptyList()
             val emus = Library.emulators(this) { id -> DesktopCatalog.installed(this, id) != null }
             ui.post { steamGames = games; emulatorList = emus }
