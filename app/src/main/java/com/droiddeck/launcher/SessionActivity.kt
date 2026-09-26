@@ -237,7 +237,7 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
             val needRuntime = com.droiddeck.launcher.runtime.LinuxRuntimeInstaller.installedVersion(this) == null
             val needDesktop = intent.getStringExtra(SessionService.EXTRA_MODE) == SessionService.MODE_DESKTOP &&
                 !com.droiddeck.launcher.runtime.DesktopCatalog.desktopInstalled(this)
-            val needProton = intent.getStringExtra(SessionService.EXTRA_MODE) == SessionService.MODE_STEAM &&
+            val needProton = (intent.getStringExtra(SessionService.EXTRA_MODE) ?: SessionService.MODE_STEAM) == SessionService.MODE_STEAM &&
                 com.droiddeck.launcher.runtime.DesktopCatalog.protonSeedNeeded(this)
             if (needRuntime || needDesktop || needProton) installThenStart(needRuntime, needDesktop, needProton)
         }
