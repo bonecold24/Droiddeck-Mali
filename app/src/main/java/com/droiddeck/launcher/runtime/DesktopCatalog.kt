@@ -18,6 +18,12 @@ import java.io.File
 object DesktopCatalog {
     private const val TAG = "DesktopCatalog"
     const val CATALOG_URL = "https://raw.githubusercontent.com/The412Banner/winlator-contents/main/desktop.json"
+    /**
+     * Valve's Proton Experimental (ARM64) with its appmanifest, laid out as the client keeps it.
+     * In a catalog of its own so it never shows among the packages a user picks from.
+     */
+    const val STEAM_SEED_URL = "https://raw.githubusercontent.com/The412Banner/winlator-contents/main/steam-seed.json"
+    const val PROTON_SEED_ID = "proton-arm64"
 
     class Entry(
         val id: String, val name: String, val tier: Int, val version: String, val kind: String,
@@ -26,8 +32,8 @@ object DesktopCatalog {
         val icon: String, val category: String,
     )
 
-    fun fetch(): List<Entry>? {
-        val body = Downloader.downloadString(CATALOG_URL) ?: return null
+    fun fetch(url: String = CATALOG_URL): List<Entry>? {
+        val body = Downloader.downloadString(url) ?: return null
         return try {
             val json = JSONObject(body)
             val arr = json.getJSONArray("packages")
@@ -56,6 +62,15 @@ object DesktopCatalog {
     /** The installed version of a package, or null. */
     fun installed(context: Context, id: String): String? =
         FileUtils.readString(marker(context, id))?.trim()?.takeIf { it.isNotEmpty() }
+
+    /**
+     * True until the ARM64 Proton has been placed once. Its appmanifest counts too, so an install
+     * the client fetched itself is never overwritten; after the first placement the client owns it
+     * and updates it like any other app, and a user who removes it is not given it back.
+     */
+    fun protonSeedNeeded(context: Context): Boolean =
+        installed(context, PROTON_SEED_ID) == null &&
+            !File(LinuxRuntime.rootDir(context), "root/.local/share/Steam/steamapps/appmanifest_4427310.acf").isFile
 
     // labwc comes with the hosted desktop package itself (its launcher is staged by the app at
     // every session, so it cannot tell whether the package is there); SessionFiles uses the same test.
