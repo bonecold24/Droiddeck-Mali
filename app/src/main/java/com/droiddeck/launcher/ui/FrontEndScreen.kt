@@ -602,11 +602,13 @@ private fun SideRail(
 ) {
     val colors = MaterialTheme.colorScheme
     val compact = LocalConfiguration.current.screenHeightDp < 420
+    // Under 600dp wide (4:3 and square screens) the labels would cost a fifth of the width.
+    val iconOnly = isNarrowScreen()
     val setupNeedsAttention = !s.ready || (s.available != null && s.available != s.installed) ||
         PhantomProcessLimit.blocksSteam(s.phantomProcessStatus)
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
-        modifier = modifier.width(92.dp).background(colors.surface).padding(vertical = if (compact) 8.dp else 12.dp),
+        modifier = modifier.width(if (iconOnly) 64.dp else 92.dp).background(colors.surface).padding(vertical = if (compact) 8.dp else 12.dp),
     ) {
         Image(painterResource(R.drawable.logo), contentDescription = "DroidDeck", modifier = Modifier.size(if (compact) 28.dp else 34.dp))
         Spacer(Modifier.height(if (compact) 6.dp else 12.dp))
@@ -615,17 +617,18 @@ private fun SideRail(
             verticalArrangement = Arrangement.spacedBy(4.dp),
             modifier = Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()),
         ) {
-            if (s.isHomeApp) RailItem("Apps", Icons.Outlined.Apps, "android-apps", selected == "android-apps", compact) { onSelect("android-apps") }
-            RailItem("Steam", Icons.Outlined.SportsEsports, "steam", selected == "steam", compact) { onSelect("steam") }
-            RailItem("Desktop", Icons.Outlined.DesktopWindows, "desktop", selected == "desktop", compact) { onSelect("desktop") }
-            RailItem("Components", Icons.Outlined.Layers, "components", selected == "components", compact) { onSelect("components") }
-            RailItem("Setup", Icons.Outlined.Tune, "setup", selected == "setup", compact, badge = setupNeedsAttention) { onSelect("setup") }
+            if (s.isHomeApp) RailItem("Apps", Icons.Outlined.Apps, "android-apps", selected == "android-apps", compact, iconOnly) { onSelect("android-apps") }
+            RailItem("Steam", Icons.Outlined.SportsEsports, "steam", selected == "steam", compact, iconOnly) { onSelect("steam") }
+            RailItem("Desktop", Icons.Outlined.DesktopWindows, "desktop", selected == "desktop", compact, iconOnly) { onSelect("desktop") }
+            RailItem("Components", Icons.Outlined.Layers, "components", selected == "components", compact, iconOnly) { onSelect("components") }
+            RailItem("Setup", Icons.Outlined.Tune, "setup", selected == "setup", compact, iconOnly, badge = setupNeedsAttention) { onSelect("setup") }
         }
         AnimatedVisibility(s.busy, enter = expandVertically() + fadeIn(), exit = shrinkVertically() + fadeOut()) {
             Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(bottom = 8.dp)) {
-                if (s.percent >= 0) LinearProgressIndicator(progress = { s.percent / 100f }, modifier = Modifier.width(60.dp))
-                else LinearProgressIndicator(modifier = Modifier.width(60.dp))
-                Text(if (s.percent >= 0) "${s.percent}%" else "Working", fontSize = 12.sp, color = colors.onSurfaceVariant, modifier = Modifier.padding(top = 4.dp))
+                val barWidth = if (iconOnly) 44.dp else 60.dp
+                if (s.percent >= 0) LinearProgressIndicator(progress = { s.percent / 100f }, modifier = Modifier.width(barWidth))
+                else LinearProgressIndicator(modifier = Modifier.width(barWidth))
+                Text(if (s.percent >= 0) "${s.percent}%" else if (iconOnly) "…" else "Working", fontSize = 12.sp, color = colors.onSurfaceVariant, modifier = Modifier.padding(top = 4.dp))
             }
         }
         var lastRunning by remember { mutableStateOf("") }
@@ -634,13 +637,13 @@ private fun SideRail(
             s.running != null,
             enter = expandVertically(Motion.sp(0.75f)) + fadeIn(Motion.tw(300)),
             exit = shrinkVertically(Motion.tw(220)) + fadeOut(Motion.tw(180)),
-        ) { ResumeRailItem(lastRunning, compact, a.onResume) }
+        ) { ResumeRailItem(lastRunning, compact, iconOnly, a.onResume) }
     }
 }
 
 @Composable
 private fun RailItem(
-    label: String, icon: ImageVector, key: String, current: Boolean, compact: Boolean,
+    label: String, icon: ImageVector, key: String, current: Boolean, compact: Boolean, iconOnly: Boolean,
     badge: Boolean = false, onClick: () -> Unit,
 ) {
     val colors = MaterialTheme.colorScheme
@@ -669,19 +672,21 @@ private fun RailItem(
         modifier = Modifier
             .then(if (frontFocus != null) Modifier.focusRequester(frontFocus.railFor(key)) else Modifier)
             .graphicsLayer { scaleX = scale; scaleY = scale }
-            .size(width = 80.dp, height = if (compact) 52.dp else 60.dp)
+            .size(width = if (iconOnly) 52.dp else 80.dp, height = if (iconOnly) 48.dp else if (compact) 52.dp else 60.dp)
             .clip(Shape14)
             .background(fill)
             .border(2.dp, ring, Shape14)
             .hoverable(src)
-            .clickable(interactionSource = src, indication = LocalIndication.current, role = Role.Tab, onClick = onClick),
+            .clickable(interactionSource = src, indication = LocalIndication.current, role = Role.Tab, onClick = onClick)
+            .then(if (iconOnly) Modifier.semantics { contentDescription = label } else Modifier),
     ) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(3.dp)) {
+        if (iconOnly) Icon(icon, contentDescription = null, tint = fg, modifier = Modifier.size(22.dp))
+        else Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(3.dp)) {
             Icon(icon, contentDescription = null, tint = fg, modifier = Modifier.size(if (compact) 20.dp else 22.dp))
             Text(label, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = fg, maxLines = 1, softWrap = false)
         }
         if (badge) Box(
-            modifier = Modifier.align(Alignment.TopEnd).padding(top = 8.dp, end = 18.dp)
+            modifier = Modifier.align(Alignment.TopEnd).padding(top = if (iconOnly) 7.dp else 8.dp, end = if (iconOnly) 9.dp else 18.dp)
                 .size(8.dp).clip(CircleShape).background(AttentionAmber),
         )
     }
@@ -689,7 +694,7 @@ private fun RailItem(
 
 /** The running session, one press from anywhere in the launcher. */
 @Composable
-private fun ResumeRailItem(name: String, compact: Boolean, onResume: () -> Unit) {
+private fun ResumeRailItem(name: String, compact: Boolean, iconOnly: Boolean, onResume: () -> Unit) {
     val colors = MaterialTheme.colorScheme
     val pal = LocalPalette.current
     val src = remember { MutableInteractionSource() }
@@ -702,21 +707,24 @@ private fun ResumeRailItem(name: String, compact: Boolean, onResume: () -> Unit)
         verticalArrangement = Arrangement.spacedBy(3.dp),
         modifier = Modifier
             .padding(top = 6.dp)
-            .width(80.dp)
+            .width(if (iconOnly) 52.dp else 80.dp)
             .clip(Shape14)
             .background(pal.good.copy(alpha = if (focused || hovered) 0.20f else 0.12f))
             .border(2.dp, if (focused) pal.signal else Color.Transparent, Shape14)
             .hoverable(src)
             .clickable(interactionSource = src, indication = LocalIndication.current, role = Role.Button, onClick = onResume)
             .semantics { contentDescription = "Resume $name" }
-            .padding(vertical = if (compact) 6.dp else 9.dp, horizontal = 4.dp),
+            .padding(vertical = if (iconOnly) 15.dp else if (compact) 6.dp else 9.dp, horizontal = 4.dp),
     ) {
         Box(modifier = Modifier.size(14.dp), contentAlignment = Alignment.Center) {
             Box(modifier = Modifier.size(14.dp).graphicsLayer { scaleX = ringScale; scaleY = ringScale; alpha = (1.6f - ringScale) / 1.2f }.border(1.5.dp, pal.good, CircleShape))
             Box(modifier = Modifier.size(7.dp).clip(CircleShape).background(pal.good))
         }
-        Text("Resume", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = colors.onBackground, maxLines = 1, softWrap = false)
-        Text(name, fontSize = 12.sp, color = colors.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        // Icons only: the live dot alone says something is running; its description says what.
+        if (!iconOnly) {
+            Text("Resume", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = colors.onBackground, maxLines = 1, softWrap = false)
+            Text(name, fontSize = 12.sp, color = colors.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
     }
 }
 
