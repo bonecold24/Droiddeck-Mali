@@ -70,6 +70,8 @@ private class InstalledItem(
 )
 
 private val ROW_HEIGHT: Dp = 40.dp
+private val DETAIL_WIDTH: Dp = 260.dp
+private val ACTION_WIDTH: Dp = 112.dp
 private val GOLD = Color(0xFFF2C66D)
 
 /**
@@ -316,22 +318,30 @@ private fun ToolIcon(icon: ImageVector, description: String, busy: Boolean = fal
     }
 }
 
+/**
+ * A small button. Resting: grey outline (blue text when [accent]). Focused or hovered: a solid blue
+ * fill, white text and a white outline - unmistakable in a column of identical buttons.
+ */
 @Composable
-private fun SmallButton(text: String, enabled: Boolean = true, accent: Boolean = false, onClick: () -> Unit) {
+private fun SmallButton(text: String, enabled: Boolean = true, accent: Boolean = false, modifier: Modifier = Modifier, onClick: () -> Unit) {
     val colors = MaterialTheme.colorScheme
     val pal = LocalPalette.current
     val src = remember { MutableInteractionSource() }
     val hot = (src.collectIsFocusedAsState().value || src.collectIsHoveredAsState().value) && enabled
-    Text(
-        text, fontSize = 12.sp, fontWeight = FontWeight.Bold, maxLines = 1,
-        color = if (!enabled) colors.onSurfaceVariant else if (accent) Color(0xFF5E9BFF) else colors.onBackground,
-        modifier = Modifier.clip(RoundedCornerShape(8.dp))
-            .background(if (hot) pal.signal.copy(alpha = 0.16f) else colors.surfaceVariant)
-            .border(if (hot) 2.dp else 1.dp, if (hot || accent) pal.signal else pal.line2, RoundedCornerShape(8.dp))
+    Box(
+        contentAlignment = Alignment.Center,
+        modifier = modifier.clip(RoundedCornerShape(8.dp))
+            .background(if (hot) pal.signal else colors.surfaceVariant)
+            .border(2.dp, if (hot) Color.White else pal.line2, RoundedCornerShape(8.dp))
             .hoverable(src).clickable(interactionSource = src, indication = null, enabled = enabled, onClick = onClick)
             .controllerConfirm(enabled = enabled, onClick = onClick)
             .padding(horizontal = 10.dp, vertical = 5.dp),
-    )
+    ) {
+        Text(
+            text, fontSize = 12.sp, fontWeight = FontWeight.Bold, maxLines = 1,
+            color = if (!enabled) colors.onSurfaceVariant else if (hot) Color.White else if (accent) Color(0xFF5E9BFF) else colors.onBackground,
+        )
+    }
 }
 
 @Composable
@@ -374,13 +384,15 @@ private fun InstalledLine(item: InstalledItem, modifier: Modifier = Modifier, on
             }
             Text(
                 item.name, fontSize = 13.5.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis,
-                color = if (item.selected) Color(0xFF5E9BFF) else colors.onBackground, modifier = Modifier.weight(1f, fill = false),
+                color = if (item.selected) Color(0xFF5E9BFF) else colors.onBackground, modifier = Modifier.weight(1f),
             )
-            Tag(item.tag)
-            Text(item.detail, fontSize = 11.5.sp, color = colors.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
-            if (item.selected) Tag("IN USE")
+            Box(Modifier.width(72.dp)) { Tag(item.tag) }
+            Text(item.detail, fontSize = 11.5.sp, color = colors.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.width(DETAIL_WIDTH))
+            Box(Modifier.width(56.dp), contentAlignment = Alignment.CenterEnd) { if (item.selected) Tag("IN USE") }
         }
-        if (item.removable) {
+        // The trash column is always there (empty when the row can't be deleted) so rows line up.
+        if (!item.removable) Spacer(Modifier.padding(end = 4.dp).size(32.dp))
+        else {
             val delSrc = remember { MutableInteractionSource() }
             val delHot = delSrc.collectIsFocusedAsState().value || delSrc.collectIsHoveredAsState().value
             Box(
@@ -403,13 +415,14 @@ private fun AvailableLine(d: CatalogItem, progress: Int?, enabled: Boolean, onDo
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp),
         modifier = Modifier.fillMaxWidth().heightIn(min = ROW_HEIGHT).padding(horizontal = 10.dp),
     ) {
+        // Fixed columns so every row's details and button line up: name | details | button.
         Tag("NEW")
         Text(d.file.removeSuffix(".wcp"), fontSize = 13.5.sp, fontWeight = FontWeight.SemiBold, color = colors.onBackground,
-            maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
+            maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
         Text("${d.release} · " + String.format("%.1f MB", d.size / 1048576.0), fontSize = 11.5.sp, color = colors.onSurfaceVariant,
-            fontFamily = FontFamily.Default, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
-        if (progress == null) SmallButton("Download", enabled = enabled, accent = true, onClick = onDownload)
-        else Column(horizontalAlignment = Alignment.End, modifier = Modifier.width(110.dp)) {
+            fontFamily = FontFamily.Default, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.width(DETAIL_WIDTH))
+        if (progress == null) SmallButton("Download", enabled = enabled, accent = true, modifier = Modifier.width(ACTION_WIDTH), onClick = onDownload)
+        else Column(horizontalAlignment = Alignment.End, modifier = Modifier.width(ACTION_WIDTH)) {
             Text(if (progress < 0) "…" else "$progress%", fontSize = 11.sp, color = colors.onSurfaceVariant)
             Spacer(Modifier.height(3.dp))
             if (progress < 0) LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
