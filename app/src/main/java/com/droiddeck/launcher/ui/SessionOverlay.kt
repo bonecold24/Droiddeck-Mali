@@ -65,6 +65,7 @@ import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.border
+import androidx.compose.foundation.focusable
 import androidx.compose.foundation.hoverable
 import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.foundation.interaction.collectIsHoveredAsState
@@ -717,14 +718,29 @@ private fun ComponentsDrawerPage(host: MenuHost, a: DrawerActions, track: (Strin
     val running = snap.protons.filter { it.inUseByGame }
     var pick by rememberSaveable { mutableStateOf<String?>(null) }
     val view = snap.protons.firstOrNull { it.proton.id == pick } ?: running.firstOrNull() ?: snap.protons.firstOrNull()
+    // Focusable, so the pad can climb from the Proton box up to it and the page scrolls it into view.
     SettingsGroup("Running now") {
-        if (running.isEmpty()) SettingsRow("No game is running on a Proton", "Swaps apply the next time a game starts.") {}
-        else for (r in running) {
-            val c = r.components
-            SettingsRow(
-                r.proton.name,
-                ComponentsManager.COMPONENTS.joinToString(" · ") { "${ComponentsManager.LABEL[it]} ${c.getValue(it).inUse}" },
-            ) {}
+        val src = remember { MutableInteractionSource() }
+        val hot = src.collectIsFocusedAsState().value
+        val pal = LocalPalette.current
+        Column(
+            modifier = Modifier.fillMaxWidth().then(track("cmp-running"))
+                .focusable(interactionSource = src)
+                .background(if (hot) pal.signal.copy(alpha = 0.12f) else Color.Transparent)
+                .padding(horizontal = 14.dp, vertical = 11.dp),
+        ) {
+            if (running.isEmpty()) {
+                Text("No game is running on a Proton", fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = colors.onBackground)
+                Text("Changes apply the next time a game starts.", fontSize = 12.sp, color = colors.onSurfaceVariant, modifier = Modifier.padding(top = 2.dp))
+            } else for (r in running) {
+                Text(r.proton.name, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = colors.onBackground, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                for (comp in ComponentsManager.COMPONENTS) {
+                    Row(modifier = Modifier.fillMaxWidth().padding(top = 3.dp)) {
+                        Text(ComponentsManager.LABEL.getValue(comp), fontSize = 12.sp, color = colors.onSurfaceVariant, modifier = Modifier.width(96.dp))
+                        Text(r.components.getValue(comp).inUse, fontSize = 12.sp, color = colors.onBackground, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    }
+                }
+            }
         }
     }
     if (view == null) {
@@ -735,9 +751,13 @@ private fun ComponentsDrawerPage(host: MenuHost, a: DrawerActions, track: (Strin
     }
     val p = view.proton
     SettingsGroup("Components") {
-        ChoiceRow(
-            host, "cmp-proton", "Proton", p.version + (if (view.inUseByGame) " · in use by the running game" else "") +
-                (if (view.reappliedAt > 0) " · re-applied at launch " + java.text.DateFormat.getTimeInstance(java.text.DateFormat.SHORT).format(java.util.Date(view.reappliedAt * 1000)) else ""),
+        DrawerStackedChoice(
+            host, "cmp-proton", "Proton",
+            listOfNotNull(
+                p.version,
+                "game running".takeIf { view.inUseByGame },
+                view.reappliedAt.takeIf { it > 0 }?.let { "re-applied at launch " + java.text.DateFormat.getTimeInstance(java.text.DateFormat.SHORT).format(java.util.Date(it * 1000)) },
+            ).joinToString(" · "),
             snap.protons.map { it.proton.id to it.proton.name }, p.id,
             chipModifier = track("cmp-proton"), onPick = { pick = it },
         )
@@ -749,9 +769,11 @@ private fun ComponentsDrawerPage(host: MenuHost, a: DrawerActions, track: (Strin
                 snap.packages.filter { it.comp == comp }.map { it.file to it.version }
             if (options.isEmpty()) continue
             val current = st.activeFile ?: "orig:$build"
-            ChoiceRow(
+            val shown = options.firstOrNull { it.first == current }?.second
+            DrawerStackedChoice(
                 host, "cmp-$comp", ComponentsManager.LABEL.getValue(comp),
-                st.queued?.let { "Next: $it · after the game closes" } ?: st.inUse,
+                // The box already shows the choice: only say more when there is more to say.
+                st.queued?.let { "Next: $it · after the game closes" } ?: st.inUse.takeIf { it != shown },
                 options, current,
                 note = if (view.inUseByGame) "A game is running on this Proton: the change waits until it closes." else "Applies the next time a game starts.",
                 chipModifier = track("cmp-$comp"),
@@ -763,6 +785,43 @@ private fun ComponentsDrawerPage(host: MenuHost, a: DrawerActions, track: (Strin
         "Downloads, importing and deleting are on the Components page in the app.",
         fontSize = 12.sp, color = colors.onSurfaceVariant, modifier = Modifier.padding(horizontal = 4.dp, vertical = 12.dp),
     )
+}
+
+/**
+ * A choice for the drawer's narrow column: label, then the box across the full width, then the
+ * detail underneath - so a long Proton or package name never squeezes the text beside it.
+ */
+@Composable
+private fun <T> DrawerStackedChoice(
+    host: MenuHost, key: String, label: String, hint: String?,
+    options: List<Pair<T, String>>, selected: T, note: String? = null,
+    chipModifier: Modifier = Modifier, onPick: (T) -> Unit,
+) {
+    val colors = MaterialTheme.colorScheme
+    val pal = LocalPalette.current
+    val open = host.open == key
+    Column(
+        modifier = Modifier.fillMaxWidth()
+            .background(if (open) pal.signal.copy(alpha = 0.10f) else Color.Transparent)
+            .padding(horizontal = 14.dp, vertical = 10.dp),
+    ) {
+        Text(label, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = colors.onBackground)
+        Box(modifier = Modifier.fillMaxWidth().padding(top = 6.dp)) {
+            ValueChip(options.firstOrNull { it.first == selected }?.second ?: "-", open, modifier = chipModifier.fillMaxWidth()) {
+                host.open = if (open) null else key
+            }
+            AnchoredMenu(open, onDismiss = { if (host.open == key) host.open = null }, title = label, note = note) { firstItemFocus ->
+                options.forEachIndexed { index, (value, text) ->
+                    MenuItem(text, checked = value == selected, focusRequester = if (index == 0) firstItemFocus else null) {
+                        onPick(value)
+                        host.open = null
+                    }
+                }
+            }
+        }
+        if (hint != null) Text(hint, fontSize = 12.sp, color = colors.onSurfaceVariant, modifier = Modifier.padding(top = 5.dp))
+    }
+    Box(Modifier.fillMaxWidth().height(1.dp).background(pal.line))
 }
 
 /** The tab row's measure, from the approved mock: side tabs at half size, a little faded. */

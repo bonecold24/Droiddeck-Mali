@@ -198,16 +198,26 @@ object ComponentsManager {
     private fun proton(context: Context, id: String) = protons(context).firstOrNull { it.id == id }
         ?: throw IllegalStateException("No Proton with id $id")
 
-    /** Is a game (or anything) running on this Proton right now? Read from the processes' command lines. */
-    fun inUse(proton: Proton): Boolean {
+    /**
+     * Is anything running on this Proton right now - a game, or the client's own start-up runs,
+     * whose Wine processes can outlive them? Swaps wait while it is. Read from the command lines.
+     */
+    fun inUse(proton: Proton): Boolean = anyProcess(proton) { needle, text -> text.contains(needle + "proton ") || text.contains(needle + "files/bin") }
+
+    /**
+     * Is a game running on this Proton? Only a launch runs proton with the verb waitforexitandrun
+     * (Proton's own script stays up until the game exits); the client's start-up runs do not.
+     */
+    fun gameRunning(proton: Proton): Boolean = anyProcess(proton) { needle, text -> text.contains(needle + "proton waitforexitandrun") }
+
+    private fun anyProcess(proton: Proton, match: (String, String) -> Boolean): Boolean {
         val needle = proton.guestPath.trimEnd('/') + "/"
         val procs = File("/proc").listFiles() ?: return false
         for (p in procs) {
             if (!p.name.all(Char::isDigit)) continue
             val cmd = runCatching { File(p, "cmdline").readBytes() }.getOrNull() ?: continue
             if (cmd.isEmpty()) continue
-            val text = String(cmd).replace('\u0000', ' ')
-            if (text.contains(needle + "proton ") || text.contains(needle + "files/bin")) return true
+            if (match(needle, String(cmd).replace('\u0000', ' '))) return true
         }
         return false
     }
@@ -413,7 +423,7 @@ object ComponentsManager {
                     q?.optString("label"),
                 )
             }
-            ProtonView(p, comps, originals(context, p.id), inUse(p), reapplied[p.dir.name] ?: 0)
+            ProtonView(p, comps, originals(context, p.id), gameRunning(p), reapplied[p.dir.name] ?: 0)
         }
         Snapshot(views, packages(context))
     }
