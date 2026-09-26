@@ -254,7 +254,14 @@ fun SettingsRow(label: String, hint: String?, highlighted: Boolean = false, cont
     val colors = MaterialTheme.colorScheme
     val pal = LocalPalette.current
     val bg by animateColorAsState(if (highlighted) pal.signal.copy(alpha = 0.10f) else Color.Transparent, Motion.tw(200), label = "rowBg")
-    Row(
+    // A narrow page stacks the control under its label, so neither squeezes the other.
+    if (LocalNarrowPane.current) Column(
+        modifier = Modifier.fillMaxWidth().background(bg).padding(start = 14.dp, end = 14.dp, top = 11.dp, bottom = 12.dp),
+    ) {
+        Text(label, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = colors.onBackground)
+        if (hint != null) Text(hint, fontSize = 13.sp, color = colors.onSurfaceVariant, modifier = Modifier.padding(top = 2.dp))
+        Box(Modifier.padding(top = 8.dp)) { control() }
+    } else Row(
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier.fillMaxWidth().background(bg).padding(horizontal = 14.dp, vertical = 11.dp),
     ) {
@@ -343,62 +350,71 @@ fun SettingsPage(
     val scrollState = scroll ?: rememberScrollState()
     val colors = MaterialTheme.colorScheme
     val dim by animateFloatAsState(if (host.open != null) 0.6f else 1f, Motion.tw(220), label = "pageDim")
+    val narrow = LocalNarrowPane.current && !compactLayout
     Column(
         modifier = Modifier.fillMaxSize().padding(
-            horizontal = if (compactLayout) 14.dp else 22.dp,
-            vertical = if (compactLayout) 6.dp else 18.dp,
+            horizontal = if (compactLayout) 14.dp else if (narrow) 16.dp else 22.dp,
+            vertical = if (compactLayout) 6.dp else if (narrow) 12.dp else 18.dp,
         ),
         verticalArrangement = Arrangement.spacedBy(if (compactLayout) 2.dp else 0.dp),
     ) {
-        Rise(0) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                // Outlined when a controller's focus is on it, like every other control here.
-                val backSrc = remember { MutableInteractionSource() }
-                val backHot = backSrc.collectIsFocusedAsState().value || backSrc.collectIsHoveredAsState().value
-                Text(
-                    "‹  Back", fontSize = if (compactLayout) 11.sp else 12.sp, fontWeight = FontWeight.SemiBold,
-                    color = if (backHot) LocalPalette.current.signal else colors.onSurfaceVariant,
-                    modifier = Modifier.clip(RoundedCornerShape(8.dp))
-                        .border(2.dp, if (backHot) LocalPalette.current.signal else Color.Transparent, RoundedCornerShape(8.dp))
-                        .hoverable(backSrc).clickable(interactionSource = backSrc, indication = null, onClick = onBack)
-                        .padding(horizontal = 6.dp, vertical = if (compactLayout) 2.dp else 4.dp),
-                )
-                if (eyebrow != null) {
-                    Spacer(Modifier.width(10.dp))
-                    Eyebrow(eyebrow)
+        if (narrow) {
+            // Back and the title share one line: a 4:3 screen has no height to spare.
+            Rise(0) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    modifier = Modifier.padding(bottom = 6.dp),
+                ) {
+                    BackLink("Back", compact = true, onClick = onBack)
+                    Text(
+                        title, fontSize = 20.sp, fontWeight = FontWeight.Bold, color = colors.onBackground,
+                        maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f),
+                    )
+                    if (action != null) action()
                 }
             }
-        }
-        Rise(1) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Box(Modifier.weight(1f)) {
-                    if (compactLayout) {
-                        Text(
-                            title,
-                            fontSize = 20.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = colors.onBackground,
-                            modifier = Modifier.padding(vertical = 2.dp),
-                        )
-                    } else {
-                        Title(title)
+            if (lede != null) Rise(1) { Lede(lede) }
+        } else {
+            Rise(0) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    BackLink("Back", compact = compactLayout, onClick = onBack)
+                    if (eyebrow != null) {
+                        Spacer(Modifier.width(10.dp))
+                        Eyebrow(eyebrow)
                     }
                 }
-                if (action != null) action()
             }
-        }
-        if (lede != null) Rise(2) {
-            if (compactLayout) {
-                Text(
-                    lede,
-                    fontSize = 12.sp,
-                    color = colors.onSurfaceVariant,
-                    modifier = Modifier.padding(bottom = 3.dp),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            } else {
-                Lede(lede)
+            Rise(1) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(Modifier.weight(1f)) {
+                        if (compactLayout) {
+                            Text(
+                                title,
+                                fontSize = 20.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = colors.onBackground,
+                                modifier = Modifier.padding(vertical = 2.dp),
+                            )
+                        } else {
+                            Title(title)
+                        }
+                    }
+                    if (action != null) action()
+                }
+            }
+            if (lede != null) Rise(2) {
+                if (compactLayout) {
+                    Text(
+                        lede,
+                        fontSize = 12.sp,
+                        color = colors.onSurfaceVariant,
+                        modifier = Modifier.padding(bottom = 3.dp),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                } else {
+                    Lede(lede)
+                }
             }
         }
         Rise(3, Modifier.weight(1f).fillMaxWidth()) {

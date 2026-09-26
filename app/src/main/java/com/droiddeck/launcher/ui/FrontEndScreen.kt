@@ -727,7 +727,8 @@ private fun Pane(
     onSelect: (String) -> Unit, onAndroidAppClick: (HomeApp.LaunchableApp) -> Unit,
     onOpenDeveloperOptions: () -> Unit, onRequestWirelessAdb: (Boolean) -> Unit,
 ) {
-    Box(modifier = modifier) {
+    BoxWithConstraints(modifier = modifier) {
+      CompositionLocalProvider(LocalNarrowPane provides (maxWidth < NarrowPaneWidth)) {
         val backdropArt: File? = when {
             s.pageKey != null && page != null -> null
             selected.startsWith("app:") -> s.steamGames.firstOrNull { "app:${it.appId}" == selected }?.art
@@ -747,6 +748,7 @@ private fun Pane(
             if (page != null && key == s.pageKey) page()
             else Content(s, key, a, Modifier.fillMaxSize(), onSelect, onAndroidAppClick, onOpenDeveloperOptions, onRequestWirelessAdb)
         }
+      }
     }
 }
 
@@ -1248,9 +1250,9 @@ private fun SectionTitle(t: String, detail: String?) {
 
 private val Shape16 = RoundedCornerShape(16.dp)
 
-/** One level up, as Back and B do: a real button, big enough to hit. */
+/** One level up, as Back and B do: a real button, big enough to hit ([compact]: for the tightest layouts). */
 @Composable
-private fun BackLink(label: String, onClick: () -> Unit) {
+internal fun BackLink(label: String, compact: Boolean = false, onClick: () -> Unit) {
     val colors = MaterialTheme.colorScheme
     val pal = LocalPalette.current
     val src = remember { MutableInteractionSource() }
@@ -1258,7 +1260,7 @@ private fun BackLink(label: String, onClick: () -> Unit) {
     val shape = RoundedCornerShape(22.dp)
     Row(
         verticalAlignment = Alignment.CenterVertically,
-        modifier = Modifier.paneItem("back:$label").heightIn(min = 44.dp)
+        modifier = Modifier.paneItem("back:$label").heightIn(min = if (compact) 36.dp else 44.dp)
             .clip(shape)
             .background(if (hot) pal.signal.copy(alpha = 0.14f) else Color.White.copy(alpha = 0.04f))
             .border(2.dp, if (hot) pal.signal else Color.Transparent, shape)
