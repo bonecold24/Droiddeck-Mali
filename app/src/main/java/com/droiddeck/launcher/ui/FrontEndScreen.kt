@@ -57,6 +57,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.runtime.key
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.ColumnScope
@@ -889,13 +890,16 @@ private fun Content(
                         Spacer(Modifier.height(10.dp))
                         Rise(1) {
                             Row(verticalAlignment = Alignment.Bottom) {
-                                GameHero(g, Modifier.weight(1f).height(if (short) 170.dp else 210.dp)) {
+                                GameHero(g, Modifier.weight(1f).heightIn(min = if (short) 170.dp else 210.dp)) {
                                     Text(
                                         listOfNotNull(libraryLabel(g.library), lastPlayedText(g.lastPlayed)).joinToString(" · ").uppercase(),
                                         fontSize = 12.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 1.2.sp, color = LocalPalette.current.signal,
                                         maxLines = 1, overflow = TextOverflow.Ellipsis,
                                     )
-                                    Text(g.name, fontSize = 32.sp, fontWeight = FontWeight.Bold, color = colors.onBackground, maxLines = 2, overflow = TextOverflow.Ellipsis, lineHeight = 36.sp)
+                                    Text(
+                                        g.name, fontSize = if (narrow) 26.sp else 32.sp, lineHeight = if (narrow) 30.sp else 36.sp,
+                                        fontWeight = FontWeight.Bold, color = colors.onBackground, maxLines = 2, overflow = TextOverflow.Ellipsis,
+                                    )
                                     Spacer(Modifier.height(8.dp))
                                     Actions {
                                         PrimaryButton("Launch", enabled = s.ready && !s.busy, main = true) { a.onSteamGame(g) }
@@ -903,7 +907,8 @@ private fun Content(
                                         ActionChip(if (s.ready) "● Ready to play" else "Runtime missing", ok = s.ready)
                                     }
                                 }
-                                Poster(g.art, g.name, Modifier.width(if (short) 96.dp else 128.dp))
+                                // The hero already shows the art; a narrow page keeps its width for the title.
+                                if (!narrow) Poster(g.art, g.name, Modifier.width(if (short) 96.dp else 128.dp))
                             }
                         }
                         Rise(2) { SectionTitle("Launch settings", "used by every game") }
@@ -1338,19 +1343,31 @@ private fun FrameGenMenu(s: FrontEndState, a: FrontEndActions, host: MenuHost) {
  */
 @Composable
 private fun LaunchSettings(s: FrontEndState, a: FrontEndActions, host: MenuHost) {
-    Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp)) {
-        SettingCard(Icons.Outlined.Layers, "Compatibility", "Proton & components", "FEX · DXVK · VKD3D-Proton", "card:components", Modifier.weight(1f), a.onComponents)
-        Box(Modifier.weight(1f)) {
-            SettingCard(
-                Icons.Outlined.Bolt, "Frame generation", s.frameGenLabel,
-                if (s.lsfgReady) "Win-FG or LSFG, 2–4×" else "Win-FG 2–4×; LSFG needs Lossless Scaling",
-                "card:fg", Modifier.fillMaxWidth(),
-            ) { host.open = if (host.open == "fg") null else "fg" }
-            FrameGenMenu(s, a, host)
+    // Four across on a wide page, two by two on a narrow one; each row's cards share one height.
+    val columns = if (LocalNarrowPane.current) 2 else 4
+    val controller = a.controller
+    val cards = buildList<@Composable (Modifier) -> Unit> {
+        add { m -> SettingCard(Icons.Outlined.Layers, "Compatibility", "Proton & components", "FEX · DXVK · VKD3D-Proton", "card:components", m, a.onComponents) }
+        add { m ->
+            Box(m) {
+                SettingCard(
+                    Icons.Outlined.Bolt, "Frame generation", s.frameGenLabel,
+                    if (s.lsfgReady) "Win-FG or LSFG, 2–4×" else "Win-FG 2–4×; LSFG needs Lossless Scaling",
+                    "card:fg", Modifier.fillMaxSize(),
+                ) { host.open = if (host.open == "fg") null else "fg" }
+                FrameGenMenu(s, a, host)
+            }
         }
-        SettingCard(Icons.Outlined.Memory, "Performance", "CPU cores", "Which cores games run on", "card:perf", Modifier.weight(1f), a.onPerformance)
-        val controller = a.controller
-        if (controller != null) SettingCard(Icons.Outlined.SportsEsports, "Controls", "Button mapping", "Remap the pad for games", "card:controls", Modifier.weight(1f), controller.onMapping)
+        add { m -> SettingCard(Icons.Outlined.Memory, "Performance", "CPU cores", "Which cores games run on", "card:perf", m, a.onPerformance) }
+        if (controller != null) add { m -> SettingCard(Icons.Outlined.SportsEsports, "Controls", "Button mapping", "Remap the pad for games", "card:controls", m, controller.onMapping) }
+    }
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp)) {
+        for (row in cards.chunked(columns)) {
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth().height(IntrinsicSize.Min)) {
+                for (card in row) card(Modifier.weight(1f).fillMaxHeight())
+                repeat(columns - row.size) { Spacer(Modifier.weight(1f)) }
+            }
+        }
     }
 }
 
