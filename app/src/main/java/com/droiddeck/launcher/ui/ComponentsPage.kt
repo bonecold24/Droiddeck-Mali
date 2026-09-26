@@ -147,8 +147,9 @@ fun ComponentsPage(
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
                     Box(Modifier.size(8.dp).background(if (st.queued != null) Color(0xFFFFB86B) else pal.good, CircleShape))
                     Spacer(Modifier.width(6.dp))
+                    val fixedAt = if (view.reappliedAt > 0) " · re-applied at launch " + DateFormat.getTimeInstance(DateFormat.SHORT).format(Date(view.reappliedAt * 1000)) else ""
                     Text(
-                        if (st.queued != null) "Next: ${st.queued} · after the game" else "In use: ${st.inUse}",
+                        (if (st.queued != null) "Next: ${st.queued} · after the game" else "In use: ${st.inUse}") + fixedAt,
                         fontSize = 12.5.sp, color = colors.onBackground, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false),
                     )
                     if (st.queued != null) { Spacer(Modifier.width(8.dp)); FocusText("Cancel", pal.signal, onClick = onCancelQueued) }
@@ -244,6 +245,7 @@ fun ComponentsPage(
             Text(
                 "FEX, DXVK and VKD3D-Proton for each Proton the Steam client runs games with.\n\n" +
                     "Tap an installed row to swap it in; it applies the next time a game starts. If a game is running on that Proton, the swap waits until it closes.\n\n" +
+                    "Your choices are also checked right before every game launch: if anything changed a Proton's files (Steam's start-up tests, for one), they are put back first, and the page says \"re-applied at launch\".\n\n" +
                     "Each Proton build's own files are kept as its ORIGINAL, so a Steam update never loses them. Packages come from the Nightlies \"-Linux\" releases (refresh) or Import .wcp.",
                 fontSize = 13.sp,
             )

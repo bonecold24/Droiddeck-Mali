@@ -733,7 +733,8 @@ private fun ComponentsDrawerPage(host: MenuHost, a: DrawerActions, track: (Strin
     val p = view.proton
     SettingsGroup("Components") {
         ChoiceRow(
-            host, "cmp-proton", "Proton", p.version + if (view.inUseByGame) " · in use by the running game" else "",
+            host, "cmp-proton", "Proton", p.version + (if (view.inUseByGame) " · in use by the running game" else "") +
+                (if (view.reappliedAt > 0) " · re-applied at launch " + java.text.DateFormat.getTimeInstance(java.text.DateFormat.SHORT).format(java.util.Date(view.reappliedAt * 1000)) else ""),
             snap.protons.map { it.proton.id to it.proton.name }, p.id,
             chipModifier = track("cmp-proton"), onPick = { pick = it },
         )

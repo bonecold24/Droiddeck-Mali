@@ -80,7 +80,11 @@ object ComponentsManager {
     data class Original(val comp: String, val protonVersion: String, val label: String, val size: Long)
     data class Package(val file: String, val comp: String, val version: String, val description: String, val size: Long)
     data class CatalogItem(val file: String, val comp: String, val release: String, val url: String, val size: Long, val digest: String)
-    data class ProtonView(val proton: Proton, val components: Map<String, Component>, val originals: List<Original>, val inUseByGame: Boolean)
+    data class ProtonView(
+        val proton: Proton, val components: Map<String, Component>, val originals: List<Original>, val inUseByGame: Boolean,
+        /** When a launch last had to put this Proton's chosen files back (epoch seconds), or 0. */
+        val reappliedAt: Long = 0,
+    )
     data class Snapshot(val protons: List<ProtonView>, val packages: List<Package>)
     data class Catalog(val items: List<CatalogItem>, val fetchedAt: Long)
 
@@ -96,6 +100,12 @@ object ComponentsManager {
     private fun originalsDir(context: Context) = File(dataDir(context), "originals").apply { mkdirs() }
     private fun stateFile(context: Context) = File(dataDir(context), "state.json")
     private fun catalogFile(context: Context) = File(dataDir(context), "catalog.json")
+    /**
+     * Inside the Linux runtime, read by the Proton launch wrappers (bannerlator-steam-compat's
+     * bl_components) before every game launch: desired.tsv + an unpacked copy of each package in use.
+     */
+    private const val LAUNCH_DIR = "root/.local/share/bannerlator-components"
+    private fun launchDir(context: Context) = File(root(context), LAUNCH_DIR)
 
     fun safeName(s: String): String = s.replace(Regex("[^A-Za-z0-9._+-]+"), "_").trim('_').ifEmpty { "unnamed" }
 
@@ -112,6 +122,8 @@ object ComponentsManager {
         val tmp = File(f.parentFile, f.name + ".tmp")
         tmp.writeText(state.toString(2))
         tmp.renameTo(f)
+        // Every change of choice reaches the launch wrappers at once.
+        runCatching { syncLaunchState(context, state) }.onFailure { Log.w(TAG, "launch state", it) }
     }
 
     private fun JSONObject.sub(key: String): JSONObject = optJSONObject(key) ?: JSONObject().also { put(key, it) }
@@ -364,6 +376,7 @@ object ComponentsManager {
         for (p in protons(context)) for (comp in COMPONENTS) {
             runCatching { ensureOriginal(context, p, comp, state) }.onFailure { Log.w(TAG, "original $comp of ${p.name}", it) }
         }
+        runCatching { syncLaunchState(context, state) }.onFailure { Log.w(TAG, "launch state", it) }
     }
 
     // ------------------------------------------------------------------ view
@@ -371,6 +384,13 @@ object ComponentsManager {
     fun snapshot(context: Context): Snapshot = synchronized(lock) {
         migratePlugin(context)
         val state = loadState(context)
+        val reapplied = HashMap<String, Long>()
+        runCatching {
+            File(launchDir(context), "reapplied.log").forEachLine { line ->
+                val parts = line.split('\t')
+                if (parts.size >= 2) parts[0].toLongOrNull()?.let { reapplied[parts[1]] = maxOf(reapplied[parts[1]] ?: 0, it) }
+            }
+        }
         val views = protons(context).map { p ->
             val comps = COMPONENTS.associateWith { comp ->
                 val detected = if (comp == "fex") fexVersion(p.dir) else readVersionFile(File(p.dir, "${COMP_DIR.getValue(comp)}/version"))
@@ -393,9 +413,71 @@ object ComponentsManager {
                     q?.optString("label"),
                 )
             }
-            ProtonView(p, comps, originals(context, p.id), inUse(p))
+            ProtonView(p, comps, originals(context, p.id), inUse(p), reapplied[p.dir.name] ?: 0)
         }
         Snapshot(views, packages(context))
+    }
+
+    // ------------------------------------------------------------------ launch-time enforcement
+
+    /**
+     * Writes what each Proton should be using for the launch wrappers: desired.tsv, one line per
+     * file (tool dir, Proton build, component, file, sha256, source copy), and an unpacked copy of
+     * every package or older-build original in use to copy from. Rebuilt whole after every change, so
+     * a restored or deleted choice simply stops being enforced. The Proton's own current-build
+     * originals are not listed: the wrappers also give Steam's probe runs their own prefix, which is
+     * what overwrote files in the first place.
+     */
+    private fun syncLaunchState(context: Context, state: JSONObject) {
+        val dir = launchDir(context)
+        val store = File(dir, "store").apply { mkdirs() }
+        val all = protons(context)
+        val lines = StringBuilder()
+        val keep = HashSet<String>()
+        val active = state.sub("active")
+        for (pid in active.keys()) {
+            val p = all.firstOrNull { it.id == pid } ?: continue
+            val comps = active.optJSONObject(pid) ?: continue
+            for (comp in comps.keys()) {
+                val a = comps.optJSONObject(comp) ?: continue
+                if (a.optString("protonVersion") != p.version) continue
+                val file = a.optString("file")
+                val (key, wcp) = if (file.startsWith("original ")) {
+                    val v = file.removePrefix("original ")
+                    "original-$pid-${safeName(v)}-$comp" to File(originalsDir(context), "$pid/${safeName(v)}/$comp.wcp")
+                } else safeName(file.removeSuffix(".wcp")) to File(packagesDir(context), file)
+                if (!wcp.isFile) continue
+                val unpacked = File(store, key)
+                if (!File(unpacked, ".complete").isFile) {
+                    unpacked.deleteRecursively()
+                    readWcp(wcp) { tar ->
+                        while (true) {
+                            val e = tar.nextTarEntry ?: break
+                            val rel = normalize(e.name)
+                            if (e.isDirectory || !rel.startsWith("files/") || rel.split('/').any { it == ".." }) continue
+                            val out = File(unpacked, rel)
+                            out.parentFile?.mkdirs()
+                            FileOutputStream(out).use { tar.copyTo(it) }
+                        }
+                    }
+                    File(unpacked, ".complete").writeText("1\n")
+                }
+                keep += key
+                val files = a.optJSONObject("files") ?: continue
+                for (rel in files.keys()) {
+                    val src = File(unpacked, rel)
+                    if (!src.isFile) continue
+                    val guestSrc = "/" + src.absolutePath.removePrefix(root(context).absolutePath.trimEnd('/')).trimStart('/')
+                    lines.append(p.dir.name).append('\t').append(p.version).append('\t').append(comp).append('\t')
+                        .append(rel).append('\t').append(files.optString(rel)).append('\t').append(guestSrc).append('\n')
+                }
+            }
+        }
+        store.listFiles()?.filter { it.isDirectory && it.name !in keep }?.forEach { it.deleteRecursively() }
+        val list = File(dir, "desired.tsv")
+        val tmp = File(dir, "desired.tsv.tmp")
+        tmp.writeText(lines.toString())
+        tmp.renameTo(list)
     }
 
     // ------------------------------------------------------------------ actions
