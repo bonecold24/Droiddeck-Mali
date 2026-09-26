@@ -419,7 +419,11 @@ fun SessionDrawer(open: Boolean, page: Int, controllerActive: Boolean, onPageCha
         modifier = Modifier.fillMaxSize().graphicsLayer { alpha = veil }.background(Color(0x8A000000))
             .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { host.open = null; a.onClose() },
     )
-    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.CenterEnd) {
+    androidx.compose.foundation.layout.BoxWithConstraints(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.CenterEnd) {
+        // A 4:3 or near-square screen (under 440dp tall) gets one-line shortcuts and a shorter tab row,
+        // so the settings keep most of the height; a narrow one keeps some of the game in view.
+        val short = maxHeight < 440.dp
+        val sheetWidth = minOf(360.dp, maxWidth * 0.92f)
         AnimatedVisibility(
             open,
             enter = slideInHorizontally(Motion.sp(0.8f, Spring.StiffnessLow)) { it } + fadeIn(Motion.tw(220)),
@@ -428,17 +432,17 @@ fun SessionDrawer(open: Boolean, page: Int, controllerActive: Boolean, onPageCha
             Column(
                 modifier = Modifier
                     .fillMaxHeight()
-                    .width(360.dp)
+                    .width(sheetWidth)
                     .background(pal.background.copy(alpha = 0.97f))
                     .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) {}
                     .focusGroup()
                     .controllerBack {
                         if (host.open != null) host.open = null else a.onClose()
                     }
-                    .padding(16.dp),
+                    .padding(if (short) 12.dp else 16.dp),
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().heightIn(min = 44.dp)) {
-                    Text(a.title ?: if (a.steam) "Steam" else "Desktop", fontSize = 20.sp, fontWeight = FontWeight.Bold,
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().heightIn(min = if (short) 40.dp else 44.dp)) {
+                    Text(a.title ?: if (a.steam) "Steam" else "Desktop", fontSize = if (short) 18.sp else 20.sp, fontWeight = FontWeight.Bold,
                         color = colors.onBackground, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
                     StopSessionButton(modifier = focus.track(page, "stop")) { host.open = null; confirmStop = true }
                 }
@@ -456,15 +460,16 @@ fun SessionDrawer(open: Boolean, page: Int, controllerActive: Boolean, onPageCha
                     }
                     Row(
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
+                        modifier = Modifier.fillMaxWidth().padding(top = if (short) 8.dp else 12.dp),
                     ) {
-                        QuickAction("Steam menu", Icons.Outlined.Menu, Modifier.weight(1f).then(focus.track(page, "steam"))) {
+                        QuickAction("Steam menu", Icons.Outlined.Menu, Modifier.weight(1f).then(focus.track(page, "steam")), compact = short) {
                             host.open = null
                             a.onSteamMenu.invoke()
                         }
                         QuickAction(
                             "Quick access", Icons.Outlined.MoreHoriz,
                             Modifier.weight(1f).then(focus.track(page, "qam")).semantics { contentDescription = "Open Quick Access Menu" },
+                            compact = short,
                             interactionSource = qamInteraction,
                             onConfirm = { host.open = null; a.onQam.invoke() },
                         ) {
@@ -475,7 +480,7 @@ fun SessionDrawer(open: Boolean, page: Int, controllerActive: Boolean, onPageCha
                         // Big Picture's own "Switch to Desktop" waits on SteamOS Manager for ever
                         // here; this does the switch without the client.
                         if (a.onSwitchToDesktop != null) {
-                            QuickAction("Desktop", Icons.Outlined.DesktopWindows, Modifier.weight(1f).then(focus.track(page, "desktop"))) {
+                            QuickAction("Desktop", Icons.Outlined.DesktopWindows, Modifier.weight(1f).then(focus.track(page, "desktop")), compact = short) {
                                 host.open = null
                                 a.onSwitchToDesktop.invoke()
                             }
@@ -485,18 +490,18 @@ fun SessionDrawer(open: Boolean, page: Int, controllerActive: Boolean, onPageCha
 
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
+                    modifier = Modifier.fillMaxWidth().padding(top = if (short) 6.dp else 12.dp),
                 ) {
                     DrawerBumper("LB", "Previous page", modifier = focus.track(page, "prev")) {
                         host.open = null; onPageChange((page + DRAWER_PAGES - 1) % DRAWER_PAGES)
                     }
-                    DrawerPageTabs(page = page, modifier = Modifier.weight(1f)) { index -> host.open = null; onPageChange(index) }
+                    DrawerPageTabs(page = page, compact = short, modifier = Modifier.weight(1f)) { index -> host.open = null; onPageChange(index) }
                     DrawerBumper("RB", "Next page", modifier = focus.track(page, "next")) {
                         host.open = null; onPageChange((page + 1) % DRAWER_PAGES)
                     }
                 }
-                // The icons alone never said which page this is.
-                Text(
+                // The icons alone never said which page this is (a short sheet says it in the tab row's place).
+                if (!short) Text(
                     "${drawerPageTitles[page]} · ${page + 1} of $DRAWER_PAGES", fontSize = 13.sp, fontWeight = FontWeight.SemiBold,
                     color = colors.onSurfaceVariant, textAlign = TextAlign.Center,
                     modifier = Modifier.fillMaxWidth().padding(top = 2.dp, bottom = 4.dp),
@@ -784,7 +789,7 @@ private fun DrawerBumper(label: String, description: String, modifier: Modifier 
  * pad like the dots it replaces.
  */
 @Composable
-private fun DrawerPageTabs(page: Int, modifier: Modifier = Modifier, onSelect: (Int) -> Unit) {
+private fun DrawerPageTabs(page: Int, modifier: Modifier = Modifier, compact: Boolean = false, onSelect: (Int) -> Unit) {
     val colors = MaterialTheme.colorScheme
     val pal = LocalPalette.current
     val count = drawerPageIcons.size
@@ -792,13 +797,14 @@ private fun DrawerPageTabs(page: Int, modifier: Modifier = Modifier, onSelect: (
     val motion = tween<Float>(durationMillis = 340, easing = FastOutSlowInEasing)
     androidx.compose.foundation.layout.BoxWithConstraints(
         contentAlignment = Alignment.Center,
-        modifier = modifier.height(64.dp).clipToBounds(),
+        modifier = modifier.height(if (compact) 44.dp else 64.dp).clipToBounds(),
     ) {
+        val tab = if (compact) 40f else 56f
         // Fit the line to the room between LB and RB. Worst case is an end tab selected: full size
-        // (56 dp) and pushed outward by the lean, which scales with the spacing. So
+        // ([tab] dp) and pushed outward by the lean, which scales with the spacing. So
         //   (count-1) * spacing * (1 + lean/64) + 56 <= width
         // - never more than the mock's 64 dp, never tighter than 32 dp.
-        val spacing = ((maxWidth.value - 56f) / ((count - 1) * (1f + DRAWER_TAB_LEAN_DP / DRAWER_TAB_SPACING_DP))).coerceIn(32f, DRAWER_TAB_SPACING_DP)
+        val spacing = ((maxWidth.value - tab) / ((count - 1) * (1f + DRAWER_TAB_LEAN_DP / DRAWER_TAB_SPACING_DP))).coerceIn(32f, DRAWER_TAB_SPACING_DP)
         val leanStep = DRAWER_TAB_LEAN_DP * spacing / DRAWER_TAB_SPACING_DP
         val lean by animateFloatAsState(-(page - middle) * leanStep, motion, label = "tabLean")
         drawerPageIcons.forEachIndexed { index, icon ->
@@ -814,7 +820,7 @@ private fun DrawerPageTabs(page: Int, modifier: Modifier = Modifier, onSelect: (
                 contentAlignment = Alignment.Center,
                 modifier = Modifier
                     .offset(x = ((index - middle) * spacing + lean).dp)
-                    .size(56.dp)
+                    .size(tab.dp)
                     .graphicsLayer { scaleX = scale; scaleY = scale; this.alpha = alpha }
                     .clip(RoundedCornerShape(16.dp))
                     .background(
@@ -828,7 +834,7 @@ private fun DrawerPageTabs(page: Int, modifier: Modifier = Modifier, onSelect: (
                     .clickable(interactionSource = source, indication = LocalIndication.current, onClick = select)
                     .controllerConfirm(onClick = select),
             ) {
-                Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(30.dp))
+                Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(if (compact) 22.dp else 30.dp))
             }
         }
     }
