@@ -475,15 +475,22 @@ private fun FrontEndScreenBody(s: FrontEndState, a: FrontEndActions, page: (@Com
         Row(modifier = Modifier.fillMaxSize()) {
             SideRail(s, railSelection, onRailSelect, a, railFocus.fillMaxHeight())
             Box(Modifier.width(1.dp).fillMaxHeight().background(pal.line))
-            Pane(
-                s, selected, a, page, Modifier.weight(1f).fillMaxHeight().then(paneFocus), { selected = it },
-                onAndroidAppClick = { app ->
-                    if (s.secondScreenDisplays.isEmpty()) a.onAndroidApp(app, null)
-                    else appToChooseDisplay = app
-                },
-                onOpenDeveloperOptions = requestDeveloperOptions,
-                onRequestWirelessAdb = requestWirelessAdbFix,
-            )
+            Column(modifier = Modifier.weight(1f).fillMaxHeight()) {
+                Pane(
+                    s, selected, a, page, Modifier.weight(1f).fillMaxWidth().then(paneFocus), { selected = it },
+                    onAndroidAppClick = { app ->
+                        if (s.secondScreenDisplays.isEmpty()) a.onAndroidApp(app, null)
+                        else appToChooseDisplay = app
+                    },
+                    onOpenDeveloperOptions = requestDeveloperOptions,
+                    onRequestWirelessAdb = requestWirelessAdbFix,
+                )
+                // Only while a pad or keyboard drives the launcher; a touch hides it again.
+                AnimatedVisibility(
+                    inputModeManager.inputMode == InputMode.Keyboard,
+                    enter = expandVertically() + fadeIn(), exit = shrinkVertically() + fadeOut(),
+                ) { ControllerHints() }
+            }
         }
 
         appToChooseDisplay?.let { app ->
@@ -553,6 +560,35 @@ private fun FrontEndScreenBody(s: FrontEndState, a: FrontEndActions, page: (@Com
 
 
 private val Shape14 = RoundedCornerShape(14.dp)
+
+/** What the pad's face buttons do here, along the bottom edge as on a console. */
+@Composable
+private fun ControllerHints() {
+    val colors = MaterialTheme.colorScheme
+    val pal = LocalPalette.current
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Box(Modifier.fillMaxWidth().height(1.dp).background(pal.line))
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(18.dp, Alignment.End),
+            modifier = Modifier.fillMaxWidth().height(34.dp).background(colors.surface).padding(horizontal = 20.dp),
+        ) {
+            HintGlyph("A", "Select")
+            HintGlyph("B", "Back")
+        }
+    }
+}
+
+@Composable
+private fun HintGlyph(button: String, action: String) {
+    val colors = MaterialTheme.colorScheme
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        Box(contentAlignment = Alignment.Center, modifier = Modifier.size(20.dp).clip(CircleShape).background(colors.onBackground)) {
+            Text(button, fontSize = 12.sp, fontWeight = FontWeight.Bold, color = colors.background)
+        }
+        Text(action, fontSize = 13.sp, color = colors.onSurfaceVariant)
+    }
+}
 private val AttentionAmber = Color(0xFFFFB547)
 
 /**
