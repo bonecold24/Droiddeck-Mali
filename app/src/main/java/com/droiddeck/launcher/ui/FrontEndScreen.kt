@@ -479,7 +479,7 @@ private fun FrontEndScreenBody(s: FrontEndState, a: FrontEndActions, page: (@Com
         }
         Box(modifier = Modifier.fillMaxSize()) {
             Column(modifier = Modifier.fillMaxSize()) {
-                LauncherTopBar(frontFocus.menuToggle, s.buildLabel, a.onCheckLatestBuild) { navOpen = true }
+                LauncherTopBar(frontFocus.menuToggle) { navOpen = true }
                 content(Modifier.weight(1f).fillMaxWidth())
             }
             AnimatedVisibility(
@@ -572,8 +572,6 @@ private fun FrontEndScreenBody(s: FrontEndState, a: FrontEndActions, page: (@Com
 @Composable
 private fun LauncherTopBar(
     menuRequester: FocusRequester,
-    buildLabel: String,
-    onCheckLatestBuild: () -> Unit,
     onMenu: () -> Unit,
 ) {
     val colors = MaterialTheme.colorScheme
@@ -595,11 +593,6 @@ private fun LauncherTopBar(
         Spacer(Modifier.width(8.dp))
         Text("DroidDeck", fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = colors.onBackground)
         Spacer(Modifier.weight(1f))
-        BuildStatus(
-            label = buildLabel,
-            onCheckLatest = onCheckLatestBuild,
-            modifier = Modifier.widthIn(max = 220.dp).padding(start = 12.dp, end = 8.dp),
-        )
     }
 }
 
@@ -811,47 +804,6 @@ private fun Pane(
             if (page != null && key == s.pageKey) page()
             else Content(s, key, a, Modifier.fillMaxSize(), onSelect, onAndroidAppClick, onOpenDeveloperOptions, onRequestWirelessAdb)
         }
-    }
-}
-
-@Composable
-private fun BuildStatus(label: String, onCheckLatest: () -> Unit, modifier: Modifier = Modifier) {
-    val colors = MaterialTheme.colorScheme
-    val pal = LocalPalette.current
-    val interaction = remember { MutableInteractionSource() }
-    val hot = rememberHot(interaction)
-    val contextDivider = label.indexOf(" · ")
-    val context = if (contextDivider >= 0) label.substring(0, contextDivider) else ""
-    val identity = if (contextDivider >= 0) label.substring(contextDivider + 3) else label
-    val identityDivider = identity.lastIndexOf(" at ")
-    val branch = (if (identityDivider >= 0) identity.substring(0, identityDivider) else identity).substringAfterLast('/')
-    val commit = if (identityDivider >= 0) identity.substring(identityDivider + 4) else ""
-    Column(
-        verticalArrangement = Arrangement.spacedBy(1.dp),
-        modifier = modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(6.dp))
-            .semantics { contentDescription = "Build $label. Check for newest build." }
-            .hoverable(interaction)
-            .clickable(
-                interactionSource = interaction,
-                indication = LocalIndication.current,
-                role = Role.Button,
-                onClick = onCheckLatest,
-            )
-            .heightIn(min = 44.dp)
-            .padding(horizontal = 4.dp, vertical = 3.dp),
-    ) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(5.dp),
-            modifier = Modifier.fillMaxWidth(),
-        ) {
-            Text(branch, modifier = Modifier.weight(1f), fontSize = 10.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Medium, color = if (hot) colors.onSurfaceVariant else colors.onSurfaceVariant.copy(alpha = 0.82f), maxLines = 1, overflow = TextOverflow.Ellipsis)
-            if (commit.isNotEmpty()) Text("@$commit", fontSize = 9.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Medium, color = colors.onSurfaceVariant.copy(alpha = 0.82f), maxLines = 1)
-            Icon(Icons.Filled.Refresh, contentDescription = null, tint = if (hot) pal.signal else colors.onSurfaceVariant.copy(alpha = 0.82f), modifier = Modifier.size(12.dp))
-        }
-        if (context.isNotEmpty()) Text(context, fontSize = 9.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Medium, color = colors.onSurfaceVariant.copy(alpha = 0.82f), maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
 }
 
@@ -1208,6 +1160,10 @@ private fun SetupPanel(
                     if (s.homeScreenEnabled) {
                         ActionRow("Default Home app", s.defaultHomeLabel ?: "Choose a Home app", "Choose", a.onHomeApp)
                     }
+                }
+                SettingsGroup("About") {
+                    ActionRow("Build", s.buildLabel, "Check for newer", a.onCheckLatestBuild)
+                    ActionRow("Credits", "The people and projects DroidDeck builds on", "View", a.onCredits)
                 }
         }
     }
