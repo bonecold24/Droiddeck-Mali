@@ -57,6 +57,8 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.runtime.key
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.PaddingValues
@@ -793,14 +795,26 @@ private fun Content(
 ) {
     val colors = MaterialTheme.colorScheme
     val detailPosterWidth = if (LocalConfiguration.current.screenHeightDp < 600) 72.dp else 120.dp
-    Column(modifier = modifier.padding(horizontal = 22.dp, vertical = 18.dp)) {
+    val narrow = LocalNarrowPane.current
+    val padH = if (narrow) 16.dp else 22.dp
+    val padV = if (narrow) 12.dp else 18.dp
+    // Setup scrolls inside itself, under its tabs.
+    if (selected == "setup") {
+        Column(modifier = modifier.padding(horizontal = padH, vertical = padV)) {
+            SetupPanel(s, a, onOpenDeveloperOptions, onRequestWirelessAdb)
+        }
+        return
+    }
+    // Every other page scrolls as one - header, hero and grid - so a short screen reaches the grid
+    // instead of showing a sliver of it under a fixed hero. A focused tile scrolls itself into view.
+    Column(modifier = modifier.verticalScroll(rememberScrollState()).padding(horizontal = padH, vertical = padV)) {
         when {
             selected == "android-apps" && s.isHomeApp -> {
                 Rise(0) { Eyebrow("Android apps") }
                 Rise(1) { Title("Installed apps") }
                 Rise(2) { SectionTitle("Apps", s.androidApps.size.toString()) }
                 if (s.androidApps.isEmpty()) Rise(3) { Note("No launchable Android apps found.") }
-                else Rise(3, Modifier.weight(1f).fillMaxWidth()) {
+                else Rise(3, Modifier.fillMaxWidth()) {
                     ArtGrid(s.androidApps.map { app ->
                         Tile(
                             app.label,
@@ -845,14 +859,14 @@ private fun Content(
                 }
                 Rise(4) { SectionTitle("Installed", "${games.size} game${if (games.size == 1) "" else "s"}") }
                 if (games.isEmpty()) Rise(5) { Note("No games installed.") }
-                else Rise(5, Modifier.weight(1f).fillMaxWidth()) { ArtGrid(games.map { g -> Tile(g.name, null, g.art, "steam:${g.appId}", null) { onSelect("app:${g.appId}") } }) }
+                else Rise(5, Modifier.fillMaxWidth()) { ArtGrid(games.map { g -> Tile(g.name, null, g.art, "steam:${g.appId}", null) { onSelect("app:${g.appId}") } }) }
             }
             selected.startsWith("app:") -> {
                 val g = s.steamGames.firstOrNull { "app:${it.appId}" == selected }
                 if (g == null) Note("That game is no longer installed.") else {
                     val host = rememberMenuHost()
                     val short = LocalConfiguration.current.screenHeightDp < 480
-                    Column(modifier = Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState())) {
+                    Column(modifier = Modifier.fillMaxWidth()) {
                         Rise(0) { BackLink("Steam") { onSelect("steam") } }
                         Spacer(Modifier.height(10.dp))
                         Rise(1) {
@@ -868,7 +882,7 @@ private fun Content(
                                     Actions {
                                         PrimaryButton("Launch", enabled = s.ready && !s.busy, main = true) { a.onSteamGame(g) }
                                         Cog(a.onSteamSettings)
-                                        Chip(if (s.ready) "● Ready to play" else "Runtime missing", ok = s.ready)
+                                        ActionChip(if (s.ready) "● Ready to play" else "Runtime missing", ok = s.ready)
                                     }
                                 }
                                 Poster(g.art, g.name, Modifier.width(if (short) 96.dp else 128.dp))
@@ -889,11 +903,10 @@ private fun Content(
                     }
                 }
                 Rise(4) { SectionTitle("Emulators", "${s.emulators.count { it.installed }} installed · ${s.emulators.count { !it.installed }} available") }
-                Rise(5, Modifier.weight(1f).fillMaxWidth()) {
+                Rise(5, Modifier.fillMaxWidth()) {
                     ArtGrid(s.emulators.map { e -> Tile(e.name, if (e.installed) (if (e.id == "retroarch") null else "${e.games.size} game${if (e.games.size == 1) "" else "s"}") else "Select to install", null, "emu:${e.id}", e.iconRes, dim = !e.installed) { onSelect("emu:${e.id}") } })
                 }
             }
-            selected == "setup" -> SetupPanel(s, a, onOpenDeveloperOptions, onRequestWirelessAdb)
             selected.startsWith("emu:") -> {
                 val e = s.emulators.firstOrNull { "emu:${it.id}" == selected }
                 if (e == null) Note("Not installed.") else {
@@ -923,7 +936,7 @@ private fun Content(
                                 else "Add ${e.system} games to ROMs/${e.system.substringBefore(' ')}.",
                             )
                         }
-                        else Rise(5, Modifier.weight(1f).fillMaxWidth()) {
+                        else Rise(5, Modifier.fillMaxWidth()) {
                             ArtGrid(e.games.mapIndexed { index, g -> Tile(g.name, if (g.art != null) "installed" else g.hostPath.extension.uppercase().ifEmpty { "folder" }, g.art, "rom:${e.id}:$index", e.iconRes) { onSelect("rom:${e.id}:$index") } }, wide = e.games.none { it.art != null })
                         }
                     } else {
@@ -934,8 +947,8 @@ private fun Content(
                                     if (s.packageBusyId == pkg.id) "Installing…" else "Install ${e.name}",
                                     enabled = s.packageBusyId == null && s.ready && !s.packageCatalogLoading && !s.sessionRunning,
                                 ) { a.onInstallPackage(pkg.id) }
-                                if (s.sessionRunning) Chip("Stop session to install", ok = false)
-                                else if (!s.ready) Chip("Runtime required", ok = false)
+                                if (s.sessionRunning) ActionChip("Stop session to install", ok = false)
+                                else if (!s.ready) ActionChip("Runtime required", ok = false)
                             }
                         }
                         Rise(3) {
@@ -982,7 +995,7 @@ private fun Content(
                                 Actions {
                                     Image(painterResource(e.iconRes), null, modifier = Modifier.size(40.dp))
                                     PrimaryButton("Launch in ${e.name}", enabled = s.ready && !s.busy, main = true) { a.onRom(g) }
-                                    Chip(g.hostPath.extension.uppercase().ifEmpty { "folder" }, ok = false)
+                                    ActionChip(g.hostPath.extension.uppercase().ifEmpty { "folder" }, ok = false)
                                 }
                             }
                             if (g.art != null) Poster(g.art, g.name, Modifier.width(detailPosterWidth))
@@ -991,7 +1004,7 @@ private fun Content(
                     val others = e.games.filter { it !== g }
                     if (others.isNotEmpty()) {
                         Rise(3) { SectionTitle("Also in ${e.name}", null) }
-                        Rise(4, Modifier.weight(1f).fillMaxWidth()) {
+                        Rise(4, Modifier.fillMaxWidth()) {
                             ArtGrid(others.map { x ->
                                 val index = e.games.indexOf(x)
                                 Tile(x.name, if (x.art != null) "installed" else x.hostPath.extension.uppercase().ifEmpty { "folder" }, x.art, "rom:${e.id}:$index", e.iconRes) { onSelect("rom:${e.id}:$index") }
@@ -1254,7 +1267,17 @@ private fun SectionTitle(t: String, detail: String?) {
     }
 }
 @Composable private fun Note(t: String) = Text(t, fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.fillMaxWidth().clip(Shape12).background(MaterialTheme.colorScheme.surface).border(1.dp, LocalPalette.current.line2, Shape12).padding(12.dp))
-@Composable private fun Actions(content: @Composable () -> Unit) = Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) { content() }
+/** A page's buttons: they wrap onto a second line rather than run off a narrow page. */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun Actions(content: @Composable () -> Unit) = FlowRow(
+    horizontalArrangement = Arrangement.spacedBy(10.dp),
+    verticalArrangement = Arrangement.spacedBy(10.dp),
+) { content() }
+
+/** A status chip in a row of buttons, centred on their height. */
+@Composable
+private fun ActionChip(t: String, ok: Boolean) = Box(contentAlignment = Alignment.Center, modifier = Modifier.heightIn(min = 44.dp)) { Chip(t, ok) }
 
 private val Shape16 = RoundedCornerShape(16.dp)
 
@@ -1521,12 +1544,12 @@ private fun ArtGrid(tiles: List<Tile>, wide: Boolean = false) {
     val gap = 12.dp
     // Laid out whole, not lazily: the pad's focus search only finds tiles that exist, and a lazy
     // grid composes only the rows on screen, so a press towards the next row bounced back among
-    // the visible tiles. A few hundred tiles lay out fine; the scroll follows the focused one.
-    BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+    // the visible tiles. A few hundred tiles lay out fine; the page's scroll follows the focused one.
+    BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
         val avail = maxWidth - 8.dp
         val cols = ((avail + gap) / (minSize + gap)).toInt().coerceAtLeast(1)
         val tileWidth = (avail - gap * (cols - 1)) / cols
-        Column(modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(top = 16.dp, bottom = 14.dp, start = 4.dp, end = 4.dp)) {
+        Column(modifier = Modifier.fillMaxWidth().padding(top = 16.dp, bottom = 14.dp, start = 4.dp, end = 4.dp)) {
             for (row in tiles.chunked(cols)) {
                 Row(horizontalArrangement = Arrangement.spacedBy(gap), modifier = Modifier.fillMaxWidth().padding(bottom = gap)) {
                     for (t in row) key(t.key) {
