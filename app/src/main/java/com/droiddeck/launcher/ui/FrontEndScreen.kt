@@ -1733,6 +1733,7 @@ internal fun PrimaryButton(
     enabled: Boolean = true,
     main: Boolean = false,
     compact: Boolean = false,
+    modifier: Modifier = Modifier,
     onClick: () -> Unit,
 ) {
     val colors = MaterialTheme.colorScheme
@@ -1751,7 +1752,7 @@ internal fun PrimaryButton(
     val lift by animateFloatAsState(if (hot) 14f else 6f, Motion.tw(300), label = "btnLift")
     Row(
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp),
-        modifier = track
+        modifier = modifier.then(track)
             .then(if (frontFocus != null) Modifier.focusRequester(frontFocus.primary).onFocusChanged { if (it.isFocused) frontFocus.last = FrontFocus.PRIMARY } else Modifier)
             .graphicsLayer { scaleX = scale; scaleY = scale; shadowElevation = if (enabled) lift.dp.toPx() else 0f; shape = Shape12; clip = false; ambientShadowColor = pal.signal; spotShadowColor = pal.signal }
             .clip(Shape12)
@@ -1768,7 +1769,7 @@ internal fun PrimaryButton(
 }
 
 @Composable
-internal fun SecondaryButton(text: String, enabled: Boolean = true, compact: Boolean = false, onClick: () -> Unit) {
+internal fun SecondaryButton(text: String, enabled: Boolean = true, compact: Boolean = false, modifier: Modifier = Modifier, onClick: () -> Unit) {
     val colors = MaterialTheme.colorScheme
     val src = remember { MutableInteractionSource() }
     val hot = rememberHot(src) && enabled
@@ -1778,7 +1779,7 @@ internal fun SecondaryButton(text: String, enabled: Boolean = true, compact: Boo
     val edge by animateColorAsState(if (hot) pal.signal else pal.line2, Motion.tw(250), label = "secEdge")
     val fill by animateColorAsState(if (hot) pal.signal.copy(alpha = 0.14f) else Color.White.copy(alpha = 0.03f), Motion.tw(250), label = "secFill")
     Box(
-        modifier = Modifier.paneItem("btn:$text").downToFirstTile().graphicsLayer { scaleX = scale; scaleY = scale }.clip(Shape12).background(fill).border(1.dp, edge, Shape12)
+        modifier = modifier.paneItem("btn:$text").downToFirstTile().graphicsLayer { scaleX = scale; scaleY = scale }.clip(Shape12).background(fill).border(1.dp, edge, Shape12)
             .alpha(if (enabled) 1f else 0.5f)
             .hoverable(src).clickable(interactionSource = src, indication = LocalIndication.current, enabled = enabled, onClick = onClick)
             .controllerConfirm(enabled = enabled, onClick = onClick)

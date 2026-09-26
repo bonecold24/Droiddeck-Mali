@@ -5,6 +5,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.offset
 import androidx.compose.material.icons.Icons
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.outlined.Menu
 import androidx.compose.material.icons.outlined.MoreHoriz
 import androidx.compose.material.icons.outlined.PowerSettingsNew
@@ -291,10 +292,17 @@ private fun StageRow(label: String, state: StageMark, detail: String, percent: I
     }
 }
 
+/**
+ * A session paused in the background (the Manual background behaviour): what is paused, that it
+ * picks up where it left off, and the two ways on - Resume first, for the pad.
+ */
 @Composable
-fun SessionPausedOverlay(onResume: () -> Unit) {
+fun SessionPausedOverlay(title: String = "Steam is paused", onResume: () -> Unit, onStop: (() -> Unit)? = null) {
+    val colors = MaterialTheme.colorScheme
+    val pal = LocalPalette.current
     val interactionSource = remember { MutableInteractionSource() }
     val resumeFocus = remember { FocusRequester() }
+    var confirmStop by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) {
         androidx.compose.runtime.withFrameNanos { }
         runCatching { resumeFocus.requestFocus() }
@@ -302,21 +310,54 @@ fun SessionPausedOverlay(onResume: () -> Unit) {
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color(0xF20B0D10))
+            .background(pal.background.copy(alpha = 0.94f))
             .clickable(interactionSource = interactionSource, indication = null) {},
         contentAlignment = Alignment.Center,
     ) {
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
-            modifier = Modifier.padding(32.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+            modifier = Modifier.widthIn(max = 440.dp).padding(32.dp),
         ) {
-            OutlinedButton(
-                onClick = onResume,
-                modifier = Modifier.focusRequester(resumeFocus).controllerConfirm(onClick = onResume),
-            ) {
-                Text("Resume session")
+            Box(contentAlignment = Alignment.Center, modifier = Modifier.padding(bottom = 6.dp).size(64.dp).border(2.dp, pal.line2, CircleShape)) {
+                Icon(Icons.Filled.Pause, contentDescription = null, tint = colors.onBackground, modifier = Modifier.size(30.dp))
+            }
+            Text(title, fontSize = 28.sp, fontWeight = FontWeight.Bold, color = colors.onBackground, textAlign = TextAlign.Center)
+            Text(
+                "It stopped while DroidDeck was in the background and picks up where it left off.",
+                fontSize = 15.sp, lineHeight = 21.sp, color = colors.onSurfaceVariant, textAlign = TextAlign.Center,
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.padding(top = 14.dp)) {
+                PrimaryButton("Resume", modifier = Modifier.focusRequester(resumeFocus).controllerConfirm(onClick = onResume), onClick = onResume)
+                if (onStop != null) SecondaryButton("Stop session") { confirmStop = true }
             }
         }
+    }
+    if (confirmStop && onStop != null) {
+        val cancelFocus = remember { FocusRequester() }
+        val cancel = { confirmStop = false }
+        val stop = { confirmStop = false; onStop() }
+        LaunchedEffect(Unit) {
+            androidx.compose.runtime.withFrameNanos { }
+            runCatching { cancelFocus.requestFocus() }
+        }
+        // Opens on Cancel, as the menu's does: a stray A press never ends the session.
+        AlertDialog(
+            onDismissRequest = cancel,
+            modifier = Modifier.controllerBack(onBack = cancel),
+            title = { Text("Stop session?") },
+            text = { Text("Everything running in this session closes.") },
+            confirmButton = {
+                TextButton(
+                    onClick = stop,
+                    modifier = Modifier.controllerConfirm(onClick = stop),
+                    colors = ButtonDefaults.textButtonColors(contentColor = colors.error),
+                ) { Text("Stop") }
+            },
+            dismissButton = {
+                TextButton(onClick = cancel, modifier = Modifier.focusRequester(cancelFocus).controllerConfirm(onClick = cancel)) { Text("Cancel") }
+            },
+        )
     }
 }
 

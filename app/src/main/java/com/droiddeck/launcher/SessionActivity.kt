@@ -355,9 +355,12 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
                         onComponentsRefresh = { refreshDrawerComponents() },
                         onComponentSwap = { pid, comp, value -> swapDrawerComponent(pid, comp, value) },
                     ))
-                    if (SessionState.suspended) SessionPausedOverlay {
-                        SessionService.resume(this@SessionActivity)
-                    }
+                    if (SessionState.suspended) SessionPausedOverlay(
+                        title = pausedTitle(),
+                        onResume = { SessionService.resume(this@SessionActivity) },
+                        // As the drawer's Stop does; stopping resumes the paused processes first.
+                        onStop = { SessionService.stop(this@SessionActivity); finish() },
+                    )
                 }
             }
         }
@@ -474,6 +477,12 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
     private fun loadingMode(): String =
         if (SessionState.running) SessionState.mode
         else intent.getStringExtra(SessionService.EXTRA_MODE) ?: SessionService.MODE_STEAM
+
+    private fun pausedTitle(): String = when (SessionState.mode) {
+        SessionService.MODE_DESKTOP -> "The desktop is paused"
+        SessionService.MODE_RUN -> (com.droiddeck.launcher.frontend.Library.nameForProgram(SessionState.program) ?: "The program") + " is paused"
+        else -> "Steam is paused"
+    }
 
     private fun loadingTitle(): String = when (loadingMode()) {
         SessionService.MODE_DESKTOP ->
