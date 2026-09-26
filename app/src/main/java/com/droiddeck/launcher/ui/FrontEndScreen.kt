@@ -83,7 +83,10 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.ChevronLeft
 import androidx.compose.material.icons.outlined.Apps
+import androidx.compose.material.icons.outlined.Bolt
+import androidx.compose.material.icons.outlined.Memory
 import androidx.compose.material.icons.outlined.DesktopWindows
 import androidx.compose.material.icons.outlined.Layers
 import androidx.compose.material.icons.outlined.SportsEsports
@@ -798,32 +801,32 @@ private fun Content(
             selected.startsWith("app:") -> {
                 val g = s.steamGames.firstOrNull { "app:${it.appId}" == selected }
                 if (g == null) Note("That game is no longer installed.") else {
-                Rise(0) {
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        Text(
-                            "‹ Steam", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = colors.onSurfaceVariant,
-                            modifier = Modifier.clip(RoundedCornerShape(8.dp)).clickable { onSelect("steam") }.padding(horizontal = 6.dp, vertical = 4.dp),
-                        )
-                        Eyebrow(g.library)
-                    }
-                }
-                    Rise(1) { Title(g.name) }
-                    Rise(2) {
-                        Row {
-                            Column(modifier = Modifier.weight(1f)) {
-                                Actions {
-                                    PrimaryButton("Launch", enabled = s.ready && !s.busy, main = true) { a.onSteamGame(g) }
-                                    Cog(a.onSteamSettings)
-                                    Chip(if (s.ready) "● ready" else "runtime missing", ok = s.ready)
+                    val host = rememberMenuHost()
+                    val short = LocalConfiguration.current.screenHeightDp < 480
+                    Column(modifier = Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState())) {
+                        Rise(0) { BackLink("Steam") { onSelect("steam") } }
+                        Spacer(Modifier.height(10.dp))
+                        Rise(1) {
+                            Row(verticalAlignment = Alignment.Bottom) {
+                                GameHero(g, Modifier.weight(1f).height(if (short) 170.dp else 210.dp)) {
+                                    Text(
+                                        listOfNotNull(libraryLabel(g.library), lastPlayedText(g.lastPlayed)).joinToString(" · ").uppercase(),
+                                        fontSize = 12.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 1.2.sp, color = LocalPalette.current.signal,
+                                        maxLines = 1, overflow = TextOverflow.Ellipsis,
+                                    )
+                                    Text(g.name, fontSize = 32.sp, fontWeight = FontWeight.Bold, color = colors.onBackground, maxLines = 2, overflow = TextOverflow.Ellipsis, lineHeight = 36.sp)
+                                    Spacer(Modifier.height(8.dp))
+                                    Actions {
+                                        PrimaryButton("Launch", enabled = s.ready && !s.busy, main = true) { a.onSteamGame(g) }
+                                        Cog(a.onSteamSettings)
+                                        Chip(if (s.ready) "● Ready to play" else "Runtime missing", ok = s.ready)
+                                    }
                                 }
+                                Poster(g.art, g.name, Modifier.width(if (short) 96.dp else 128.dp))
                             }
-                            Poster(g.art, g.name, Modifier.width(detailPosterWidth))
                         }
-                    }
-                    val others = s.steamGames.filter { it !== g }
-                    if (others.isNotEmpty()) {
-                        Rise(3) { SectionTitle("More from the library", null) }
-                        Rise(4, Modifier.weight(1f).fillMaxWidth()) { ArtGrid(others.map { x -> Tile(x.name, null, x.art, "steam:${x.appId}", null) { onSelect("app:${x.appId}") } }) }
+                        Rise(2) { SectionTitle("Launch settings", "used by every game") }
+                        Rise(3) { LaunchSettings(s, a, host) }
                     }
                 }
             }
@@ -848,10 +851,7 @@ private fun Content(
                     val pkgId = Library.packageId(e.id)
                     val pkg = pkgId?.let { id -> s.packages?.firstOrNull { it.id == id } }
                     Rise(0) {
-                        Text(
-                            "‹ Desktop", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = colors.onSurfaceVariant,
-                            modifier = Modifier.clip(RoundedCornerShape(8.dp)).clickable { onSelect("desktop") }.padding(horizontal = 6.dp, vertical = 4.dp),
-                        )
+                        BackLink("Desktop") { onSelect("desktop") }
                     }
                     Rise(1) { Title(e.name) }
                     if (e.installed) {
@@ -920,10 +920,7 @@ private fun Content(
                     val (e, g) = pair
                     Rise(0) {
                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                            Text(
-                                "‹ ${e.name}", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = colors.onSurfaceVariant,
-                                modifier = Modifier.clip(RoundedCornerShape(8.dp)).clickable { onSelect("emu:${e.id}") }.padding(horizontal = 6.dp, vertical = 4.dp),
-                            )
+                            BackLink(e.name) { onSelect("emu:${e.id}") }
                             Eyebrow("Desktop · ${e.system}")
                         }
                     }
@@ -1041,12 +1038,7 @@ private fun SetupPanel(
                     SettingsRow("Frame generation", "Select the frame generation mode") {
                         Box {
                             ValueChip(s.frameGenLabel, host.open == "fg") { host.open = if (host.open == "fg") null else "fg" }
-                            AnchoredMenu(host.open == "fg", onDismiss = { if (host.open == "fg") host.open = null }, title = "Frame generation") { firstItemFocus ->
-                                val need = if (s.lsfgReady) null else "Install Lossless Scaling in Steam"
-                                MenuItem("Off", checked = s.frameGenEngine == FrameGen.ENGINE_OFF, focusRequester = firstItemFocus) { a.onFrameGenPick(FrameGen.ENGINE_OFF, 2); host.open = null }
-                                for (m in 2..4) MenuItem("Win-FG ${m}×", checked = s.frameGenEngine == FrameGen.ENGINE_WINFG && s.frameGenMultiplier == m) { a.onFrameGenPick(FrameGen.ENGINE_WINFG, m); host.open = null }
-                                for (m in 2..4) MenuItem("LSFG ${m}×", checked = s.frameGenEngine == FrameGen.ENGINE_LSFG && s.frameGenMultiplier == m, enabled = s.lsfgReady, detail = need) { a.onFrameGenPick(FrameGen.ENGINE_LSFG, m); host.open = null }
-                            }
+                            FrameGenMenu(s, a, host)
                         }
                     }
                     SettingsRow("Session logs", "${if (s.logsEnabled) "Enabled" else "Disabled"} · logs are saved after each session") {
@@ -1124,6 +1116,90 @@ private fun SectionTitle(t: String, detail: String?) {
 @Composable private fun Actions(content: @Composable () -> Unit) = Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) { content() }
 
 private val Shape16 = RoundedCornerShape(16.dp)
+
+/** One level up, as Back and B do: a real button, big enough to hit. */
+@Composable
+private fun BackLink(label: String, onClick: () -> Unit) {
+    val colors = MaterialTheme.colorScheme
+    val pal = LocalPalette.current
+    val src = remember { MutableInteractionSource() }
+    val hot = rememberHot(src)
+    val shape = RoundedCornerShape(22.dp)
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier.paneItem("back:$label").heightIn(min = 44.dp)
+            .clip(shape)
+            .background(if (hot) pal.signal.copy(alpha = 0.14f) else Color.White.copy(alpha = 0.04f))
+            .border(2.dp, if (hot) pal.signal else Color.Transparent, shape)
+            .hoverable(src).clickable(interactionSource = src, indication = LocalIndication.current, role = Role.Button, onClick = onClick)
+            .controllerConfirm(onClick = onClick)
+            .padding(start = 8.dp, end = 16.dp),
+    ) {
+        Icon(Icons.Filled.ChevronLeft, contentDescription = null, tint = if (hot) pal.signal else colors.onBackground, modifier = Modifier.size(22.dp))
+        Text(label, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = colors.onBackground, maxLines = 1, overflow = TextOverflow.Ellipsis)
+    }
+}
+
+@Composable
+private fun FrameGenMenu(s: FrontEndState, a: FrontEndActions, host: MenuHost) {
+    AnchoredMenu(host.open == "fg", onDismiss = { if (host.open == "fg") host.open = null }, title = "Frame generation") { firstItemFocus ->
+        val need = if (s.lsfgReady) null else "Install Lossless Scaling in Steam"
+        MenuItem("Off", checked = s.frameGenEngine == FrameGen.ENGINE_OFF, focusRequester = firstItemFocus) { a.onFrameGenPick(FrameGen.ENGINE_OFF, 2); host.open = null }
+        for (m in 2..4) MenuItem("Win-FG ${m}×", checked = s.frameGenEngine == FrameGen.ENGINE_WINFG && s.frameGenMultiplier == m) { a.onFrameGenPick(FrameGen.ENGINE_WINFG, m); host.open = null }
+        for (m in 2..4) MenuItem("LSFG ${m}×", checked = s.frameGenEngine == FrameGen.ENGINE_LSFG && s.frameGenMultiplier == m, enabled = s.lsfgReady, detail = need) { a.onFrameGenPick(FrameGen.ENGINE_LSFG, m); host.open = null }
+    }
+}
+
+/**
+ * What shapes a launch, on the game's own page rather than three screens away in Setup. They are
+ * the app-wide settings - each card opens the same page or menu Setup does.
+ */
+@Composable
+private fun LaunchSettings(s: FrontEndState, a: FrontEndActions, host: MenuHost) {
+    Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp)) {
+        SettingCard(Icons.Outlined.Layers, "Compatibility", "Proton & components", "FEX · DXVK · VKD3D-Proton", "card:components", Modifier.weight(1f), a.onComponents)
+        Box(Modifier.weight(1f)) {
+            SettingCard(
+                Icons.Outlined.Bolt, "Frame generation", s.frameGenLabel,
+                if (s.lsfgReady) "Win-FG or LSFG, 2–4×" else "Win-FG 2–4×; LSFG needs Lossless Scaling",
+                "card:fg", Modifier.fillMaxWidth(),
+            ) { host.open = if (host.open == "fg") null else "fg" }
+            FrameGenMenu(s, a, host)
+        }
+        SettingCard(Icons.Outlined.Memory, "Performance", "CPU cores", "Which cores games run on", "card:perf", Modifier.weight(1f), a.onPerformance)
+        val controller = a.controller
+        if (controller != null) SettingCard(Icons.Outlined.SportsEsports, "Controls", "Button mapping", "Remap the pad for games", "card:controls", Modifier.weight(1f), controller.onMapping)
+    }
+}
+
+@Composable
+private fun SettingCard(icon: ImageVector, label: String, value: String, detail: String, id: String, modifier: Modifier, onClick: () -> Unit) {
+    val colors = MaterialTheme.colorScheme
+    val pal = LocalPalette.current
+    val src = remember { MutableInteractionSource() }
+    val hot = rememberHot(src)
+    val pressed by src.collectIsPressedAsState()
+    val scale by animateFloatAsState(if (pressed) 0.97f else 1f, Motion.sp(0.5f, Spring.StiffnessMedium), label = "cardScale")
+    val edge by animateColorAsState(if (hot) pal.signal else pal.line2, Motion.tw(220), label = "cardEdge")
+    Column(
+        verticalArrangement = Arrangement.spacedBy(3.dp),
+        modifier = modifier.paneItem(id)
+            .graphicsLayer { scaleX = scale; scaleY = scale }
+            .clip(Shape14)
+            .background(if (hot) pal.signal.copy(alpha = 0.10f) else colors.surface)
+            .border(if (hot) 2.dp else 1.dp, edge, Shape14)
+            .hoverable(src).clickable(interactionSource = src, indication = LocalIndication.current, role = Role.Button, onClick = onClick)
+            .controllerConfirm(onClick = onClick)
+            .padding(horizontal = 14.dp, vertical = 12.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Icon(icon, contentDescription = null, tint = if (hot) pal.signal else colors.onSurfaceVariant, modifier = Modifier.size(18.dp))
+            Text(label, fontSize = 13.sp, color = colors.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
+        Text(value, fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = colors.onBackground, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Text(detail, fontSize = 12.sp, color = colors.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis)
+    }
+}
 
 /** A page's title, with room at its right for a status chip. */
 @Composable
