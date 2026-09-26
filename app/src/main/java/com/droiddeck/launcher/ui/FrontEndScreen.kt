@@ -83,7 +83,9 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.ChevronLeft
+import androidx.compose.material.icons.filled.PriorityHigh
 import androidx.compose.material.icons.outlined.Apps
 import androidx.compose.material.icons.outlined.Bolt
 import androidx.compose.material.icons.outlined.Memory
@@ -148,6 +150,7 @@ import com.droiddeck.launcher.HomeApp
 import com.droiddeck.launcher.frontend.Library
 import com.droiddeck.launcher.gpu.FrameGen
 import com.droiddeck.launcher.input.SecondScreenDisplay
+import com.droiddeck.launcher.core.DeviceSupport
 import com.droiddeck.launcher.core.PhantomProcessLimit
 import com.droiddeck.launcher.core.PhantomProcessStatus
 import com.droiddeck.launcher.session.SessionPrefs
@@ -956,6 +959,50 @@ private fun Content(
     }
 }
 
+private enum class CheckState { OK, WARN, BUSY }
+
+/** One requirement in Setup's system check: a status mark, what it is, and at most one action. */
+@Composable
+private fun CheckRow(state: CheckState, title: String, detail: String?, divider: Boolean = true, action: (@Composable () -> Unit)? = null) {
+    val colors = MaterialTheme.colorScheme
+    val pal = LocalPalette.current
+    val tint = when (state) {
+        CheckState.OK -> pal.good
+        CheckState.WARN -> AttentionAmber
+        CheckState.BUSY -> pal.signal
+    }
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(14.dp),
+        modifier = Modifier.fillMaxWidth()
+            .background(if (state == CheckState.WARN) AttentionAmber.copy(alpha = 0.07f) else Color.Transparent)
+            .heightIn(min = 60.dp)
+            .padding(horizontal = 14.dp, vertical = 10.dp),
+    ) {
+        Box(contentAlignment = Alignment.Center, modifier = Modifier.size(28.dp).clip(CircleShape).background(tint.copy(alpha = 0.16f))) {
+            Icon(
+                when (state) {
+                    CheckState.OK -> Icons.Filled.Check
+                    CheckState.WARN -> Icons.Filled.PriorityHigh
+                    CheckState.BUSY -> Icons.Filled.Refresh
+                },
+                contentDescription = when (state) {
+                    CheckState.OK -> "Done"
+                    CheckState.WARN -> "Needs attention"
+                    CheckState.BUSY -> "Working"
+                },
+                tint = tint, modifier = Modifier.size(16.dp),
+            )
+        }
+        Column(modifier = Modifier.weight(1f)) {
+            Text(title, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = colors.onBackground)
+            if (detail != null) Text(detail, fontSize = 13.sp, color = colors.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis)
+        }
+        if (action != null) action()
+    }
+    if (divider) Box(Modifier.fillMaxWidth().height(1.dp).background(pal.line))
+}
+
 @Composable
 private fun SetupPanel(
     s: FrontEndState,
@@ -985,37 +1032,85 @@ private fun SetupPanel(
         s.available != null && s.available != s.installed -> "Update"
         else -> "Manage"
     }
+    val colors = MaterialTheme.colorScheme
+    val pal = LocalPalette.current
+    val gpuOk = remember { DeviceSupport.adreno() }
+    val gpuName = remember { DeviceSupport.gpuName() }
+    val limitBlocks = PhantomProcessLimit.blocksSteam(s.phantomProcessStatus)
+    val signedIn = s.offlineAccount != null
+    var showLimitDetails by rememberSaveable { mutableStateOf(false) }
+    val checks = 4
+    val readyCount = listOf(gpuOk, s.ready && !s.busy, !limitBlocks, signedIn).count { it }
     Rise(0, Modifier.fillMaxSize()) {
         Column(modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(bottom = 24.dp)) {
-                Rise(0) { Eyebrow("Setup") }
-                Rise(1) { Title("Setup") }
-                SettingsGroup("Android process limit") {
-                    Text(
-                        PhantomProcessLimit.title(s.phantomProcessStatus),
-                        fontWeight = FontWeight.SemiBold,
-                        color = if (PhantomProcessLimit.blocksSteam(s.phantomProcessStatus)) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onBackground,
-                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
+                Rise(0) {
+                    PageHeader("Setup") {
+                        Chip(if (readyCount == checks) "● All set" else "$readyCount of $checks ready", ok = readyCount == checks)
+                    }
+                }
+                // What Steam needs, one row each: green when done, one button when not. The
+                // process-limit controls only open under their row.
+                Column(modifier = Modifier.fillMaxWidth().clip(Shape14).background(colors.surface).border(1.dp, pal.line, Shape14)) {
+                    CheckRow(
+                        if (gpuOk) CheckState.OK else CheckState.WARN,
+                        if (gpuOk) "Device supported" else "GPU not supported",
+                        if (gpuOk) gpuName else "Steam draws with an Adreno driver; $gpuName may show a black screen",
                     )
-                    Text(
-                        "Enabling restores Android’s child-process limit. Disabling it is recommended for Steam sessions.",
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(horizontal = 14.dp),
-                    )
-                    if (s.phantomProcessStatus != PhantomProcessStatus.NOT_APPLICABLE) {
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp)) {
-                            SecondaryButton("Enable limit", enabled = !processLimitBusy && s.phantomProcessStatus != PhantomProcessStatus.ENABLED) { setProcessLimit(true) }
-                            SecondaryButton("Disable limit", enabled = !processLimitBusy && s.phantomProcessStatus != PhantomProcessStatus.DISABLED) { setProcessLimit(false) }
+                    CheckRow(
+                        when { s.busy -> CheckState.BUSY; !s.ready -> CheckState.WARN; else -> CheckState.OK },
+                        "Linux runtime",
+                        when {
+                            s.busy -> if (s.percent >= 0) "${s.stage} · ${s.percent}%" else s.stage
+                            !s.ready -> "Not installed · about 3 GB, installed on the first Play"
+                            s.available != null && s.available != s.installed -> "${s.installed} · update available"
+                            else -> "${s.installed} · up to date"
+                        },
+                    ) { SecondaryButton(runtime, enabled = !s.busy, compact = true, onClick = a.onRuntime) }
+                    CheckRow(
+                        if (limitBlocks) CheckState.WARN else CheckState.OK,
+                        if (limitBlocks) "Android may close Steam" else "Android process limit",
+                        if (limitBlocks) "“Restrict child processes” is on - it takes a minute to turn off" else PhantomProcessLimit.title(s.phantomProcessStatus),
+                    ) {
+                        if (limitBlocks) PrimaryButton(if (showLimitDetails) "Hide" else "Fix it", compact = true) { showLimitDetails = !showLimitDetails }
+                        else if (s.phantomProcessStatus != PhantomProcessStatus.NOT_APPLICABLE) {
+                            SecondaryButton(if (showLimitDetails) "Hide" else "Details", compact = true) { showLimitDetails = !showLimitDetails }
                         }
-                        if (processLimitBusy) LinearProgressIndicator(modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 8.dp))
-                        processLimitMessage?.let { Text(it, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(horizontal = 14.dp, vertical = 4.dp)) }
                     }
-                    Text(PhantomProcessLimit.instructions(s.phantomProcessStatus), color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(horizontal = 14.dp, vertical = 4.dp))
-                    Text(PhantomProcessLimit.ADB_COMMAND, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(horizontal = 14.dp, vertical = 4.dp))
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp)) {
-                        SecondaryButton("Developer options", onClick = onOpenDeveloperOptions)
-                        SecondaryButton("Check again", onClick = a.onRefreshPhantomStatus)
-                        SecondaryButton("Copy ADB", onClick = { a.onCopyPhantomCommand(false) })
+                    AnimatedVisibility(showLimitDetails, enter = expandVertically() + fadeIn(), exit = shrinkVertically() + fadeOut()) {
+                        Column(modifier = Modifier.fillMaxWidth().padding(start = 56.dp, end = 14.dp, top = 4.dp, bottom = 10.dp)) {
+                            Text(
+                                PhantomProcessLimit.instructions(s.phantomProcessStatus),
+                                fontSize = 14.sp, color = colors.onSurfaceVariant, modifier = Modifier.padding(vertical = 4.dp),
+                            )
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(vertical = 6.dp)) {
+                                SecondaryButton("Developer options", compact = true, onClick = onOpenDeveloperOptions)
+                                SecondaryButton("Check again", compact = true, onClick = a.onRefreshPhantomStatus)
+                                SecondaryButton("Copy ADB command", compact = true, onClick = { a.onCopyPhantomCommand(false) })
+                            }
+                            Text(
+                                PhantomProcessLimit.ADB_COMMAND, fontSize = 12.sp, fontFamily = FontFamily.Monospace,
+                                color = colors.onSurfaceVariant, modifier = Modifier.padding(vertical = 4.dp),
+                            )
+                            if (s.phantomProcessStatus != PhantomProcessStatus.NOT_APPLICABLE) {
+                                Text(
+                                    "With wireless debugging paired, DroidDeck can switch the limit itself. Turning it off is recommended for Steam sessions.",
+                                    fontSize = 14.sp, color = colors.onSurfaceVariant, modifier = Modifier.padding(top = 8.dp),
+                                )
+                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(vertical = 6.dp)) {
+                                    SecondaryButton("Turn limit off", compact = true, enabled = !processLimitBusy && s.phantomProcessStatus != PhantomProcessStatus.DISABLED) { setProcessLimit(false) }
+                                    SecondaryButton("Turn limit on", compact = true, enabled = !processLimitBusy && s.phantomProcessStatus != PhantomProcessStatus.ENABLED) { setProcessLimit(true) }
+                                }
+                                if (processLimitBusy) LinearProgressIndicator(modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp))
+                                processLimitMessage?.let { Text(it, fontSize = 14.sp, color = colors.onSurfaceVariant, modifier = Modifier.padding(vertical = 4.dp)) }
+                            }
+                        }
                     }
+                    CheckRow(
+                        if (signedIn) CheckState.OK else CheckState.WARN,
+                        "Steam account",
+                        s.offlineAccount?.let { if (s.offline) "Signed in as $it · offline mode" else "Signed in as $it" } ?: "Press Play and sign in to Steam",
+                        divider = false,
+                    )
                 }
                 SettingsGroup("Launcher tools") {
                     ActionRow("Files", "Browse and manage files", "Open", a.onFiles)
