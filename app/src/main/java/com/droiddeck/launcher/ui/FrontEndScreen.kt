@@ -91,6 +91,10 @@ import androidx.compose.material.icons.filled.ChevronLeft
 import androidx.compose.material.icons.filled.MoreHoriz
 import androidx.compose.material.icons.filled.PriorityHigh
 import androidx.compose.material.icons.outlined.Apps
+import androidx.compose.material.icons.outlined.Extension
+import androidx.compose.material.icons.outlined.Folder
+import androidx.compose.material.icons.outlined.Speed
+import androidx.compose.material.icons.outlined.VideogameAsset
 import androidx.compose.material.icons.outlined.Bolt
 import androidx.compose.material.icons.outlined.Memory
 import androidx.compose.material.icons.outlined.DesktopWindows
@@ -1223,140 +1227,216 @@ private fun SetupPanel(
     var showLimitDetails by rememberSaveable { mutableStateOf(false) }
     val checks = 4
     val readyCount = listOf(gpuOk, s.ready && !s.busy, !limitBlocks, signedIn).count { it }
+    // Five tabs instead of one long scroll; LB and RB turn them from anywhere on the page.
+    val tabs = listOf("Overview", "Controller", "Session", "Launcher", "About")
+    var tab by rememberSaveable { mutableStateOf(0) }
+    val tabFocus = remember { List(tabs.size) { FocusRequester() } }
+    var tabTurned by remember { mutableStateOf(false) }
+    val pick: (Int) -> Unit = { i -> tab = i; tabTurned = true }
+    val inputModeManager = LocalInputModeManager.current
+    // The control a controller was on went with the old tab: it lands on the new tab itself.
+    LaunchedEffect(tab) {
+        if (tabTurned && inputModeManager.inputMode == InputMode.Keyboard) {
+            androidx.compose.runtime.withFrameNanos { }
+            runCatching { tabFocus[tab].requestFocus() }
+        }
+    }
     Rise(0, Modifier.fillMaxSize()) {
-        Column(modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(bottom = 24.dp)) {
-                Rise(0) {
-                    PageHeader("Setup") {
-                        Chip(if (readyCount == checks) "● All set" else "$readyCount of $checks ready", ok = readyCount == checks)
-                    }
-                }
-                // What Steam needs, one row each: green when done, one button when not. The
-                // process-limit controls only open under their row.
-                Column(modifier = Modifier.fillMaxWidth().clip(Shape14).background(colors.surface).border(1.dp, pal.line, Shape14)) {
-                    CheckRow(
-                        if (gpuOk) CheckState.OK else CheckState.WARN,
-                        if (gpuOk) "Device supported" else "GPU not supported",
-                        if (gpuOk) gpuName else "Steam draws with an Adreno driver; $gpuName may show a black screen",
-                    )
-                    CheckRow(
-                        when { s.busy -> CheckState.BUSY; !s.ready -> CheckState.WARN; else -> CheckState.OK },
-                        "Linux runtime",
-                        when {
-                            s.busy -> if (s.percent >= 0) "${s.stage} · ${s.percent}%" else s.stage
-                            !s.ready -> "Not installed · about 3 GB, installed on the first Play"
-                            s.available != null && s.available != s.installed -> "${s.installed ?: "Installed"} · update available"
-                            else -> "${s.installed ?: "Installed"} · up to date"
-                        },
-                    ) { SecondaryButton(runtime, enabled = !s.busy, compact = true, onClick = a.onRuntime) }
-                    CheckRow(
-                        if (limitBlocks) CheckState.WARN else CheckState.OK,
-                        if (limitBlocks) "Android may close Steam" else "Android process limit",
-                        if (limitBlocks) "“Restrict child processes” is on - it takes a minute to turn off" else PhantomProcessLimit.title(s.phantomProcessStatus),
-                    ) {
-                        if (limitBlocks) PrimaryButton(if (showLimitDetails) "Hide" else "Fix it", compact = true) { showLimitDetails = !showLimitDetails }
-                        else if (s.phantomProcessStatus != PhantomProcessStatus.NOT_APPLICABLE) {
-                            SecondaryButton(if (showLimitDetails) "Hide" else "Details", compact = true) { showLimitDetails = !showLimitDetails }
-                        }
-                    }
-                    AnimatedVisibility(showLimitDetails, enter = expandVertically() + fadeIn(), exit = shrinkVertically() + fadeOut()) {
-                        Column(modifier = Modifier.fillMaxWidth().padding(start = 56.dp, end = 14.dp, top = 4.dp, bottom = 10.dp)) {
-                            Text(
-                                PhantomProcessLimit.instructions(s.phantomProcessStatus),
-                                fontSize = 14.sp, color = colors.onSurfaceVariant, modifier = Modifier.padding(vertical = 4.dp),
+        Column(
+            modifier = Modifier.fillMaxSize().bumpers(
+                onPrevious = { pick((tab + tabs.size - 1) % tabs.size) },
+                onNext = { pick((tab + 1) % tabs.size) },
+            ),
+        ) {
+            PageHeader("Setup") {
+                Chip(if (readyCount == checks) "● All set" else "$readyCount of $checks ready", ok = readyCount == checks)
+            }
+            TabStrip(tabs, tab, pick, Modifier.padding(bottom = 4.dp), tabFocus)
+            Column(modifier = Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()).padding(bottom = 24.dp)) {
+                when (tab) {
+                    0 -> {
+                        SectionTitle("System check", null)
+                        // What Steam needs, one row each: green when done, one button when not. The
+                        // process-limit controls only open under their row.
+                        Column(modifier = Modifier.fillMaxWidth().clip(Shape14).background(colors.surface).border(1.dp, pal.line, Shape14)) {
+                            CheckRow(
+                                if (gpuOk) CheckState.OK else CheckState.WARN,
+                                if (gpuOk) "Device supported" else "GPU not supported",
+                                if (gpuOk) gpuName else "Steam draws with an Adreno driver; $gpuName may show a black screen",
                             )
-                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(vertical = 6.dp)) {
-                                SecondaryButton("Developer options", compact = true, onClick = onOpenDeveloperOptions)
-                                SecondaryButton("Check again", compact = true, onClick = a.onRefreshPhantomStatus)
-                                SecondaryButton("Copy ADB command", compact = true, onClick = { a.onCopyPhantomCommand(false) })
-                            }
-                            Text(
-                                PhantomProcessLimit.ADB_COMMAND, fontSize = 12.sp, fontFamily = FontFamily.Monospace,
-                                color = colors.onSurfaceVariant, modifier = Modifier.padding(vertical = 4.dp),
-                            )
-                            if (s.phantomProcessStatus != PhantomProcessStatus.NOT_APPLICABLE) {
-                                Text(
-                                    "With wireless debugging paired, DroidDeck can switch the limit itself. Turning it off is recommended for Steam sessions.",
-                                    fontSize = 14.sp, color = colors.onSurfaceVariant, modifier = Modifier.padding(top = 8.dp),
-                                )
-                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(vertical = 6.dp)) {
-                                    SecondaryButton("Turn limit off", compact = true, enabled = !processLimitBusy && s.phantomProcessStatus != PhantomProcessStatus.DISABLED) { setProcessLimit(false) }
-                                    SecondaryButton("Turn limit on", compact = true, enabled = !processLimitBusy && s.phantomProcessStatus != PhantomProcessStatus.ENABLED) { setProcessLimit(true) }
+                            CheckRow(
+                                when { s.busy -> CheckState.BUSY; !s.ready -> CheckState.WARN; else -> CheckState.OK },
+                                "Linux runtime",
+                                when {
+                                    s.busy -> if (s.percent >= 0) "${s.stage} · ${s.percent}%" else s.stage
+                                    !s.ready -> "Not installed · about 3 GB, installed on the first Play"
+                                    s.available != null && s.available != s.installed -> "${s.installed ?: "Installed"} · update available"
+                                    else -> "${s.installed ?: "Installed"} · up to date"
+                                },
+                            ) { SecondaryButton(runtime, enabled = !s.busy, compact = true, onClick = a.onRuntime) }
+                            CheckRow(
+                                if (limitBlocks) CheckState.WARN else CheckState.OK,
+                                if (limitBlocks) "Android may close Steam" else "Android process limit",
+                                if (limitBlocks) "“Restrict child processes” is on - it takes a minute to turn off" else PhantomProcessLimit.title(s.phantomProcessStatus),
+                            ) {
+                                if (limitBlocks) PrimaryButton(if (showLimitDetails) "Hide" else "Fix it", compact = true) { showLimitDetails = !showLimitDetails }
+                                else if (s.phantomProcessStatus != PhantomProcessStatus.NOT_APPLICABLE) {
+                                    SecondaryButton(if (showLimitDetails) "Hide" else "Details", compact = true) { showLimitDetails = !showLimitDetails }
                                 }
-                                if (processLimitBusy) LinearProgressIndicator(modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp))
-                                processLimitMessage?.let { Text(it, fontSize = 14.sp, color = colors.onSurfaceVariant, modifier = Modifier.padding(vertical = 4.dp)) }
                             }
-                        }
-                    }
-                    CheckRow(
-                        if (signedIn) CheckState.OK else CheckState.WARN,
-                        "Steam account",
-                        s.offlineAccount?.let { if (s.offline) "Signed in as $it · offline mode" else "Signed in as $it" } ?: "Press Play and sign in to Steam",
-                        divider = false,
-                    )
-                }
-                SettingsGroup("Launcher tools") {
-                    ActionRow("Files", "Browse and manage files", "Open", a.onFiles)
-                    ActionRow("Compatibility tools", "Install ARM64 Proton builds", "Manage", a.onProtons)
-                    ActionRow("Performance", "CPU core assignment", "Configure", a.onPerformance)
-                    ActionRow("ROMs folder", s.romsDir ?: "Choose where emulator games are stored", "Choose", a.onRoms)
-                }
-                val controller = s.controller
-                if (controller != null && a.controller != null) SettingsGroup("Controller") {
-                    ControllerRows(host, s.oscMode, controller, a.controller)
-                }
-                SettingsGroup("Session") {
-                    ChoiceRow(
-                        host, "back-actions", "Back", SessionPrefs.backActionsOrder(s.backActionsInverted),
-                        listOf(
-                            false to SessionPrefs.BACK_MENU_THEN_QAM,
-                            true to SessionPrefs.BACK_QAM_THEN_MENU,
-                        ), s.backActionsInverted, onPick = a.onBackActionsInverted,
-                    )
-                    SettingsRow("Frame generation", "Select the frame generation mode") {
-                        Box {
-                            ValueChip(s.frameGenLabel, host.open == "fg") { host.open = if (host.open == "fg") null else "fg" }
-                            FrameGenMenu(s, a, host)
-                        }
-                    }
-                    SettingsRow("Session logs", "${if (s.logsEnabled) "Enabled" else "Disabled"} · logs are saved after each session") {
-                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            SecondaryButton(if (s.logsEnabled) "Turn off" else "Turn on") { a.onLogs() }
-                            SecondaryButton("Share latest") { a.onShareLogs() }
-                        }
-                    }
-                    SettingsRow("Offline mode", s.offlineAccount?.let { if (s.offline) "Enabled for $it" else "Signed in as $it" } ?: "Sign in to Steam first") {
-                        SecondaryButton(if (s.offline) "Turn off" else "Turn on", enabled = s.offlineAccount != null) { a.onOffline() }
-                    }
-                }
-                SettingsGroup("Application") {
-                    ActionRow("Linux runtime", "${s.installed ?: "Not installed"}${if (s.available != null && s.available != s.installed) " · update available" else ""}", runtime, a.onRuntime)
-                    SettingsRow("Theme", "Choose the launcher appearance") {
-                        Box {
-                            ValueChip(Themes.byId(s.theme).label, host.open == "theme") { host.open = if (host.open == "theme") null else "theme" }
-                            AnchoredMenu(host.open == "theme", onDismiss = { if (host.open == "theme") host.open = null }, title = "Theme") { firstItemFocus ->
-                                Themes.all.forEachIndexed { index, theme ->
-                                    MenuItem(theme.label, checked = s.theme == theme.id, focusRequester = if (index == 0) firstItemFocus else null) {
-                                        a.onTheme(theme.id)
-                                        host.open = null
+                            AnimatedVisibility(showLimitDetails, enter = expandVertically() + fadeIn(), exit = shrinkVertically() + fadeOut()) {
+                                Column(modifier = Modifier.fillMaxWidth().padding(start = 56.dp, end = 14.dp, top = 4.dp, bottom = 10.dp)) {
+                                    Text(
+                                        PhantomProcessLimit.instructions(s.phantomProcessStatus),
+                                        fontSize = 14.sp, color = colors.onSurfaceVariant, modifier = Modifier.padding(vertical = 4.dp),
+                                    )
+                                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(vertical = 6.dp)) {
+                                        SecondaryButton("Developer options", compact = true, onClick = onOpenDeveloperOptions)
+                                        SecondaryButton("Check again", compact = true, onClick = a.onRefreshPhantomStatus)
+                                        SecondaryButton("Copy ADB command", compact = true, onClick = { a.onCopyPhantomCommand(false) })
+                                    }
+                                    Text(
+                                        PhantomProcessLimit.ADB_COMMAND, fontSize = 12.sp, fontFamily = FontFamily.Monospace,
+                                        color = colors.onSurfaceVariant, modifier = Modifier.padding(vertical = 4.dp),
+                                    )
+                                    if (s.phantomProcessStatus != PhantomProcessStatus.NOT_APPLICABLE) {
+                                        Text(
+                                            "With wireless debugging paired, DroidDeck can switch the limit itself. Turning it off is recommended for Steam sessions.",
+                                            fontSize = 14.sp, color = colors.onSurfaceVariant, modifier = Modifier.padding(top = 8.dp),
+                                        )
+                                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(vertical = 6.dp)) {
+                                            SecondaryButton("Turn limit off", compact = true, enabled = !processLimitBusy && s.phantomProcessStatus != PhantomProcessStatus.DISABLED) { setProcessLimit(false) }
+                                            SecondaryButton("Turn limit on", compact = true, enabled = !processLimitBusy && s.phantomProcessStatus != PhantomProcessStatus.ENABLED) { setProcessLimit(true) }
+                                        }
+                                        if (processLimitBusy) LinearProgressIndicator(modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp))
+                                        processLimitMessage?.let { Text(it, fontSize = 14.sp, color = colors.onSurfaceVariant, modifier = Modifier.padding(vertical = 4.dp)) }
                                     }
                                 }
                             }
+                            CheckRow(
+                                if (signedIn) CheckState.OK else CheckState.WARN,
+                                "Steam account",
+                                s.offlineAccount?.let { if (s.offline) "Signed in as $it · offline mode" else "Signed in as $it" } ?: "Press Play and sign in to Steam",
+                                divider = false,
+                            )
+                        }
+                        SectionTitle("Tools", null)
+                        ToolGrid(s, a)
+                    }
+                    1 -> {
+                        val controller = s.controller
+                        if (controller != null && a.controller != null) SettingsGroup("Controller") {
+                            ControllerRows(host, s.oscMode, controller, a.controller)
+                        }
+                        if (s.controller == null || a.controller == null) Note("Controller settings are unavailable.")
+                    }
+                    2 -> {
+                        SettingsGroup("Session") {
+                            ChoiceRow(
+                                host, "back-actions", "Back", SessionPrefs.backActionsOrder(s.backActionsInverted),
+                                listOf(
+                                    false to SessionPrefs.BACK_MENU_THEN_QAM,
+                                    true to SessionPrefs.BACK_QAM_THEN_MENU,
+                                ), s.backActionsInverted, onPick = a.onBackActionsInverted,
+                            )
+                            SettingsRow("Frame generation", "Select the frame generation mode") {
+                                Box {
+                                    ValueChip(s.frameGenLabel, host.open == "fg") { host.open = if (host.open == "fg") null else "fg" }
+                                    FrameGenMenu(s, a, host)
+                                }
+                            }
+                            SettingsRow("Session logs", "${if (s.logsEnabled) "Enabled" else "Disabled"} · logs are saved after each session") {
+                                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                    SecondaryButton(if (s.logsEnabled) "Turn off" else "Turn on") { a.onLogs() }
+                                    SecondaryButton("Share latest") { a.onShareLogs() }
+                                }
+                            }
+                            SettingsRow("Offline mode", s.offlineAccount?.let { if (s.offline) "Enabled for $it" else "Signed in as $it" } ?: "Sign in to Steam first") {
+                                SecondaryButton(if (s.offline) "Turn off" else "Turn on", enabled = s.offlineAccount != null) { a.onOffline() }
+                            }
                         }
                     }
-                    ToggleRow(
-                        host, "home-screen", "Use as a Home screen",
-                        if (s.homeScreenEnabled) "DroidDeck can be the phone's Home app" else "Off: DroidDeck is never offered as a Home app",
-                        s.homeScreenEnabled,
-                    ) { a.onHomeScreen(it) }
-                    if (s.homeScreenEnabled) {
-                        ActionRow("Default Home app", s.defaultHomeLabel ?: "Choose a Home app", "Choose", a.onHomeApp)
+                    3 -> {
+                        SettingsGroup("Launcher") {
+                            SettingsRow("Theme", "Choose the launcher appearance") {
+                                Box {
+                                    ValueChip(Themes.byId(s.theme).label, host.open == "theme") { host.open = if (host.open == "theme") null else "theme" }
+                                    AnchoredMenu(host.open == "theme", onDismiss = { if (host.open == "theme") host.open = null }, title = "Theme") { firstItemFocus ->
+                                        Themes.all.forEachIndexed { index, theme ->
+                                            MenuItem(theme.label, checked = s.theme == theme.id, focusRequester = if (index == 0) firstItemFocus else null) {
+                                                a.onTheme(theme.id)
+                                                host.open = null
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            ToggleRow(
+                                host, "home-screen", "Use as a Home screen",
+                                if (s.homeScreenEnabled) "DroidDeck can be the phone's Home app" else "Off: DroidDeck is never offered as a Home app",
+                                s.homeScreenEnabled,
+                            ) { a.onHomeScreen(it) }
+                            if (s.homeScreenEnabled) {
+                                ActionRow("Default Home app", s.defaultHomeLabel ?: "Choose a Home app", "Choose", a.onHomeApp)
+                            }
+                        }
+                    }
+                    else -> {
+                        SettingsGroup("About") {
+                            ActionRow("Build", s.buildLabel, "Check for newer", a.onCheckLatestBuild)
+                            ActionRow("Credits", "The people and projects DroidDeck builds on", "View", a.onCredits)
+                        }
                     }
                 }
-                SettingsGroup("About") {
-                    ActionRow("Build", s.buildLabel, "Check for newer", a.onCheckLatestBuild)
-                    ActionRow("Credits", "The people and projects DroidDeck builds on", "View", a.onCredits)
-                }
+            }
         }
+    }
+}
+
+/** The launcher's own tools as cards: four across, two by two on a narrow page. */
+@Composable
+private fun ToolGrid(s: FrontEndState, a: FrontEndActions) {
+    val columns = if (LocalNarrowPane.current) 2 else 4
+    val tools = listOf(
+        ToolSpec(Icons.Outlined.Folder, "Files", "Browse and manage files", a.onFiles),
+        ToolSpec(Icons.Outlined.Extension, "Compatibility tools", "Install ARM64 Proton builds", a.onProtons),
+        ToolSpec(Icons.Outlined.Speed, "Performance", "CPU core assignment", a.onPerformance),
+        ToolSpec(Icons.Outlined.VideogameAsset, "ROMs folder", s.romsDir ?: "Choose where emulator games are stored", a.onRoms),
+    )
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
+        for (row in tools.chunked(columns)) {
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth().height(IntrinsicSize.Min)) {
+                for (t in row) ToolCard(t, Modifier.weight(1f).fillMaxHeight())
+                repeat(columns - row.size) { Spacer(Modifier.weight(1f)) }
+            }
+        }
+    }
+}
+
+private class ToolSpec(val icon: ImageVector, val title: String, val detail: String, val onClick: () -> Unit)
+
+@Composable
+private fun ToolCard(t: ToolSpec, modifier: Modifier) {
+    val colors = MaterialTheme.colorScheme
+    val pal = LocalPalette.current
+    val src = remember { MutableInteractionSource() }
+    val hot = rememberHot(src)
+    val pressed by src.collectIsPressedAsState()
+    val scale by animateFloatAsState(if (pressed) 0.97f else 1f, Motion.sp(0.5f, Spring.StiffnessMedium), label = "toolScale")
+    Column(
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+        modifier = modifier.paneItem("tool:${t.title}")
+            .graphicsLayer { scaleX = scale; scaleY = scale }
+            .clip(Shape14)
+            .background(if (hot) pal.signal.copy(alpha = 0.10f) else colors.surface)
+            .border(if (hot) 2.dp else 1.dp, if (hot) pal.signal else pal.line, Shape14)
+            .hoverable(src).clickable(interactionSource = src, indication = LocalIndication.current, role = Role.Button, onClick = t.onClick)
+            .controllerConfirm(onClick = t.onClick)
+            .padding(horizontal = 14.dp, vertical = 12.dp),
+    ) {
+        Icon(t.icon, contentDescription = null, tint = if (hot) pal.signal else colors.onSurfaceVariant, modifier = Modifier.size(20.dp))
+        Text(t.title, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = colors.onBackground, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Text(t.detail, fontSize = 13.sp, color = colors.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis)
     }
 }
 
