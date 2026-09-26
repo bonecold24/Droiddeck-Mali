@@ -1,39 +1,52 @@
 package com.droiddeck.launcher.ui
 
+import android.text.Editable
+import android.text.InputType
+import android.text.TextWatcher
+import android.view.inputmethod.EditorInfo
+import android.widget.EditText
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.text.KeyboardActions
-import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusDirection
 import androidx.compose.ui.focus.FocusManager
+import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.viewinterop.AndroidView
 import com.droiddeck.launcher.core.PhantomProcessLimit
+import kotlin.math.min
+import kotlin.math.roundToInt
 
 @Composable
 fun WirelessAdbFixPage(
@@ -45,41 +58,48 @@ fun WirelessAdbFixPage(
     onApply: (String, Int, Boolean, (String?) -> Unit) -> Unit,
 ) {
     var step by rememberSaveable { mutableStateOf(0) }
-    var host by rememberSaveable { mutableStateOf("") }
-    var pairingPort by rememberSaveable { mutableStateOf("") }
+    var pairingAddress by rememberSaveable { mutableStateOf("") }
+    var connectionAddress by rememberSaveable { mutableStateOf("") }
     var pairingCode by rememberSaveable { mutableStateOf("") }
-    var connectPort by rememberSaveable { mutableStateOf("") }
     var busy by remember { mutableStateOf(false) }
+    var editing by remember { mutableStateOf(false) }
     var message by remember { mutableStateOf<String?>(null) }
     val focusManager = LocalFocusManager.current
+    val keyboardController = LocalSoftwareKeyboardController.current
+    val pairingEndpoint = parseAdbAddress(pairingAddress)
 
     val pairNow: () -> Unit = {
-        val pairingHost = host
-        busy = true
-        message = null
-        onPair(pairingHost, pairingPort.toInt(), pairingCode) { error ->
-            pairingCode = ""
-            if (error != null) {
-                busy = false
-                message = error
-            } else {
-                step = 1
-                busy = true
-                message = "Paired. Finding the Wireless debugging port…"
-                onFindConnectPort(pairingHost) { discoveredPort ->
-                    if (discoveredPort == null) {
-                        busy = false
-                        message = "Enter the current Wireless debugging port from Settings."
-                    } else {
-                        connectPort = discoveredPort.toString()
-                        message = "Device found. Applying the setting…"
-                        onApply(pairingHost, discoveredPort, desiredEnabled) { applyError ->
+        parseAdbAddress(pairingAddress)?.let { endpoint ->
+            keyboardController?.hide()
+            focusManager.clearFocus()
+            busy = true
+            editing = false
+            message = null
+            onPair(endpoint.host, endpoint.port, pairingCode) { error ->
+                pairingCode = ""
+                if (error != null) {
+                    busy = false
+                    message = error
+                } else {
+                    step = 1
+                    busy = true
+                    message = "Paired. Finding the Wireless debugging port…"
+                    onFindConnectPort(endpoint.host) { discoveredPort ->
+                        if (discoveredPort == null) {
+                            connectionAddress = formatAddressHost(endpoint.host) + ":"
                             busy = false
-                            if (applyError == null) {
-                                step = 2
-                                message = null
-                            } else {
-                                message = "Could not apply automatically. Check the port below and retry. $applyError"
+                            message = "Enter the current Wireless debugging address from Settings."
+                        } else {
+                            connectionAddress = formatAdbAddress(endpoint.host, discoveredPort)
+                            message = "Device found. Applying the setting…"
+                            onApply(endpoint.host, discoveredPort, desiredEnabled) { applyError ->
+                                busy = false
+                                if (applyError == null) {
+                                    step = 2
+                                    message = null
+                                } else {
+                                    message = "Could not apply automatically. Check the address below and retry. $applyError"
+                                }
                             }
                         }
                     }
@@ -87,16 +107,21 @@ fun WirelessAdbFixPage(
             }
         }
     }
-    val applyPort: () -> Unit = {
-        busy = true
-        message = null
-        onApply(host, connectPort.toInt(), desiredEnabled) { error ->
-            busy = false
-            if (error == null) {
-                step = 2
-                message = null
-            } else {
-                message = error
+    val applyAddress: () -> Unit = {
+        parseAdbAddress(connectionAddress)?.let { endpoint ->
+            keyboardController?.hide()
+            focusManager.clearFocus()
+            busy = true
+            editing = false
+            message = null
+            onApply(endpoint.host, endpoint.port, desiredEnabled) { error ->
+                busy = false
+                if (error == null) {
+                    step = 2
+                    message = null
+                } else {
+                    message = error
+                }
             }
         }
     }
@@ -108,20 +133,22 @@ fun WirelessAdbFixPage(
         val form: @Composable () -> Unit = {
             WirelessStepForm(
                 step = step,
-                host = host,
-                onHostChange = { host = it.trim() },
-                pairingPort = pairingPort,
-                onPairingPortChange = { pairingPort = it.filter(Char::isDigit).take(5) },
+                pairingAddress = pairingAddress,
+                onPairingAddressChange = { pairingAddress = it },
                 pairingCode = pairingCode,
                 onPairingCodeChange = { pairingCode = it.filter(Char::isDigit).take(6) },
-                connectPort = connectPort,
-                onConnectPortChange = { connectPort = it.filter(Char::isDigit).take(5) },
+                connectionAddress = connectionAddress,
+                onConnectionAddressChange = { connectionAddress = it },
                 busy = busy,
                 message = message,
+                compact = compactSplit,
+                editing = editing,
+                onEditingChanged = { editing = it },
                 focusManager = focusManager,
                 desiredEnabled = desiredEnabled,
+                canPair = pairingEndpoint != null && pairingCode.length == 6,
                 onPair = pairNow,
-                onApply = applyPort,
+                onApply = applyAddress,
             )
         }
         SettingsPage(
@@ -134,17 +161,18 @@ fun WirelessAdbFixPage(
             eyebrow = "Setup",
             lede = when {
                 compactSplit && step == 0 -> "If the option is missing, pair over Wireless debugging."
-                compactSplit && step == 1 -> "Enter the Wireless debugging connection port."
+                compactSplit && step == 1 -> "Enter the Wireless debugging connection address."
                 compactSplit -> "The child-process limit was updated."
                 step == 0 -> "Use step 2 if Developer options has no child-process setting. In Android Settings, open Developer options → Wireless debugging → Pair device with pairing code."
-                step == 1 -> "The pairing port and the Wireless debugging connection port are different."
+                step == 1 -> "The pairing and Wireless debugging connection addresses are different."
                 else -> "The child-process limit was updated over Wireless debugging."
             },
             onBack = { if (!busy) onBack() },
             action = if (compactSplit && step < 2) {
-                { SecondaryButton("Developer options", enabled = !busy, onClick = onOpenDeveloperOptions) }
+                { SecondaryButton("Developer options", compact = true, enabled = !busy, onClick = onOpenDeveloperOptions) }
             } else null,
-            scrollContent = compactSplit,
+            scrollContent = !compactSplit,
+            compactLayout = compactSplit,
         ) {
             BoxWithConstraints(Modifier.fillMaxWidth()) {
                 val wide = maxWidth >= 620.dp
@@ -153,7 +181,7 @@ fun WirelessAdbFixPage(
                         modifier = Modifier.widthIn(max = 680.dp).fillMaxWidth(),
                         verticalArrangement = Arrangement.spacedBy(10.dp),
                     ) {
-                        SettingsGroup("Child-process limit") {
+                        SettingsGroup("Child-process limit", compact = compactSplit) {
                             Text(
                                 "Android confirmed the limit is ${if (desiredEnabled) "enabled" else "disabled"}.",
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -168,7 +196,7 @@ fun WirelessAdbFixPage(
                         verticalArrangement = Arrangement.spacedBy(2.dp),
                     ) {
                         form()
-                        CompactComputerFallback(desiredEnabled)
+                        if (!editing) CompactComputerFallback(desiredEnabled)
                     }
                 } else {
                     val routes: @Composable () -> Unit = {
@@ -201,98 +229,91 @@ fun WirelessAdbFixPage(
 @Composable
 private fun WirelessStepForm(
     step: Int,
-    host: String,
-    onHostChange: (String) -> Unit,
-    pairingPort: String,
-    onPairingPortChange: (String) -> Unit,
+    pairingAddress: String,
+    onPairingAddressChange: (String) -> Unit,
     pairingCode: String,
     onPairingCodeChange: (String) -> Unit,
-    connectPort: String,
-    onConnectPortChange: (String) -> Unit,
+    connectionAddress: String,
+    onConnectionAddressChange: (String) -> Unit,
     busy: Boolean,
     message: String?,
+    compact: Boolean,
+    editing: Boolean,
+    onEditingChanged: (Boolean) -> Unit,
     focusManager: FocusManager,
     desiredEnabled: Boolean,
+    canPair: Boolean,
     onPair: () -> Unit,
     onApply: () -> Unit,
 ) {
     if (step == 0) {
-        SettingsGroup("2 · Pair Wireless debugging") {
+        SettingsGroup("2 · Pair Wireless debugging", compact = compact) {
             Column(
-                modifier = Modifier.fillMaxWidth().padding(12.dp),
-                verticalArrangement = Arrangement.spacedBy(6.dp),
+                modifier = Modifier.fillMaxWidth().padding(horizontal = if (compact) 8.dp else 12.dp, vertical = if (compact) 6.dp else 12.dp),
+                verticalArrangement = Arrangement.spacedBy(if (compact) 5.dp else 6.dp),
             ) {
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                    AdbTextField(
-                        value = host,
-                        onValueChange = onHostChange,
-                        label = "Device IP",
-                        keyboardType = KeyboardType.Ascii,
-                        imeAction = ImeAction.Next,
-                        onNext = { focusManager.moveFocus(FocusDirection.Next) },
-                        modifier = Modifier.weight(1f),
-                    )
-                    AdbTextField(
-                        value = pairingPort,
-                        onValueChange = onPairingPortChange,
-                        label = "Pairing port",
-                        keyboardType = KeyboardType.Number,
-                        imeAction = ImeAction.Next,
-                        onNext = { focusManager.moveFocus(FocusDirection.Next) },
-                        modifier = Modifier.weight(1f),
-                    )
-                }
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                AdbTextField(
+                    value = pairingAddress,
+                    onValueChange = onPairingAddressChange,
+                    label = "Pairing address",
+                    placeholder = "192.168.1.42:37123",
+                    keyboardType = KeyboardType.Ascii,
+                    imeAction = ImeAction.Next,
+                    compact = compact,
+                    onFocusChange = onEditingChanged,
+                    onNext = { focusManager.moveFocus(FocusDirection.Next) },
+                )
+                Row(
+                    verticalAlignment = Alignment.Bottom,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
                     AdbTextField(
                         value = pairingCode,
                         onValueChange = onPairingCodeChange,
-                        label = "Pairing code",
+                        label = "Pairing code (PIN)",
                         placeholder = "6 digits",
                         keyboardType = KeyboardType.Number,
                         imeAction = ImeAction.Done,
-                        onDone = focusManager::clearFocus,
+                        compact = compact,
+                        onFocusChange = onEditingChanged,
+                        onDone = {
+                            focusManager.clearFocus()
+                        },
                         modifier = Modifier.weight(1f),
                     )
-                    PrimaryButton(
-                        "Pair",
-                        enabled = !busy && host.isNotBlank() && validPort(pairingPort) && pairingCode.length == 6,
-                        onClick = onPair,
-                    )
+                    PrimaryButton("Pair", compact = compact, enabled = !busy && canPair, onClick = onPair)
                 }
                 StatusMessage(busy, message)
             }
         }
     } else {
-        SettingsGroup("2 · Apply over Wireless debugging") {
+        SettingsGroup("2 · Apply over Wireless debugging", compact = compact) {
             Column(
-                modifier = Modifier.fillMaxWidth().padding(12.dp),
-                verticalArrangement = Arrangement.spacedBy(6.dp),
+                modifier = Modifier.fillMaxWidth().padding(horizontal = if (compact) 8.dp else 12.dp, vertical = if (compact) 6.dp else 12.dp),
+                verticalArrangement = Arrangement.spacedBy(if (compact) 5.dp else 6.dp),
             ) {
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                    AdbTextField(
-                        value = host,
-                        onValueChange = onHostChange,
-                        label = "Device IP",
-                        keyboardType = KeyboardType.Ascii,
-                        imeAction = ImeAction.Next,
-                        onNext = { focusManager.moveFocus(FocusDirection.Next) },
-                        modifier = Modifier.weight(1f),
-                    )
-                    AdbTextField(
-                        value = connectPort,
-                        onValueChange = onConnectPortChange,
-                        label = "Connection port",
-                        keyboardType = KeyboardType.Number,
-                        imeAction = ImeAction.Done,
-                        onDone = focusManager::clearFocus,
-                        modifier = Modifier.weight(1f),
-                    )
-                }
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                AdbTextField(
+                    value = connectionAddress,
+                    onValueChange = onConnectionAddressChange,
+                    label = "Wireless debugging address",
+                    placeholder = "192.168.1.42:45678",
+                    keyboardType = KeyboardType.Ascii,
+                    imeAction = ImeAction.Done,
+                    compact = compact,
+                    onFocusChange = onEditingChanged,
+                    onDone = { focusManager.clearFocus() },
+                )
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
                     StatusMessage(busy, message, Modifier.weight(1f))
                     PrimaryButton(
-                        if (desiredEnabled) "Enable child-process limit" else "Disable child-process limit",
-                        enabled = !busy && validPort(connectPort),
+                        if (desiredEnabled) "Enable limit" else "Disable limit",
+                        compact = compact,
+                        enabled = !busy && parseAdbAddress(connectionAddress) != null,
                         onClick = onApply,
                     )
                 }
@@ -310,22 +331,99 @@ private fun AdbTextField(
     imeAction: ImeAction,
     modifier: Modifier = Modifier,
     placeholder: String? = null,
+    compact: Boolean = false,
+    onFocusChange: (Boolean) -> Unit = {},
     onNext: (() -> Unit)? = null,
     onDone: (() -> Unit)? = null,
 ) {
-    OutlinedTextField(
-        value = value,
-        onValueChange = onValueChange,
-        label = { Text(label) },
-        placeholder = placeholder?.let { { Text(it) } },
-        singleLine = true,
-        keyboardOptions = KeyboardOptions(keyboardType = keyboardType, imeAction = imeAction),
-        keyboardActions = KeyboardActions(
-            onNext = { onNext?.invoke() },
-            onDone = { onDone?.invoke() },
-        ),
-        modifier = modifier.fillMaxWidth().height(56.dp),
-    )
+    val context = LocalContext.current
+    val palette = LocalPalette.current
+    val onValueChangeLatest = rememberUpdatedState(onValueChange)
+    val onNextLatest = rememberUpdatedState(onNext)
+    val onDoneLatest = rememberUpdatedState(onDone)
+    val onFocusChangeLatest = rememberUpdatedState(onFocusChange)
+    var focused by remember { mutableStateOf(false) }
+    val shape = RoundedCornerShape(8.dp)
+    val inputHeight = if (compact) 44.dp else 52.dp
+    val colors = MaterialTheme.colorScheme
+
+    Column(modifier = modifier.fillMaxWidth()) {
+        Text(
+            label,
+            style = MaterialTheme.typography.labelSmall,
+            fontWeight = FontWeight.Medium,
+            color = colors.onSurfaceVariant,
+            maxLines = 1,
+        )
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(inputHeight)
+                .background(colors.surfaceVariant, shape)
+                .border(1.dp, if (focused) palette.signal else palette.line2, shape)
+                .padding(horizontal = 10.dp),
+            contentAlignment = Alignment.CenterStart,
+        ) {
+            AndroidView(
+                modifier = Modifier.fillMaxSize(),
+                factory = { viewContext ->
+                    EditText(viewContext).apply {
+                        isSingleLine = true
+                        setHorizontallyScrolling(true)
+                        background = null
+                        setPadding((2 * context.resources.displayMetrics.density).roundToInt(), 0, 0, 0)
+                        setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, if (compact) 13f else 14f)
+                        setTextColor(colors.onBackground.toArgb())
+                        setHintTextColor(colors.onSurfaceVariant.toArgb())
+                        contentDescription = label
+                        inputType = if (keyboardType == KeyboardType.Number) {
+                            InputType.TYPE_CLASS_NUMBER
+                        } else {
+                            InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI or InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
+                        }
+                        imeOptions = imeActionFlag(imeAction) or EditorInfo.IME_FLAG_NO_FULLSCREEN or EditorInfo.IME_FLAG_NO_EXTRACT_UI
+                        hint = placeholder
+                        setOnEditorActionListener { _, actionId, event ->
+                            val isEnter = event?.keyCode == android.view.KeyEvent.KEYCODE_ENTER
+                            when {
+                                imeAction == ImeAction.Next && (actionId == EditorInfo.IME_ACTION_NEXT || isEnter) -> {
+                                    onNextLatest.value?.invoke()
+                                    true
+                                }
+                                imeAction == ImeAction.Done && (actionId == EditorInfo.IME_ACTION_DONE || isEnter) -> {
+                                    onDoneLatest.value?.invoke()
+                                    true
+                                }
+                                else -> false
+                            }
+                        }
+                        setOnFocusChangeListener { _, hasFocus ->
+                            focused = hasFocus
+                            onFocusChangeLatest.value(hasFocus)
+                        }
+                        addTextChangedListener(object : TextWatcher {
+                            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) = Unit
+                            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) = Unit
+                            override fun afterTextChanged(s: Editable?) {
+                                onValueChangeLatest.value(s?.toString().orEmpty())
+                            }
+                        })
+                    }
+                },
+                update = { editText ->
+                    editText.setTextColor(colors.onBackground.toArgb())
+                    editText.setHintTextColor(colors.onSurfaceVariant.toArgb())
+                    editText.hint = placeholder
+                    editText.contentDescription = label
+                    if (editText.text.toString() != value) {
+                        val cursor = if (editText.hasFocus()) editText.selectionStart.coerceAtLeast(0) else value.length
+                        editText.setText(value)
+                        editText.setSelection(min(cursor, value.length))
+                    }
+                },
+            )
+        }
+    }
 }
 
 @Composable
@@ -355,7 +453,7 @@ private fun FallbackOrder(
 
 @Composable
 private fun CompactComputerFallback(desiredEnabled: Boolean) {
-    SettingsGroup("3 · Computer ADB last resort") {
+    SettingsGroup("3 · Computer ADB last resort", compact = true) {
         Text(
             PhantomProcessLimit.adbCommand(desiredEnabled),
             style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace),
@@ -377,4 +475,36 @@ private fun StatusMessage(busy: Boolean, message: String?, modifier: Modifier = 
     }
 }
 
-private fun validPort(value: String): Boolean = value.toIntOrNull()?.let { it in 1..65535 } == true
+private data class AdbEndpoint(val host: String, val port: Int)
+
+private fun parseAdbAddress(value: String): AdbEndpoint? {
+    val address = value.trim()
+    val host: String
+    val portText: String
+    if (address.startsWith("[")) {
+        val closingBracket = address.indexOf(']')
+        if (closingBracket <= 1 || address.getOrNull(closingBracket + 1) != ':') return null
+        host = address.substring(1, closingBracket)
+        if (':' !in host) return null
+        portText = address.substring(closingBracket + 2)
+    } else {
+        val colon = address.lastIndexOf(':')
+        if (colon <= 0 || address.indexOf(':') != colon) return null
+        host = address.substring(0, colon)
+        portText = address.substring(colon + 1)
+    }
+    if (host.isBlank() || host.any(Char::isWhitespace)) return null
+    val port = portText.toIntOrNull()?.takeIf { it in 1..65535 } ?: return null
+    return AdbEndpoint(host, port)
+}
+
+private fun formatAddressHost(host: String): String = if (':' in host) "[$host]" else host
+private fun formatAdbAddress(host: String, port: Int): String = "${formatAddressHost(host)}:$port"
+
+private fun imeActionFlag(action: ImeAction): Int = when (action) {
+    ImeAction.Next -> EditorInfo.IME_ACTION_NEXT
+    ImeAction.Done -> EditorInfo.IME_ACTION_DONE
+    ImeAction.Go -> EditorInfo.IME_ACTION_GO
+    ImeAction.Search -> EditorInfo.IME_ACTION_SEARCH
+    else -> EditorInfo.IME_ACTION_UNSPECIFIED
+}
