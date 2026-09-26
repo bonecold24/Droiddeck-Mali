@@ -1,8 +1,9 @@
 /*
  * Root's way past a read-only file, for the Steam client.
  *
- * The client runs as root inside the session - proot's root, which the kernel never sees: to the
- * kernel it is the app's own user. The client leaves many content files read-only (r-x------,
+ * The client runs as "root" inside the session - the rootfs names the app's own uid root, and
+ * proot (-i) shows it that uid - but the kernel treats it as the ordinary user it is. The client
+ * leaves many content files read-only (r-x------,
  * ~290 files of Proton Experimental (ARM64) alone), and when an update later rewrites one of them
  * it opens the file for writing expecting root's permission to override the mode. The kernel
  * refuses (EACCES), the client reports "Missing file permissions" and cancels the update
@@ -22,7 +23,16 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
-/* The client and its helpers run from the Steam root's platform directories. */
+static int in_steam_dirs(const char *path) {
+  return path != NULL && (strstr(path, "/Steam/steamrtarm64/") != NULL
+      || strstr(path, "/Steam/ubuntu12_64/") != NULL || strstr(path, "/Steam/linuxarm64/") != NULL);
+}
+
+/*
+ * The client and its helpers run from the Steam root's platform directories. The kernel's
+ * /proc/self/exe names proot's loader for every process in the session, so the program's own
+ * name - the path it was started by - is asked as well.
+ */
 static int is_steam_client(void) {
   static int cached = -1;
   char exe[PATH_MAX];
@@ -30,12 +40,8 @@ static int is_steam_client(void) {
 
   if (cached >= 0) return cached;
   n = readlink("/proc/self/exe", exe, sizeof(exe) - 1);
-  cached = 0;
-  if (n > 0) {
-    exe[n] = '\0';
-    cached = strstr(exe, "/Steam/steamrtarm64/") != NULL || strstr(exe, "/Steam/ubuntu12_64/") != NULL
-          || strstr(exe, "/Steam/linuxarm64/") != NULL;
-  }
+  if (n > 0) exe[n] = '\0';
+  cached = (n > 0 && in_steam_dirs(exe)) || in_steam_dirs(program_invocation_name);
   return cached;
 }
 
@@ -57,7 +63,7 @@ int bl_writable_retry(int dirfd, const char *path, int flags) {
   char parent[PATH_MAX];
   const char *slash;
 
-  if (saved != EACCES || path == NULL || (flags & O_ACCMODE) == O_RDONLY || geteuid() != 0 || !is_steam_client()) return 0;
+  if (saved != EACCES || path == NULL || (flags & O_ACCMODE) == O_RDONLY || !is_steam_client()) return 0;
   if (faccessat(dirfd, path, F_OK, 0) == 0) {
     granted = grant_owner_write(dirfd, path);
   } else if (flags & O_CREAT) {
