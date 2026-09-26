@@ -812,9 +812,7 @@ private fun Content(
     Column(modifier = modifier.verticalScroll(rememberScrollState()).padding(horizontal = padH, vertical = padV)) {
         when {
             selected == "android-apps" && s.isHomeApp -> {
-                Rise(0) { Eyebrow("Android apps") }
-                Rise(1) { Title("Installed apps") }
-                Rise(2) { SectionTitle("Apps", s.androidApps.size.toString()) }
+                Rise(0) { PageHeader("Android apps") { Chip("${s.androidApps.size} apps", ok = false) } }
                 if (s.androidApps.isEmpty()) Rise(3) { Note("No launchable Android apps found.") }
                 else Rise(3, Modifier.fillMaxWidth()) {
                     ArtGrid(s.androidApps.map { app ->
@@ -917,17 +915,21 @@ private fun Content(
                 }
             }
             selected == "desktop" -> {
-                Rise(0) { Eyebrow("Desktop") }
-                Rise(3) {
-                    Actions {
-                        // Enabled without a runtime or the desktop: the session's loading screen installs them first.
-                        PrimaryButton(if (s.desktopInstalled) "Open desktop" else "Install & open desktop", enabled = !s.busy, main = true, onClick = a.onDesktop)
-                        Cog(a.onDesktopSettings)
+                val installed = s.emulators.filter { it.installed }
+                val available = s.emulators.filter { !it.installed }
+                Rise(0) {
+                    PageHeader("Desktop") {
+                        if (s.desktopInstalled) Chip("● Desktop installed", ok = true) else Chip("Installs on first open", ok = false)
                     }
                 }
-                Rise(4) { SectionTitle("Emulators", "${s.emulators.count { it.installed }} installed · ${s.emulators.count { !it.installed }} available") }
-                Rise(5, Modifier.fillMaxWidth()) {
-                    ArtGrid(s.emulators.map { e -> Tile(e.name, if (e.installed) (if (e.id == "retroarch") null else "${e.games.size} game${if (e.games.size == 1) "" else "s"}") else "Select to install", null, "emu:${e.id}", e.iconRes, dim = !e.installed) { onSelect("emu:${e.id}") } })
+                Rise(2) { DesktopCard(s, a) }
+                if (installed.isNotEmpty()) {
+                    Rise(3) { SectionTitle("Emulators", "${installed.size} installed") }
+                    Rise(4) { EmulatorGrid(installed, first = true, onSelect = onSelect) }
+                }
+                if (available.isNotEmpty()) {
+                    Rise(5) { SectionTitle("Available to install", available.size.toString()) }
+                    Rise(6) { EmulatorGrid(available, first = installed.isEmpty(), onSelect = onSelect) }
                 }
             }
             selected.startsWith("emu:") -> {
@@ -938,11 +940,24 @@ private fun Content(
                     Rise(0) {
                         BackLink("Desktop") { onSelect("desktop") }
                     }
-                    Rise(1) { Title(e.name) }
+                    Rise(1) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp),
+                            modifier = Modifier.padding(top = 12.dp, bottom = 12.dp),
+                        ) {
+                            Image(painterResource(e.iconRes), null, modifier = Modifier.size(52.dp))
+                            Column {
+                                Text(e.name, fontSize = if (narrow) 22.sp else 26.sp, fontWeight = FontWeight.Bold, color = colors.onBackground)
+                                Text(
+                                    e.system.replaceFirstChar { it.uppercase() } + if (e.installed) "" else " · not installed",
+                                    fontSize = 14.sp, color = colors.onSurfaceVariant,
+                                )
+                            }
+                        }
+                    }
                     if (e.installed) {
                         Rise(3) {
                             Actions {
-                                Image(painterResource(e.iconRes), null, modifier = Modifier.size(40.dp))
                                 PrimaryButton("Open ${e.name}", enabled = s.ready && !s.busy, main = true) { a.onEmulator(e) }
                                 SecondaryButton("ROMs folder", onClick = a.onRoms)
                                 if (pkg != null) SecondaryButton(
@@ -965,7 +980,6 @@ private fun Content(
                     } else {
                         if (pkg != null) Rise(2) {
                             Actions {
-                                Image(painterResource(e.iconRes), null, modifier = Modifier.size(40.dp))
                                 PrimaryButton(
                                     if (s.packageBusyId == pkg.id) "Installing…" else "Install ${e.name}",
                                     enabled = s.packageBusyId == null && s.ready && !s.packageCatalogLoading && !s.sessionRunning,
@@ -1021,7 +1035,7 @@ private fun Content(
                                     ActionChip(g.hostPath.extension.uppercase().ifEmpty { "folder" }, ok = false)
                                 }
                             }
-                            if (g.art != null) Poster(g.art, g.name, Modifier.width(detailPosterWidth))
+                            if (g.art != null && !narrow) Poster(g.art, g.name, Modifier.width(detailPosterWidth))
                         }
                     }
                     val others = e.games.filter { it !== g }
@@ -1038,6 +1052,92 @@ private fun Content(
             }
             else -> Note("Select an item.")
         }
+    }
+}
+
+/** The Linux desktop itself, above the emulators that run in it. */
+@Composable
+private fun DesktopCard(s: FrontEndState, a: FrontEndActions) {
+    val colors = MaterialTheme.colorScheme
+    val pal = LocalPalette.current
+    val narrow = LocalNarrowPane.current
+    val actions: @Composable () -> Unit = {
+        Actions {
+            // Enabled without a runtime or the desktop: the session's loading screen installs them first.
+            PrimaryButton(if (s.desktopInstalled) "Open desktop" else "Install & open desktop", enabled = !s.busy, main = true, onClick = a.onDesktop)
+            Cog(a.onDesktopSettings)
+        }
+    }
+    Column(
+        verticalArrangement = Arrangement.spacedBy(14.dp),
+        modifier = Modifier.fillMaxWidth().clip(Shape16).background(colors.surface).border(1.dp, pal.line, Shape16).padding(16.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+            Box(
+                contentAlignment = Alignment.Center,
+                modifier = Modifier.size(52.dp).clip(Shape14).background(colors.surfaceVariant).border(1.dp, pal.line2, Shape14),
+            ) { Icon(Icons.Outlined.DesktopWindows, contentDescription = null, tint = colors.onBackground, modifier = Modifier.size(26.dp)) }
+            Column(modifier = Modifier.weight(1f)) {
+                Text("Linux desktop", fontSize = 18.sp, fontWeight = FontWeight.SemiBold, color = colors.onBackground)
+                Text("LXQt, Firefox and your emulators", fontSize = 14.sp, color = colors.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            }
+            if (!narrow) actions()
+        }
+        if (narrow) actions()
+    }
+}
+
+/** Emulators as wide tiles - three across, or a list on a narrow page. */
+@Composable
+private fun EmulatorGrid(emulators: List<Library.Emulator>, first: Boolean, onSelect: (String) -> Unit) {
+    val columns = if (LocalNarrowPane.current) 1 else 3
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth().padding(top = 4.dp, bottom = 8.dp)) {
+        emulators.chunked(columns).forEachIndexed { r, row ->
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth().height(IntrinsicSize.Min)) {
+                row.forEachIndexed { i, e ->
+                    key(e.id) {
+                        EmulatorTile(e, Modifier.weight(1f).fillMaxHeight(), isFirst = first && r == 0 && i == 0) { onSelect("emu:${e.id}") }
+                    }
+                }
+                repeat(columns - row.size) { Spacer(Modifier.weight(1f)) }
+            }
+        }
+    }
+}
+
+/**
+ * One emulator: its icon, system and games. One not yet installed says so in words and keeps full
+ * contrast - dimming it read as disabled rather than one press from installing.
+ */
+@Composable
+private fun EmulatorTile(e: Library.Emulator, modifier: Modifier, isFirst: Boolean, onClick: () -> Unit) {
+    val colors = MaterialTheme.colorScheme
+    val pal = LocalPalette.current
+    val src = remember { MutableInteractionSource() }
+    val hot = rememberHot(src)
+    val pressed by src.collectIsPressedAsState()
+    val scale by animateFloatAsState(if (pressed) 0.97f else 1f, Motion.sp(0.5f, Spring.StiffnessMedium), label = "emuScale")
+    val system = e.system.replaceFirstChar { it.uppercase() }
+    val detail = if (e.installed && e.id != "retroarch") "$system · ${e.games.size} game${if (e.games.size == 1) "" else "s"}" else system
+    Row(
+        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp),
+        modifier = modifier.paneItem("tile:emu:${e.id}").then(if (isFirst) Modifier.firstTile() else Modifier)
+            .graphicsLayer { scaleX = scale; scaleY = scale }
+            .clip(Shape14)
+            .background(if (hot) pal.signal.copy(alpha = 0.10f) else if (e.installed) colors.surface else Color.Transparent)
+            .border(if (hot) 2.dp else 1.dp, if (hot) pal.signal else pal.line, Shape14)
+            .hoverable(src).clickable(interactionSource = src, indication = LocalIndication.current, role = Role.Button, onClick = onClick)
+            .padding(horizontal = 12.dp, vertical = 10.dp),
+    ) {
+        Image(painterResource(e.iconRes), contentDescription = null, modifier = Modifier.size(if (e.installed) 44.dp else 36.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(e.name, fontSize = if (e.installed) 15.sp else 14.sp, fontWeight = FontWeight.SemiBold, color = colors.onBackground, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(detail, fontSize = if (e.installed) 13.sp else 12.sp, color = colors.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
+        if (!e.installed) Text(
+            "Install", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = pal.signal,
+            modifier = Modifier.clip(RoundedCornerShape(8.dp)).border(1.dp, pal.line2, RoundedCornerShape(8.dp)).padding(horizontal = 10.dp, vertical = 6.dp),
+        )
     }
 }
 
