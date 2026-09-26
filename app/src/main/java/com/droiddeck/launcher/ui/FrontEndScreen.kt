@@ -1098,8 +1098,8 @@ private fun SetupPanel(
                         when {
                             s.busy -> if (s.percent >= 0) "${s.stage} · ${s.percent}%" else s.stage
                             !s.ready -> "Not installed · about 3 GB, installed on the first Play"
-                            s.available != null && s.available != s.installed -> "${s.installed} · update available"
-                            else -> "${s.installed} · up to date"
+                            s.available != null && s.available != s.installed -> "${s.installed ?: "Installed"} · update available"
+                            else -> "${s.installed ?: "Installed"} · up to date"
                         },
                     ) { SecondaryButton(runtime, enabled = !s.busy, compact = true, onClick = a.onRuntime) }
                     CheckRow(
