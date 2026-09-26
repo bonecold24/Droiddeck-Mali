@@ -304,7 +304,7 @@ private fun Segmented(options: List<Pair<String, String>>, selected: String, onP
             val pick = { onPick(key) }
             Text(
                 text, fontSize = 12.5.sp, fontWeight = FontWeight.Bold, maxLines = 1,
-                color = if (on) Color.White else if (hot) colors.onBackground else colors.onSurfaceVariant,
+                color = if (on) pal.onSignal else if (hot) colors.onBackground else colors.onSurfaceVariant,
                 modifier = Modifier.clip(RoundedCornerShape(7.dp))
                     .background(if (on) pal.signal else if (hot) pal.signal.copy(alpha = 0.18f) else Color.Transparent)
                     .border(if (hot && !on) 1.dp else 0.dp, if (hot && !on) pal.signal else Color.Transparent, RoundedCornerShape(7.dp))
@@ -356,7 +356,7 @@ private fun SmallButton(text: String, enabled: Boolean = true, accent: Boolean =
     ) {
         Text(
             text, fontSize = 12.sp, fontWeight = FontWeight.Bold, maxLines = 1,
-            color = if (!enabled) colors.onSurfaceVariant else if (hot) Color.White else if (accent) Color(0xFF5E9BFF) else colors.onBackground,
+            color = if (!enabled) colors.onSurfaceVariant else if (hot) pal.onSignal else if (accent) pal.signal else colors.onBackground,
         )
     }
 }
@@ -366,7 +366,7 @@ private fun Tag(text: String) {
     val colors = MaterialTheme.colorScheme
     val (fg, bg) = when (text) {
         "ORIGINAL" -> GOLD to Color(0x22F2C66D)
-        "IN USE" -> Color.White to LocalPalette.current.signal
+        "IN USE" -> LocalPalette.current.onSignal to LocalPalette.current.signal
         "NEW" -> LocalPalette.current.good to Color(0x224CD37F)
         else -> colors.onSurfaceVariant to Color.White.copy(alpha = 0.07f)
     }
@@ -401,7 +401,7 @@ private fun InstalledLine(item: InstalledItem, modifier: Modifier = Modifier, on
             }
             Text(
                 item.name, fontSize = 13.5.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis,
-                color = if (item.selected) Color(0xFF5E9BFF) else colors.onBackground, modifier = Modifier.weight(1f),
+                color = if (item.selected) pal.signal else colors.onBackground, modifier = Modifier.weight(1f),
             )
             Box(Modifier.width(72.dp)) { Tag(item.tag) }
             Text(item.detail, fontSize = 11.5.sp, color = colors.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.width(DETAIL_WIDTH))

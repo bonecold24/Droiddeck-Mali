@@ -6,6 +6,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.LocalContext
 import com.droiddeck.launcher.session.SessionPrefs
 
@@ -58,6 +59,12 @@ object Themes {
 }
 
 val LocalPalette = staticCompositionLocalOf { Themes.byId(Themes.GRAPHITE) }
+
+/**
+ * Text and icons drawn on a [Palette.signal] fill: near-black where the blue is light enough that
+ * white would not read (Graphite's #1A9FFF gives white 2.8:1), white where it is deep.
+ */
+val Palette.onSignal: Color get() = if (signal.luminance() > 0.18f) Color(0xFF03111F) else Color.White
 
 @Composable
 fun DroidDeckTheme(theme: String? = null, content: @Composable () -> Unit) {
