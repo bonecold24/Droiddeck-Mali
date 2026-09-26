@@ -88,15 +88,16 @@ bl_components() {
   base=$1
   cm_dir="${HOME:-/root}/.local/share/bannerlator-components"
   cm_list="$cm_dir/desired.tsv"
-  # A real game launch only: the verb the client starts a game with and a non-zero app id. Every
-  # other run - above all the client's own probes right after login, app id 0 - is left exactly as
-  # it was: with this check running through them, the client segfaulted (rc 139) within seconds of
-  # starting its probes, four sessions out of four.
+  # A real game launch only: the verb the client starts a game with and the game's own prefix. Every
+  # other run - above all the client's own probes right after login, which all share compatdata/0 -
+  # is left exactly as it was: with this check running through them, the client segfaulted (rc 139)
+  # within seconds of starting its probes, four sessions out of four. The prefix decides rather than
+  # the app id because a non-Steam shortcut launches with app id 0 but still gets a prefix of its own.
   [ "${verb:-}" = waitforexitandrun ] || return 0
-  cm_app="${STEAM_COMPAT_APP_ID:-${SteamAppId:-0}}"
-  case "$cm_app" in ''|0) return 0 ;; esac
+  case "${STEAM_COMPAT_DATA_PATH:-}" in ''|*/compatdata/0|*/compatdata/0/|*/compatdata/0-*) return 0 ;; esac
   [ -f "$cm_list" ] || return 0
-  case "${STEAM_COMPAT_DATA_PATH:-}" in */compatdata/0|*/compatdata/0/|*/compatdata/0-*) return 0 ;; esac
+  cm_app=${STEAM_COMPAT_DATA_PATH%/}
+  cm_app=${cm_app##*/}
   cm_tool=${base##*/}
   cm_build=$(awk 'NR == 1 { print $2 }' "$base/version" 2>/dev/null)
   cm_fixed=0
