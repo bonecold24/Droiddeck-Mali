@@ -45,6 +45,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import com.droiddeck.launcher.core.PhantomProcessLimit
+import com.droiddeck.launcher.core.WirelessAdbFix
 import kotlin.math.min
 import kotlin.math.roundToInt
 
@@ -57,9 +58,11 @@ fun WirelessAdbFixPage(
     onFindConnectPort: (String, (Int?) -> Unit) -> Unit,
     onApply: (String, Int, Boolean, (String?) -> Unit) -> Unit,
 ) {
-    var step by rememberSaveable { mutableStateOf(0) }
+    val context = LocalContext.current
+    val savedAddress = remember { WirelessAdbFix.savedConnectionAddress(context) }
+    var step by rememberSaveable { mutableStateOf(if (savedAddress == null) 0 else 1) }
     var pairingAddress by rememberSaveable { mutableStateOf("") }
-    var connectionAddress by rememberSaveable { mutableStateOf("") }
+    var connectionAddress by rememberSaveable { mutableStateOf(savedAddress.orEmpty()) }
     var pairingCode by rememberSaveable { mutableStateOf("") }
     var busy by remember { mutableStateOf(false) }
     var editing by remember { mutableStateOf(false) }
@@ -131,6 +134,13 @@ fun WirelessAdbFixPage(
             }
         }
     }
+    val pairAgain: () -> Unit = {
+        step = 0
+        pairingAddress = ""
+        pairingCode = ""
+        message = null
+        messageIsError = false
+    }
 
     BackHandler { if (!busy) onBack() }
 
@@ -156,6 +166,7 @@ fun WirelessAdbFixPage(
                 canPair = pairingEndpoint != null && pairingCode.length == 6,
                 onPair = pairNow,
                 onApply = applyAddress,
+                onPairAgain = pairAgain,
             )
         }
         SettingsPage(
@@ -168,10 +179,10 @@ fun WirelessAdbFixPage(
             eyebrow = "Setup",
             lede = when {
                 compactSplit && step == 0 -> "If the option is missing, pair over Wireless debugging."
-                compactSplit && step == 1 -> "Use IP address & Port on the main Wireless debugging screen."
+                compactSplit && step == 1 -> "Paired. Check IP address & Port in Wireless debugging."
                 compactSplit -> "The child-process limit was updated."
                 step == 0 -> "Use step 2 if Developer options has no child-process setting. In Android Settings, open Developer options → Wireless debugging → Pair device with pairing code."
-                step == 1 -> "Use IP address & Port on the main Wireless debugging screen. The pairing pop-up uses a different port."
+                step == 1 -> "Paired. Use the address below; update it from Wireless debugging → IP address & Port if needed."
                 else -> "The child-process limit was updated over Wireless debugging."
             },
             onBack = { if (!busy) onBack() },
@@ -253,6 +264,7 @@ private fun WirelessStepForm(
     canPair: Boolean,
     onPair: () -> Unit,
     onApply: () -> Unit,
+    onPairAgain: () -> Unit,
 ) {
     if (step == 0) {
         SettingsGroup("2 · Pair Wireless debugging", compact = compact) {
@@ -318,6 +330,7 @@ private fun WirelessStepForm(
                     modifier = Modifier.fillMaxWidth(),
                 ) {
                     StatusMessage(busy, message, Modifier.weight(1f), isError = messageIsError)
+                    SecondaryButton("Pair again", compact = compact, enabled = !busy, onClick = onPairAgain)
                     PrimaryButton(
                         if (desiredEnabled) "Enable limit" else "Disable limit",
                         compact = compact,

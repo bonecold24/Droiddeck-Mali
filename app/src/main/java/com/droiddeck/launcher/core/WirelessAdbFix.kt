@@ -18,6 +18,9 @@ object WirelessAdbFix {
     private const val CERT_FILE = "wireless-adb-cert.pem"
     private const val KEY_FILE = "wireless-adb-key.pem"
     private const val HOST_FILE = "wireless-adb-host.txt"
+    private const val CONNECTION_FILE = "wireless-adb-connection.txt"
+
+    private data class SavedConnection(val host: String, val port: Int?)
 
     @Synchronized
     private fun loadOrCreateIdentity(context: Context) {
@@ -45,6 +48,31 @@ object WirelessAdbFix {
         loadOrCreateIdentity(context.applicationContext)
         Kadb.pair(host, port, pairingCode, "DroidDeck")
         writeAtomically(File(context.noBackupFilesDir, HOST_FILE), host.toByteArray())
+        writeAtomically(File(context.noBackupFilesDir, CONNECTION_FILE), ByteArray(0))
+    }
+
+    private fun savedConnection(context: Context): SavedConnection? {
+        val directory = context.applicationContext.noBackupFilesDir
+        if (!File(directory, CERT_FILE).isFile || !File(directory, KEY_FILE).isFile) return null
+        val host = File(directory, HOST_FILE).takeIf(File::isFile)?.readText()?.trim()
+            ?.takeIf(String::isNotEmpty) ?: return null
+        val lines = File(directory, CONNECTION_FILE).takeIf(File::isFile)?.readLines()
+        val port = lines?.takeIf { it.size == 2 && it[0] == host }
+            ?.get(1)?.toIntOrNull()?.takeIf { it in 1..65535 }
+        return SavedConnection(host, port)
+    }
+
+    /** A saved pairing skips the PIN; an unknown connection port can be filled in from Settings. */
+    fun savedConnectionAddress(context: Context): String? = savedConnection(context)?.let { saved ->
+        val host = if (':' in saved.host) "[${saved.host}]" else saved.host
+        "$host:${saved.port ?: ""}"
+    }
+
+    private fun saveConnection(context: Context, host: String, port: Int) {
+        writeAtomically(
+            File(context.applicationContext.noBackupFilesDir, CONNECTION_FILE),
+            "$host\n$port".toByteArray(),
+        )
     }
 
     /** Finds this paired device's separate TLS connection port from Android's ADB mDNS record. */
@@ -128,17 +156,30 @@ object WirelessAdbFix {
                 "Android did not confirm the child-process limit was changed: ${result.allOutput.trim()}"
             }
         }
+        saveConnection(context, host, port)
     }
 
     /** Tries the app's saved pairing without asking for a new pairing code. */
     fun setUsingSavedPairing(context: Context, enabled: Boolean) {
         val appContext = context.applicationContext
-        val hostFile = File(appContext.noBackupFilesDir, HOST_FILE)
-        check(hostFile.isFile) { "No Wireless debugging pairing is saved" }
-        val host = hostFile.readText().trim()
-        check(host.isNotEmpty()) { "No Wireless debugging host is saved" }
-        val port = findConnectPort(appContext, host)
-        check(port != null) { "Wireless debugging is unavailable on this network" }
-        setChildProcessLimit(appContext, host, port, enabled)
+        val saved = savedConnection(appContext)
+            ?: error("No Wireless debugging pairing is saved")
+        val cachedPort = saved.port
+        if (cachedPort != null) {
+            val cachedResult = runCatching {
+                setChildProcessLimit(appContext, saved.host, cachedPort, enabled)
+            }
+            if (cachedResult.isSuccess) return
+            val discoveredPort = findConnectPort(appContext, saved.host)
+            if (discoveredPort != null && discoveredPort != cachedPort) {
+                setChildProcessLimit(appContext, saved.host, discoveredPort, enabled)
+            } else {
+                cachedResult.getOrThrow()
+            }
+        } else {
+            val discoveredPort = findConnectPort(appContext, saved.host)
+                ?: error("Enter the current Wireless debugging IP address & Port")
+            setChildProcessLimit(appContext, saved.host, discoveredPort, enabled)
+        }
     }
 }

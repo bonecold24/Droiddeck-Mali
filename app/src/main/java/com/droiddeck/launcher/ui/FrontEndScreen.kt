@@ -1088,7 +1088,7 @@ private fun SetupPanel(
             if (error == null) {
                 a.onRefreshPhantomStatus()
             } else {
-                processLimitMessage = "Wireless ADB is unavailable. Pair this device or use Developer options."
+                processLimitMessage = "Check the Wireless debugging IP address & Port, or pair again if Android removed this device."
                 onRequestWirelessAdb(enabled)
             }
         }
