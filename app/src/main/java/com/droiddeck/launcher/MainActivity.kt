@@ -12,6 +12,7 @@ import android.os.Handler
 import android.os.Looper
 import android.util.Log
 import android.view.Display
+import android.view.KeyEvent
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
@@ -432,6 +433,19 @@ class MainActivity : ComponentActivity() {
             SessionArtifacts.finishAbandoned(this)
             SessionArtifacts.scrubOlder(this)
         }, "finish-abandoned").start()
+    }
+
+    /** On the Components page the pad's LB / RB step through FEX, DXVK and VKD3D-Proton, wrapping around. */
+    override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        if (showComponents && (event.keyCode == KeyEvent.KEYCODE_BUTTON_L1 || event.keyCode == KeyEvent.KEYCODE_BUTTON_R1)) {
+            if (event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0) {
+                val all = ComponentsManager.COMPONENTS
+                val step = if (event.keyCode == KeyEvent.KEYCODE_BUTTON_R1) 1 else all.size - 1
+                compComp = all[(all.indexOf(compComp).coerceAtLeast(0) + step) % all.size]
+            }
+            return true
+        }
+        return super.dispatchKeyEvent(event)
     }
 
     override fun onResume() {

@@ -138,7 +138,11 @@ fun ComponentsPage(
                         }
                     }
                 }
-                Segmented(ComponentsManager.COMPONENTS.map { it to ComponentsManager.LABEL.getValue(it) }, comp, onComp)
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    BumperHint("LB")
+                    Segmented(ComponentsManager.COMPONENTS.map { it to ComponentsManager.LABEL.getValue(it) }, comp, onComp)
+                    BumperHint("RB")
+                }
                 val st = view.components.getValue(comp)
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
                     Box(Modifier.size(8.dp).background(if (st.queued != null) Color(0xFFFFB86B) else pal.good, CircleShape))
@@ -263,6 +267,17 @@ fun ComponentsPage(
             },
         )
     }
+}
+
+/** The pad's bumper that turns the component tabs, as a small badge beside them. */
+@Composable
+private fun BumperHint(text: String) {
+    val colors = MaterialTheme.colorScheme
+    val pal = LocalPalette.current
+    Text(
+        text, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 0.5.sp, color = colors.onSurfaceVariant, maxLines = 1,
+        modifier = Modifier.clip(RoundedCornerShape(5.dp)).border(1.dp, pal.line2, RoundedCornerShape(5.dp)).padding(horizontal = 5.dp, vertical = 2.dp),
+    )
 }
 
 @Composable
