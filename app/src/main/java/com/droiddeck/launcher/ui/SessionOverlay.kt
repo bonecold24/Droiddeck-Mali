@@ -199,13 +199,51 @@ fun LoadingOverlay(
         if (at > reached) reached = at
     }
     val active = reached.coerceAtMost(stages.lastIndex)
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
+    val stageRows: @Composable () -> Unit = {
+        stages.forEachIndexed { i, stage ->
+            StageRow(
+                label = stage.label,
+                state = when { i < active -> StageMark.DONE; i == active -> StageMark.ACTIVE; else -> StageMark.PENDING },
+                detail = if (percent >= 0 || readableStep(step)) step.replaceFirstChar { it.uppercase() } else stage.detail,
+                percent = percent,
+            )
+        }
+    }
+    androidx.compose.foundation.layout.BoxWithConstraints(
         modifier = Modifier
             .fillMaxSize()
             .background(colors.background)
             .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) {},
     ) {
+    // A 4:3, square or short screen has no room for the side-by-side layout: one column, the spinner
+    // beside the title, and the tip and Cancel along the bottom where they stay in view.
+    if (maxWidth < 600.dp || maxHeight < 400.dp) Column(modifier = Modifier.fillMaxSize().padding(horizontal = 24.dp, vertical = 20.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+            Box(contentAlignment = Alignment.Center, modifier = Modifier.size(48.dp)) {
+                if (!ended) CircularProgressIndicator(color = pal.signal, trackColor = pal.line, strokeWidth = 2.dp, modifier = Modifier.fillMaxSize())
+                Image(painterResource(R.drawable.logo), contentDescription = null, modifier = Modifier.size(32.dp))
+            }
+            Text(
+                if (ended) "The session ended" else title, fontSize = 22.sp, fontWeight = FontWeight.Bold, color = colors.onBackground,
+                maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f),
+            )
+            if (!ended && elapsed.isNotEmpty()) Text(elapsed.substringBefore(' '), fontSize = 14.sp, color = colors.onSurfaceVariant)
+        }
+        Column(modifier = Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()).padding(top = 12.dp)) {
+            if (ended) Text(step, color = colors.onSurfaceVariant, fontSize = 14.sp)
+            else stageRows()
+        }
+        if (!ended && (hint.isNotEmpty() || onCancel != null)) {
+            Box(Modifier.fillMaxWidth().height(1.dp).background(pal.line))
+            Row(
+                verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp),
+                modifier = Modifier.fillMaxWidth().padding(top = 10.dp),
+            ) {
+                Text(hint, fontSize = 13.sp, lineHeight = 18.sp, color = colors.onSurfaceVariant, maxLines = 3, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                if (onCancel != null) SecondaryButton("Cancel", compact = true, onClick = onCancel)
+            }
+        }
+    } else Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxSize()) {
         Box(contentAlignment = Alignment.Center, modifier = Modifier.weight(0.4f).fillMaxHeight()) {
             if (!ended) CircularProgressIndicator(
                 color = pal.signal, trackColor = pal.line, strokeWidth = 2.dp, modifier = Modifier.size(150.dp),
@@ -227,14 +265,7 @@ fun LoadingOverlay(
                 } else {
                     if (elapsed.isNotEmpty()) Text(elapsed, color = colors.onSurfaceVariant, fontSize = 13.sp, modifier = Modifier.padding(top = 2.dp))
                     Spacer(Modifier.height(16.dp))
-                    stages.forEachIndexed { i, stage ->
-                        StageRow(
-                            label = stage.label,
-                            state = when { i < active -> StageMark.DONE; i == active -> StageMark.ACTIVE; else -> StageMark.PENDING },
-                            detail = if (percent >= 0 || readableStep(step)) step.replaceFirstChar { it.uppercase() } else stage.detail,
-                            percent = percent,
-                        )
-                    }
+                    stageRows()
                     if (hint.isNotEmpty()) Text(
                         hint, color = colors.onSurfaceVariant, fontSize = 14.sp,
                         modifier = Modifier.padding(top = 16.dp).widthIn(max = 480.dp)
@@ -245,6 +276,7 @@ fun LoadingOverlay(
                 }
             }
         }
+    }
     }
 }
 
