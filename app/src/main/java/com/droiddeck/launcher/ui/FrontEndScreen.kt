@@ -684,17 +684,13 @@ private fun Pane(
     onOpenDeveloperOptions: () -> Unit, onRequestWirelessAdb: (Boolean) -> Unit,
 ) {
     Box(modifier = modifier) {
-        val wash: Pair<File?, Float> = when {
-            s.pageKey != null && page != null -> null to 250f
-            selected == "steam" -> null to 268f
-            selected == "desktop" -> null to 200f
-            selected.startsWith("app:") -> s.steamGames.firstOrNull { "app:${it.appId}" == selected }.let { it?.art to hueOf(it?.name ?: "") }
-            selected.startsWith("emu:") -> null to hueOf(selected)
-            selected.startsWith("rom:") -> romFor(s, selected).let { it?.second?.art to hueOf(it?.second?.name ?: "") }
-            selected == "android-apps" -> null to hueOf("android-apps")
-            else -> null to 268f
+        val backdropArt: File? = when {
+            s.pageKey != null && page != null -> null
+            selected.startsWith("app:") -> s.steamGames.firstOrNull { "app:${it.appId}" == selected }?.art
+            selected.startsWith("rom:") -> romFor(s, selected)?.second?.art
+            else -> null
         }
-        Backdrop(wash)
+        Backdrop(backdropArt)
         AnimatedContent(
             targetState = if (page != null && s.pageKey != null) s.pageKey else selected,
             transitionSpec = {
@@ -711,17 +707,18 @@ private fun Pane(
 }
 
 @Composable
-private fun Backdrop(wash: Pair<File?, Float>) {
+private fun Backdrop(art: File?) {
     val colors = MaterialTheme.colorScheme
-    Crossfade(targetState = wash, animationSpec = Motion.tw(700), label = "backdrop") { (art, hue) ->
-        val canBlur = Build.VERSION.SDK_INT >= 31
-        Box(modifier = Modifier.fillMaxSize().alpha(if (canBlur) 0.28f else 0.18f).then(if (canBlur) Modifier.blur(70.dp) else Modifier)) {
-            if (art != null && canBlur) {
-                AsyncImage(model = art, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize().graphicsLayer { scaleX = 1.5f; scaleY = 1.5f })
-            } else {
-                Box(modifier = Modifier.fillMaxSize().background(Brush.radialGradient(listOf(tint(hue, 0.8f, 0.55f), Color.Transparent), center = Offset(0.3f, 0.3f), radius = 900f)))
-                Box(modifier = Modifier.fillMaxSize().background(Brush.radialGradient(listOf(tint((hue + 60f) % 360f, 0.7f, 0.45f), Color.Transparent), center = Offset(1600f, 1400f), radius = 900f)))
+    val pal = LocalPalette.current
+    Crossfade(targetState = art, animationSpec = Motion.tw(700), label = "backdrop") { a ->
+        // A game's own art, blurred, where it has some; otherwise the plain ground with one quiet
+        // glow of the theme's signal colour - a colour per title hash read as noise.
+        if (a != null && Build.VERSION.SDK_INT >= 31) {
+            Box(modifier = Modifier.fillMaxSize().alpha(0.26f).blur(70.dp)) {
+                AsyncImage(model = a, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize().graphicsLayer { scaleX = 1.5f; scaleY = 1.5f })
             }
+        } else {
+            Box(modifier = Modifier.fillMaxSize().background(Brush.radialGradient(listOf(pal.signal.copy(alpha = 0.07f), Color.Transparent), center = Offset.Zero, radius = 1400f)))
         }
     }
     Spacer(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color.Transparent, colors.background.copy(alpha = 0.35f)))))
