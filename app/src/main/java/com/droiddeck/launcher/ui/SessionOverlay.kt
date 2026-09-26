@@ -5,6 +5,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.offset
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.DesktopWindows
+import androidx.compose.material.icons.outlined.Layers
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.SportsEsports
 import androidx.compose.material3.Icon
@@ -91,18 +92,19 @@ import androidx.compose.ui.text.style.TextOverflow
 import com.droiddeck.launcher.core.FexPreset
 import com.droiddeck.launcher.gpu.FrameGen
 import com.droiddeck.launcher.session.SessionPrefs
+import com.droiddeck.launcher.session.ComponentsManager
 import com.droiddeck.launcher.input.SecondScreenDisplay
 import com.droiddeck.launcher.input.SecondScreenMode
 import kotlinx.coroutines.flow.collect
 
-private val drawerPageTitles = listOf("Display", "Controls", "Settings")
+private val drawerPageTitles = listOf("Display", "Controls", "Components", "Settings")
 /** One icon per drawer page, in page order (QAM-style tabs). */
-private val drawerPageIcons = listOf(Icons.Outlined.DesktopWindows, Icons.Outlined.SportsEsports, Icons.Outlined.Settings)
-private val drawerPageEntries = listOf("hud", "touch", "suspend")
+private val drawerPageIcons = listOf(Icons.Outlined.DesktopWindows, Icons.Outlined.SportsEsports, Icons.Outlined.Layers, Icons.Outlined.Settings)
+private val drawerPageEntries = listOf("hud", "touch", "cmp-proton", "suspend")
 
 private class DrawerFocus {
     private val requesters = HashMap<String, FocusRequester>()
-    private val last = arrayOfNulls<String>(3)
+    private val last = arrayOfNulls<String>(DRAWER_PAGES)
     var focused by mutableStateOf<String?>(null)
         private set
 
@@ -240,6 +242,12 @@ class DrawerActions(
     val onShareLogs: () -> Unit,
     val onStop: () -> Unit,
     val onClose: () -> Unit,
+    /** Components tab: every Proton with what it uses; null until first read. */
+    val components: ComponentsManager.Snapshot? = null,
+    /** Re-reads the Protons (and runs swaps that waited for a game to close). */
+    val onComponentsRefresh: () -> Unit = {},
+    /** Swaps [value] ("orig:<build>" or a stored package file) into a Proton's component. */
+    val onComponentSwap: (protonId: String, comp: String, value: String) -> Unit = { _, _, _ -> },
 )
 
 @OptIn(ExperimentalComposeUiApi::class)
@@ -251,7 +259,7 @@ fun SessionDrawer(open: Boolean, page: Int, controllerActive: Boolean, onPageCha
     var androidAppsExpanded by rememberSaveable { mutableStateOf(false) }
     var appToChooseDisplay by remember { mutableStateOf<HomeApp.LaunchableApp?>(null) }
     var confirmStop by remember { mutableStateOf(false) }
-    val pageScroll = remember { List(3) { ScrollState(0) } }
+    val pageScroll = remember { List(DRAWER_PAGES) { ScrollState(0) } }
     val veil by animateFloatAsState(if (open) 1f else 0f, Motion.tw(260), label = "veil")
     val focus = remember { DrawerFocus() }
     val inputModeManager = LocalInputModeManager.current
@@ -261,6 +269,7 @@ fun SessionDrawer(open: Boolean, page: Int, controllerActive: Boolean, onPageCha
     }
     BackHandler(enabled = open && confirmStop) { confirmStop = false }
     LaunchedEffect(page) { host.open = null; appToChooseDisplay = null }
+    LaunchedEffect(open, page) { if (open && page == DRAWER_PAGE_COMPONENTS) a.onComponentsRefresh() }
     LaunchedEffect(open, controllerActive) {
         if (open && !controllerActive) focusManager.clearFocus(force = true)
     }
@@ -393,11 +402,11 @@ fun SessionDrawer(open: Boolean, page: Int, controllerActive: Boolean, onPageCha
                     modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
                 ) {
                     DrawerOutlineButton("LB  ‹", modifier = Modifier.height(48.dp).then(focus.track(page, "prev"))) {
-                        host.open = null; onPageChange((page + 2) % 3)
+                        host.open = null; onPageChange((page + DRAWER_PAGES - 1) % DRAWER_PAGES)
                     }
                     DrawerPageTabs(page = page, modifier = Modifier.weight(1f)) { index -> host.open = null; onPageChange(index) }
                     DrawerOutlineButton("›  RB", modifier = Modifier.height(48.dp).then(focus.track(page, "next"))) {
-                        host.open = null; onPageChange((page + 1) % 3)
+                        host.open = null; onPageChange((page + 1) % DRAWER_PAGES)
                     }
                 }
 
@@ -430,6 +439,7 @@ fun SessionDrawer(open: Boolean, page: Int, controllerActive: Boolean, onPageCha
                                 }
                             }
                         }
+                        DRAWER_PAGE_COMPONENTS -> ComponentsDrawerPage(host, a) { key -> focus.track(page, key) }
                         1 -> {
                             SettingsGroup("Controls") {
                                 ChoiceRow(host, "touch", "Touch", null,
@@ -674,6 +684,75 @@ private fun DrawerPageTabs(page: Int, modifier: Modifier = Modifier, onSelect: (
             }
         }
     }
+}
+
+/** Display, Controls, Components, Settings. */
+const val DRAWER_PAGES = 4
+private const val DRAWER_PAGE_COMPONENTS = 2
+
+/**
+ * The drawer's Components tab: quick swaps between what is already installed, per Proton. A swap
+ * into the Proton a running game uses waits until that game closes; downloading, importing and
+ * deleting stay on the Components page in the app.
+ */
+@Composable
+private fun ComponentsDrawerPage(host: MenuHost, a: DrawerActions, track: (String) -> Modifier) {
+    val colors = MaterialTheme.colorScheme
+    val snap = a.components
+    if (snap == null) {
+        SettingsGroup("Components") {
+            Text("Reading the Protons…", fontSize = 13.sp, color = colors.onSurfaceVariant, modifier = Modifier.padding(14.dp))
+        }
+        return
+    }
+    val running = snap.protons.filter { it.inUseByGame }
+    var pick by rememberSaveable { mutableStateOf<String?>(null) }
+    val view = snap.protons.firstOrNull { it.proton.id == pick } ?: running.firstOrNull() ?: snap.protons.firstOrNull()
+    SettingsGroup("Running now") {
+        if (running.isEmpty()) SettingsRow("No game is running on a Proton", "Swaps apply the next time a game starts.") {}
+        else for (r in running) {
+            val c = r.components
+            SettingsRow(
+                r.proton.name,
+                ComponentsManager.COMPONENTS.joinToString(" · ") { "${ComponentsManager.LABEL[it]} ${c.getValue(it).inUse}" },
+            ) {}
+        }
+    }
+    if (view == null) {
+        SettingsGroup("Components") {
+            Text("No Proton is installed yet.", fontSize = 13.sp, color = colors.onSurfaceVariant, modifier = Modifier.padding(14.dp))
+        }
+        return
+    }
+    val p = view.proton
+    SettingsGroup("Components") {
+        ChoiceRow(
+            host, "cmp-proton", "Proton", p.version + if (view.inUseByGame) " · in use by the running game" else "",
+            snap.protons.map { it.proton.id to it.proton.name }, p.id,
+            chipModifier = track("cmp-proton"), onPick = { pick = it },
+        )
+        val build = ComponentsManager.safeName(p.version)
+        for (comp in ComponentsManager.COMPONENTS) {
+            val st = view.components.getValue(comp)
+            val originals = view.originals.filter { it.comp == comp }
+            val options = originals.map { "orig:${it.protonVersion}" to (if (it.protonVersion == build) "Original" else "Original · ${it.protonVersion}") } +
+                snap.packages.filter { it.comp == comp }.map { it.file to it.version }
+            if (options.isEmpty()) continue
+            val current = st.activeFile ?: "orig:$build"
+            ChoiceRow(
+                host, "cmp-$comp", ComponentsManager.LABEL.getValue(comp),
+                st.queued?.let { "Next: $it · after the game closes" } ?: st.inUse,
+                options, current,
+                note = if (view.inUseByGame) "A game is running on this Proton: the change waits until it closes." else "Applies the next time a game starts.",
+                chipModifier = track("cmp-$comp"),
+                onPick = { v -> if (v != current || st.queued != null) a.onComponentSwap(p.id, comp, v) },
+            )
+        }
+    }
+    Text(
+        "Downloads, importing and deleting are on the Components page in the app.",
+        fontSize = 12.sp, color = colors.onSurfaceVariant, modifier = Modifier.padding(horizontal = 4.dp, vertical = 12.dp),
+    )
 }
 
 /** The tab row's measure, from the approved mock: side tabs at half size, a little faded. */
