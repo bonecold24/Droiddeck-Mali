@@ -81,6 +81,12 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.outlined.Apps
+import androidx.compose.material.icons.outlined.DesktopWindows
+import androidx.compose.material.icons.outlined.Layers
+import androidx.compose.material.icons.outlined.SportsEsports
+import androidx.compose.material.icons.outlined.Tune
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
@@ -289,7 +295,6 @@ private fun Modifier.shine(trigger: Boolean, strength: Float = 0.22f): Modifier 
  */
 private class FrontFocus {
     val rail = HashMap<String, FocusRequester>()
-    val menuToggle = FocusRequester()
     val primary = FocusRequester()
     var primaryAttached by mutableStateOf(0)
     var focusedRail by mutableStateOf<String?>(null)
@@ -357,12 +362,12 @@ fun FrontEndScreen(s: FrontEndState, a: FrontEndActions, page: (@Composable () -
 @Composable
 private fun FrontEndScreenBody(s: FrontEndState, a: FrontEndActions, page: (@Composable () -> Unit)?, frontFocus: FrontFocus) {
     var selected by rememberSaveable { mutableStateOf("steam") }
-    var navOpen by rememberSaveable { mutableStateOf(false) }
     var showWirelessAdbFix by rememberSaveable { mutableStateOf(false) }
     var showDeveloperDisplayChoice by rememberSaveable { mutableStateOf(false) }
     var wirelessAdbDesiredEnabled by rememberSaveable { mutableStateOf(false) }
     var appToChooseDisplay by remember { mutableStateOf<HomeApp.LaunchableApp?>(null) }
     val colors = MaterialTheme.colorScheme
+    val pal = LocalPalette.current
     val ctx = LocalContext.current
     val phantomGateVisible = s.showPhantomGate && PhantomProcessLimit.blocksSteam(s.phantomProcessStatus)
     val processSettingsPageVisible = phantomGateVisible || showWirelessAdbFix || showDeveloperDisplayChoice
@@ -398,37 +403,38 @@ private fun FrontEndScreenBody(s: FrontEndState, a: FrontEndActions, page: (@Com
     LaunchedEffect(s.isHomeApp) { if (!s.isHomeApp && selected == "android-apps") selected = "steam" }
     remember { Motion.scale = Settings.Global.getFloat(ctx.contentResolver, Settings.Global.ANIMATOR_DURATION_SCALE, 1f); true }
 
+    val railSelection = when {
+        s.pageKey == "performance" || s.pageKey == "protons" || s.pageKey == "controller-mapping" -> "setup"
+        s.pageKey?.startsWith("settings:steam") == true -> "steam"
+        s.pageKey?.startsWith("settings:") == true -> "desktop"
+        selected.startsWith("app:") -> "steam"
+        selected.startsWith("emu:") || selected.startsWith("rom:") -> "desktop"
+        else -> s.pageKey ?: selected
+    }
+    // Bumped each time a rail item is picked, so a controller moves on into the new page.
+    var railPicks by remember { mutableStateOf(0) }
+    val onRailSelect: (String) -> Unit = { key ->
+        // Components is a full page like Protons or Performance, opened over the current rail
+        // selection rather than replacing it.
+        if (key == "components") a.onComponents()
+        else {
+            if (s.pageKey != null) a.onPageBack()
+            selected = key
+        }
+        railPicks++
+    }
+    val inputModeManager = LocalInputModeManager.current
+    val window = LocalWindowInfo.current
     var anyFocused by remember { mutableStateOf(false) }
-    BoxWithConstraints(modifier = Modifier.fillMaxSize().background(colors.background).systemBarsPadding().onFocusChanged { anyFocused = it.hasFocus }) {
-        val drawerWidth = minOf(280.dp, maxWidth * 0.82f)
-        val railSelection = when {
-            s.pageKey == "performance" || s.pageKey == "protons" || s.pageKey == "controller-mapping" -> "setup"
-            s.pageKey?.startsWith("settings:steam") == true -> "steam"
-            s.pageKey?.startsWith("settings:") == true -> "desktop"
-            selected.startsWith("app:") -> "steam"
-            selected.startsWith("emu:") || selected.startsWith("rom:") -> "desktop"
-            else -> s.pageKey ?: selected
-        }
-        val onRailSelect: (String) -> Unit = { key ->
-            // Components is a full page like Protons or Performance, opened over the current rail
-            // selection rather than replacing it.
-            if (key == "components") a.onComponents()
-            else {
-                if (s.pageKey != null) a.onPageBack()
-                selected = key
-            }
-            navOpen = false
-        }
-        // Start controllers on the current page's main action; the rail is initially collapsed.
-        val window = LocalWindowInfo.current
-        val inputMode = LocalInputModeManager.current
+    Box(modifier = Modifier.fillMaxSize().background(colors.background).systemBarsPadding().onFocusChanged { anyFocused = it.hasFocus }) {
+        // Start controllers on the current page's main action, else on the rail.
         LaunchedEffect(processSettingsPageVisible) {
             if (processSettingsPageVisible) return@LaunchedEffect
             snapshotFlow { window.isWindowFocused }.first { it }
             repeat(20) {
                 if (anyFocused) return@LaunchedEffect
-                if (inputMode.inputMode != InputMode.Keyboard) inputMode.requestInputMode(InputMode.Keyboard)
-                val target = if (frontFocus.primaryAttached > 0) frontFocus.primary else frontFocus.menuToggle
+                if (inputModeManager.inputMode != InputMode.Keyboard) inputModeManager.requestInputMode(InputMode.Keyboard)
+                val target = if (frontFocus.primaryAttached > 0) frontFocus.primary else frontFocus.railFor(railSelection)
                 runCatching { target.requestFocus() }
                 kotlinx.coroutines.delay(100)
             }
@@ -436,39 +442,33 @@ private fun FrontEndScreenBody(s: FrontEndState, a: FrontEndActions, page: (@Com
         // A tile or button that opens a page goes away with the page it was on, and focus with it;
         // the pad then had nothing to move from (a press landed back on the rail's first item). So
         // once the new page is in, a controller lands on its main button.
-        val inputModeManager = LocalInputModeManager.current
         LaunchedEffect(selected, s.pageKey, processSettingsPageVisible) {
             if (processSettingsPageVisible) return@LaunchedEffect
             kotlinx.coroutines.delay(450)
             if (!anyFocused && inputModeManager.inputMode == InputMode.Keyboard) runCatching {
                 if (frontFocus.primaryAttached > 0) frontFocus.primary.requestFocus()
-                else frontFocus.menuToggle.requestFocus()
+                else frontFocus.railFor(railSelection).requestFocus()
             }
         }
-        LaunchedEffect(navOpen, railSelection, processSettingsPageVisible) {
-            if (processSettingsPageVisible) return@LaunchedEffect
-            if (navOpen) {
-                frontFocus.focusedRail = null
-                repeat(12) {
-                    if (inputModeManager.inputMode != InputMode.Keyboard) inputModeManager.requestInputMode(InputMode.Keyboard)
-                    runCatching { frontFocus.railFor(railSelection).requestFocus() }
-                    if (frontFocus.focusedRail == railSelection) return@LaunchedEffect
-                    kotlinx.coroutines.delay(80)
-                }
-            } else {
-                kotlinx.coroutines.delay(120)
-                if (!anyFocused && inputModeManager.inputMode == InputMode.Keyboard) runCatching {
-                    if (frontFocus.primaryAttached > 0) frontFocus.paneEntry().requestFocus()
-                    else frontFocus.menuToggle.requestFocus()
-                }
+        // A rail item picked with a controller moves on into its page, once the page is in.
+        LaunchedEffect(railPicks) {
+            if (railPicks == 0 || processSettingsPageVisible) return@LaunchedEffect
+            kotlinx.coroutines.delay(450)
+            if (inputModeManager.inputMode == InputMode.Keyboard && frontFocus.primaryAttached > 0) runCatching {
+                frontFocus.paneEntry().requestFocus()
             }
         }
         val paneFocus = Modifier
             .focusProperties { enter = { frontFocus.paneEntry() } }
             .focusGroup()
-        val content: @Composable (Modifier) -> Unit = { m ->
+        val railFocus = Modifier
+            .focusProperties { enter = { frontFocus.railFor(railSelection) } }
+            .focusGroup()
+        Row(modifier = Modifier.fillMaxSize()) {
+            SideRail(s, railSelection, onRailSelect, a, railFocus.fillMaxHeight())
+            Box(Modifier.width(1.dp).fillMaxHeight().background(pal.line))
             Pane(
-                s, selected, a, page, m.then(paneFocus), { selected = it },
+                s, selected, a, page, Modifier.weight(1f).fillMaxHeight().then(paneFocus), { selected = it },
                 onAndroidAppClick = { app ->
                     if (s.secondScreenDisplays.isEmpty()) a.onAndroidApp(app, null)
                     else appToChooseDisplay = app
@@ -476,34 +476,6 @@ private fun FrontEndScreenBody(s: FrontEndState, a: FrontEndActions, page: (@Com
                 onOpenDeveloperOptions = requestDeveloperOptions,
                 onRequestWirelessAdb = requestWirelessAdbFix,
             )
-        }
-        Box(modifier = Modifier.fillMaxSize()) {
-            Column(modifier = Modifier.fillMaxSize()) {
-                LauncherTopBar(frontFocus.menuToggle) { navOpen = true }
-                content(Modifier.weight(1f).fillMaxWidth())
-            }
-            AnimatedVisibility(
-                visible = navOpen,
-                modifier = Modifier.fillMaxSize(),
-                enter = fadeIn(Motion.tw(150)) + slideInHorizontally(Motion.tw(210)) { -it / 5 },
-                exit = fadeOut(Motion.tw(130)) + slideOutHorizontally(Motion.tw(170)) { -it / 5 },
-            ) {
-                Box(modifier = Modifier.fillMaxSize()) {
-                    Box(
-                        modifier = Modifier.fillMaxSize()
-                            .background(Color.Black.copy(alpha = 0.62f))
-                            .clickable { navOpen = false },
-                    )
-                    Box(
-                        modifier = Modifier.align(Alignment.CenterStart)
-                            .width(drawerWidth).fillMaxHeight()
-                            .focusProperties { exit = { FocusRequester.Cancel } }
-                            .focusGroup().zIndex(1f),
-                    ) {
-                        Rail(s, railSelection, onRailSelect, a, Modifier.fillMaxSize()) { navOpen = false }
-                    }
-                }
-            }
         }
 
         appToChooseDisplay?.let { app ->
@@ -561,215 +533,146 @@ private fun FrontEndScreenBody(s: FrontEndState, a: FrontEndActions, page: (@Com
             )
         }
     }
-    BackHandler(enabled = navOpen && !processSettingsPageVisible) { navOpen = false }
     val hasBackTarget = (s.pageKey != null && page != null) ||
         ((s.pageKey == null || page == null) &&
             (selected.startsWith("app:") || selected.startsWith("emu:") || selected.startsWith("rom:")))
-    BackHandler(enabled = !processSettingsPageVisible && !navOpen && !hasBackTarget) { navOpen = true }
-}
-
-
-@Composable
-private fun LauncherTopBar(
-    menuRequester: FocusRequester,
-    onMenu: () -> Unit,
-) {
-    val colors = MaterialTheme.colorScheme
-    val palette = LocalPalette.current
-    var menuFocused by remember { mutableStateOf(false) }
-    Row(
-        modifier = Modifier.fillMaxWidth().height(48.dp).background(colors.surface),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        IconButton(
-            onClick = onMenu,
-            modifier = Modifier.size(48.dp).focusRequester(menuRequester)
-                .onFocusChanged { menuFocused = it.isFocused }
-                .border(2.dp, if (menuFocused) palette.signal else Color.Transparent, Shape10),
-        ) {
-            Icon(Icons.Filled.Menu, contentDescription = "Open navigation", tint = colors.onBackground)
-        }
-        Image(painterResource(R.drawable.logo), null, modifier = Modifier.size(24.dp))
-        Spacer(Modifier.width(8.dp))
-        Text("DroidDeck", fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = colors.onBackground)
-        Spacer(Modifier.weight(1f))
+    // At the top of a section, Back goes to the rail - the launcher itself is never backed out of.
+    BackHandler(enabled = !processSettingsPageVisible && !hasBackTarget) {
+        if (inputModeManager.inputMode != InputMode.Keyboard) inputModeManager.requestInputMode(InputMode.Keyboard)
+        runCatching { frontFocus.railFor(railSelection).requestFocus() }
     }
 }
 
 
+private val Shape14 = RoundedCornerShape(14.dp)
+private val AttentionAmber = Color(0xFFFFB547)
+
+/**
+ * The launcher's sections, always on screen down the left edge: the app is landscape-only, so the
+ * width a hamburger menu would save is better spent keeping every section one press away.
+ */
 @Composable
-private fun Rail(
+private fun SideRail(
     s: FrontEndState, selected: String,
-    onSelect: (String) -> Unit, a: FrontEndActions, modifier: Modifier, onDismiss: () -> Unit,
+    onSelect: (String) -> Unit, a: FrontEndActions, modifier: Modifier,
 ) {
     val colors = MaterialTheme.colorScheme
+    val compact = LocalConfiguration.current.screenHeightDp < 420
+    val setupNeedsAttention = !s.ready || (s.available != null && s.available != s.installed) ||
+        PhantomProcessLimit.blocksSteam(s.phantomProcessStatus)
     Column(
-        modifier = modifier.background(colors.surface).padding(horizontal = 10.dp, vertical = 12.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = modifier.width(92.dp).background(colors.surface).padding(vertical = if (compact) 8.dp else 12.dp),
     ) {
+        Image(painterResource(R.drawable.logo), contentDescription = "DroidDeck", modifier = Modifier.size(if (compact) 28.dp else 34.dp))
+        Spacer(Modifier.height(if (compact) 6.dp else 12.dp))
         Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(4.dp),
             modifier = Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()),
-            verticalArrangement = Arrangement.spacedBy(2.dp),
         ) {
-            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(start = 8.dp, bottom = 10.dp)) {
-                Image(painterResource(R.drawable.logo), null, modifier = Modifier.size(30.dp))
-                Spacer(Modifier.width(10.dp))
-                Column(modifier = Modifier.weight(1f)) {
-                    Text("DroidDeck", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = colors.onBackground)
-                    val status = when {
-                        s.busy -> if (s.percent >= 0) "${s.stage} ${s.percent}%" else s.stage
-                        !s.ready -> "runtime not installed"
-                        s.available != null && s.available != s.installed -> "runtime update available"
-                        else -> null
-                    }
-                    if (status != null) Text(status, fontSize = 11.sp, color = colors.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                }
-                IconButton(onClick = onDismiss, modifier = Modifier.size(40.dp)) {
-                    Icon(Icons.Filled.Close, contentDescription = "Close navigation", tint = colors.onSurfaceVariant)
-                }
-            }
-            AnimatedVisibility(s.busy, enter = expandVertically() + fadeIn(), exit = shrinkVertically() + fadeOut()) {
-                LinearProgressIndicator(modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp))
-            }
-
-            var lastRunning by remember { mutableStateOf("") }
-            if (s.running != null) lastRunning = s.running
-            AnimatedVisibility(
-                s.running != null,
-                enter = expandVertically(Motion.sp(0.75f)) + fadeIn(Motion.tw(300)) + slideInVertically(Motion.sp(0.6f)) { -it / 2 },
-                exit = shrinkVertically(Motion.tw(220)) + fadeOut(Motion.tw(180)),
-            ) { RunningTile(lastRunning, a.onResume) }
-
-            val pal = LocalPalette.current
-            var navOrigin by remember { mutableStateOf(Offset.Zero) }
-            val positions = remember { mutableStateMapOf<String, Rect>() }
-            Box(modifier = Modifier.fillMaxWidth().onGloballyPositioned { val o = it.positionInRoot(); if (o != navOrigin) navOrigin = o }) {
-                val target = positions[selected]?.translate(-navOrigin)
-                val y by animateFloatAsState(target?.top ?: 0f, Motion.sp(0.72f, Spring.StiffnessLow), label = "indY")
-                val x by animateFloatAsState(target?.left ?: 0f, Motion.sp(0.9f), label = "indX")
-                val h by animateFloatAsState(target?.height ?: 0f, Motion.sp(1f, Spring.StiffnessMediumLow), label = "indH")
-                val w by animateFloatAsState(target?.width ?: 0f, Motion.sp(1f, Spring.StiffnessMediumLow), label = "indW")
-                val alpha by animateFloatAsState(if (target != null) 1f else 0f, Motion.tw(250), label = "indA")
-                val density = LocalDensity.current
-                Box(
-                    modifier = Modifier
-                        .offset { IntOffset(x.roundToInt(), y.roundToInt()) }
-                        .width(with(density) { w.toDp() }).height(with(density) { h.toDp() })
-                        .alpha(alpha)
-                        .graphicsLayer { shadowElevation = 6.dp.toPx(); shape = Shape10; clip = false; ambientShadowColor = pal.signal; spotShadowColor = pal.signal }
-                        .clip(Shape10)
-                        .background(Brush.linearGradient(listOf(colors.primary, pal.primary2))),
-                )
-                val register: (String, LayoutCoordinates) -> Unit = { key, c ->
-                    val o = c.positionInRoot(); val r = Rect(o.x, o.y, o.x + c.size.width, o.y + c.size.height)
-                    if (positions[key] != r) positions[key] = r
-                }
-                val unregister: (String) -> Unit = { positions.remove(it) }
-                Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                    if (s.isHomeApp) {
-                        NavItem("Android apps", "android-apps", selected == "android-apps", count = s.androidApps.size,
-                            register = register, unregister = unregister) { onSelect("android-apps") }
-                    }
-                    NavItem("Steam", "steam", selected == "steam", count = s.steamGames.size, register = register, unregister = unregister) { onSelect("steam") }
-                    NavItem("Desktop", "desktop", selected == "desktop", count = s.emulators.count { it.installed }, register = register, unregister = unregister) { onSelect("desktop") }
-                    NavItem("Components", "components", selected == "components", register = register, unregister = unregister) { onSelect("components") }
-                    NavItem("Setup", "setup", selected == "setup", register = register, unregister = unregister) { onSelect("setup") }
-                    Spacer(Modifier.height(6.dp))
-                }
-            }
-
-            val creditsSrc = remember { MutableInteractionSource() }
-            val creditsHot = rememberHot(creditsSrc)
-            Text(
-                "credits", fontSize = 11.sp, color = if (creditsHot) LocalPalette.current.signal else colors.onSurfaceVariant,
-                modifier = Modifier.clip(Shape10)
-                    .border(2.dp, if (creditsHot) LocalPalette.current.signal else Color.Transparent, Shape10)
-                    .hoverable(creditsSrc).clickable(interactionSource = creditsSrc, indication = null, onClick = a.onCredits)
-                    .padding(horizontal = 10.dp, vertical = 8.dp),
-            )
+            if (s.isHomeApp) RailItem("Apps", Icons.Outlined.Apps, "android-apps", selected == "android-apps", compact) { onSelect("android-apps") }
+            RailItem("Steam", Icons.Outlined.SportsEsports, "steam", selected == "steam", compact) { onSelect("steam") }
+            RailItem("Desktop", Icons.Outlined.DesktopWindows, "desktop", selected == "desktop", compact) { onSelect("desktop") }
+            RailItem("Components", Icons.Outlined.Layers, "components", selected == "components", compact) { onSelect("components") }
+            RailItem("Setup", Icons.Outlined.Tune, "setup", selected == "setup", compact, badge = setupNeedsAttention) { onSelect("setup") }
         }
+        AnimatedVisibility(s.busy, enter = expandVertically() + fadeIn(), exit = shrinkVertically() + fadeOut()) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(bottom = 8.dp)) {
+                if (s.percent >= 0) LinearProgressIndicator(progress = { s.percent / 100f }, modifier = Modifier.width(60.dp))
+                else LinearProgressIndicator(modifier = Modifier.width(60.dp))
+                Text(if (s.percent >= 0) "${s.percent}%" else "Working", fontSize = 12.sp, color = colors.onSurfaceVariant, modifier = Modifier.padding(top = 4.dp))
+            }
+        }
+        var lastRunning by remember { mutableStateOf("") }
+        if (s.running != null) lastRunning = s.running
+        AnimatedVisibility(
+            s.running != null,
+            enter = expandVertically(Motion.sp(0.75f)) + fadeIn(Motion.tw(300)),
+            exit = shrinkVertically(Motion.tw(220)) + fadeOut(Motion.tw(180)),
+        ) { ResumeRailItem(lastRunning, compact, a.onResume) }
     }
 }
 
 @Composable
-private fun RunningTile(name: String, onResume: () -> Unit) {
+private fun RailItem(
+    label: String, icon: ImageVector, key: String, current: Boolean, compact: Boolean,
+    badge: Boolean = false, onClick: () -> Unit,
+) {
     val colors = MaterialTheme.colorScheme
     val pal = LocalPalette.current
-    val src = remember { MutableInteractionSource() }
-    val hot = src.collectIsFocusedAsState().value || src.collectIsHoveredAsState().value
-    val shift by animateFloatAsState(if (hot) 3f else 0f, Motion.sp(0.6f), label = "runShift")
-    val pulse = rememberInfiniteTransition(label = "pulse")
-    val ring by pulse.animateFloat(0.4f, 1.6f, infiniteRepeatable(tween(1600, easing = Motion.Ease), RepeatMode.Restart), label = "ring")
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        modifier = Modifier.fillMaxWidth().padding(bottom = 6.dp)
-            .graphicsLayer { translationX = shift.dp.toPx() }
-            .clip(Shape12)
-            .background(Brush.linearGradient(listOf(pal.signal.copy(alpha = 0.22f), pal.signal.copy(alpha = 0.06f))))
-            .border(1.dp, pal.signal.copy(alpha = if (hot) 0.8f else 0.35f), Shape12)
-            .hoverable(src).clickable(interactionSource = src, indication = LocalIndication.current, onClick = onResume)
-            .padding(horizontal = 10.dp, vertical = 9.dp),
-    ) {
-        Box(modifier = Modifier.size(14.dp), contentAlignment = Alignment.Center) {
-            Box(modifier = Modifier.size(14.dp).graphicsLayer { scaleX = ring; scaleY = ring; alpha = (1.6f - ring) / 1.2f }.border(1.5.dp, pal.good, CircleShape))
-            Box(modifier = Modifier.size(7.dp).clip(CircleShape).background(pal.good))
-        }
-        Spacer(Modifier.width(8.dp))
-        Column(modifier = Modifier.weight(1f)) {
-            Text(name, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = colors.onBackground, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Text("Resume", fontSize = 11.sp, color = colors.onSurfaceVariant)
-        }
-    }
-}
-
-@Composable
-private fun NavItem(
-    label: String, key: String, current: Boolean, small: Boolean = false, tiny: Boolean = false, muted: Boolean = false,
-    caret: Boolean? = null, count: Int? = null, value: String? = null, i: Int = 0,
-    register: ((String, LayoutCoordinates) -> Unit)? = null, unregister: ((String) -> Unit)? = null, onClick: () -> Unit,
-) {
-    val colors = MaterialTheme.colorScheme
+    val frontFocus = LocalFrontFocus.current
     val src = remember { MutableInteractionSource() }
     val focused by src.collectIsFocusedAsState()
-    val frontFocus = if (register != null && key != "x") LocalFrontFocus.current else null
-    val railRequester = frontFocus?.railFor(key)
+    val hovered by src.collectIsHoveredAsState()
+    val pressed by src.collectIsPressedAsState()
     if (frontFocus != null) LaunchedEffect(focused) {
         if (focused) frontFocus.focusedRail = key
         else if (frontFocus.focusedRail == key) frontFocus.focusedRail = null
     }
-    val hovered by src.collectIsHoveredAsState()
-    val pressed by src.collectIsPressedAsState()
-    val fg by animateColorAsState(if (current) colors.onPrimary else if (muted) colors.onSurfaceVariant else colors.onBackground, Motion.tw(280), label = "navFg")
-    val sub by animateColorAsState(if (current) colors.onPrimary else colors.onSurfaceVariant, Motion.tw(280), label = "navSub")
-    val ring by animateColorAsState(if (focused) LocalPalette.current.signal else Color.Transparent, Motion.tw(180), label = "navRing")
-    val scale by animateFloatAsState(if (pressed) 0.98f else 1f, Motion.sp(0.5f, Spring.StiffnessMedium), label = "navScale")
-    val rot by animateFloatAsState(if (caret == true) 90f else 0f, Motion.sp(0.6f), label = "caret")
-    if (key != "x") DisposableEffect(key) { onDispose { unregister?.invoke(key) } }
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        modifier = Modifier.fillMaxWidth()
-            .then(if (register != null && key != "x") Modifier.onGloballyPositioned { register(key, it) } else Modifier)
-            .then(if (railRequester != null) Modifier.focusRequester(railRequester) else Modifier)
-            .then(if (small && i >= 0 && register != null) Modifier.staggerIn(i) else Modifier)
+    val fg by animateColorAsState(
+        if (current) pal.signal else if (focused || hovered) colors.onBackground else colors.onSurfaceVariant,
+        Motion.tw(220), label = "railFg",
+    )
+    val fill by animateColorAsState(
+        if (current) pal.signal.copy(alpha = 0.14f) else if (focused || hovered) Color.White.copy(alpha = 0.05f) else Color.Transparent,
+        Motion.tw(220), label = "railFill",
+    )
+    val ring by animateColorAsState(if (focused) pal.signal else Color.Transparent, Motion.tw(180), label = "railRing")
+    val scale by animateFloatAsState(if (pressed) 0.95f else 1f, Motion.sp(0.5f, Spring.StiffnessMedium), label = "railScale")
+    Box(
+        contentAlignment = Alignment.Center,
+        modifier = Modifier
+            .then(if (frontFocus != null) Modifier.focusRequester(frontFocus.railFor(key)) else Modifier)
             .graphicsLayer { scaleX = scale; scaleY = scale }
-            .clip(Shape10)
-            .background(if (hovered && !current) Color.White.copy(alpha = 0.04f) else if (current && hovered) Color.White.copy(alpha = 0.08f) else Color.Transparent)
-            .border(1.5.dp, ring, Shape10)
-            .hoverable(src).clickable(interactionSource = src, indication = LocalIndication.current, onClick = onClick)
-            .padding(horizontal = 10.dp, vertical = if (small) 7.dp else 9.dp),
+            .size(width = 80.dp, height = if (compact) 52.dp else 60.dp)
+            .clip(Shape14)
+            .background(fill)
+            .border(2.dp, ring, Shape14)
+            .hoverable(src)
+            .clickable(interactionSource = src, indication = LocalIndication.current, role = Role.Tab, onClick = onClick),
     ) {
-        if (caret != null) {
-            Text("›", fontSize = 16.sp, color = sub, modifier = Modifier.width(14.dp).rotate(rot))
+        Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(3.dp)) {
+            Icon(icon, contentDescription = null, tint = fg, modifier = Modifier.size(if (compact) 20.dp else 22.dp))
+            Text(label, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = fg, maxLines = 1, softWrap = false)
         }
-        Text(
-            label, fontSize = if (tiny) 13.sp else if (small) 14.sp else 15.sp,
-            fontWeight = if (tiny) FontWeight.Normal else if (small) FontWeight.Medium else FontWeight.SemiBold,
-            color = fg, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f),
+        if (badge) Box(
+            modifier = Modifier.align(Alignment.TopEnd).padding(top = 8.dp, end = 18.dp)
+                .size(8.dp).clip(CircleShape).background(AttentionAmber),
         )
-        if (value != null) Text(value, fontSize = 11.sp, color = colors.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
-        if (count != null) Text(
-            count.toString(), fontSize = 11.sp, color = sub,
-            modifier = Modifier.clip(RoundedCornerShape(99.dp)).background(if (current) colors.onPrimary.copy(alpha = 0.16f) else colors.background).padding(horizontal = 7.dp, vertical = 2.dp),
-        )
+    }
+}
+
+/** The running session, one press from anywhere in the launcher. */
+@Composable
+private fun ResumeRailItem(name: String, compact: Boolean, onResume: () -> Unit) {
+    val colors = MaterialTheme.colorScheme
+    val pal = LocalPalette.current
+    val src = remember { MutableInteractionSource() }
+    val focused by src.collectIsFocusedAsState()
+    val hovered by src.collectIsHoveredAsState()
+    val pulse = rememberInfiniteTransition(label = "pulse")
+    val ringScale by pulse.animateFloat(0.4f, 1.6f, infiniteRepeatable(tween(1600, easing = Motion.Ease), RepeatMode.Restart), label = "ring")
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(3.dp),
+        modifier = Modifier
+            .padding(top = 6.dp)
+            .width(80.dp)
+            .clip(Shape14)
+            .background(pal.good.copy(alpha = if (focused || hovered) 0.20f else 0.12f))
+            .border(2.dp, if (focused) pal.signal else Color.Transparent, Shape14)
+            .hoverable(src)
+            .clickable(interactionSource = src, indication = LocalIndication.current, role = Role.Button, onClick = onResume)
+            .semantics { contentDescription = "Resume $name" }
+            .padding(vertical = if (compact) 6.dp else 9.dp, horizontal = 4.dp),
+    ) {
+        Box(modifier = Modifier.size(14.dp), contentAlignment = Alignment.Center) {
+            Box(modifier = Modifier.size(14.dp).graphicsLayer { scaleX = ringScale; scaleY = ringScale; alpha = (1.6f - ringScale) / 1.2f }.border(1.5.dp, pal.good, CircleShape))
+            Box(modifier = Modifier.size(7.dp).clip(CircleShape).background(pal.good))
+        }
+        Text("Resume", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = colors.onBackground, maxLines = 1, softWrap = false)
+        Text(name, fontSize = 12.sp, color = colors.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
 }
 
