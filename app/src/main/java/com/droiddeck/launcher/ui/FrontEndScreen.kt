@@ -136,6 +136,8 @@ import com.droiddeck.launcher.HomeApp
 import com.droiddeck.launcher.frontend.Library
 import com.droiddeck.launcher.gpu.FrameGen
 import com.droiddeck.launcher.input.SecondScreenDisplay
+import com.droiddeck.launcher.core.PhantomProcessLimit
+import com.droiddeck.launcher.core.PhantomProcessStatus
 import com.droiddeck.launcher.session.SessionPrefs
 import java.io.File
 import kotlin.math.roundToInt
@@ -176,6 +178,8 @@ class FrontEndState(
     val buildLabel: String = "local",
     val oscMode: String = SessionPrefs.OSC_AUTO,
     val controller: com.droiddeck.launcher.input.ControllerPrefs.Settings? = null,
+    val phantomProcessStatus: PhantomProcessStatus = PhantomProcessStatus.NOT_APPLICABLE,
+    val showPhantomGate: Boolean = false,
 )
 
 class FrontEndActions(
@@ -209,6 +213,14 @@ class FrontEndActions(
     val onAndroidApp: (HomeApp.LaunchableApp, Int?) -> Unit = { _, _ -> },
     val onBackActionsInverted: (Boolean) -> Unit = {},
     val onCheckLatestBuild: () -> Unit = {},
+    val onRefreshPhantomStatus: () -> Unit = {},
+    val onOpenDeveloperOptions: (Int?) -> Unit = {},
+    val onWirelessAdbPair: (String, Int, String, (String?) -> Unit) -> Unit = { _, _, _, done -> done("Wireless ADB is unavailable") },
+    val onFindWirelessAdbPort: (String, (Int?) -> Unit) -> Unit = { _, done -> done(null) },
+    val onWirelessAdbApply: (String, Int, Boolean, (String?) -> Unit) -> Unit = { _, _, _, done -> done("Wireless ADB is unavailable") },
+    val onSetPhantomProcessLimit: (Boolean, (String?) -> Unit) -> Unit = { _, done -> done("Wireless ADB is unavailable") },
+    val onCopyPhantomCommand: (Boolean) -> Unit = {},
+    val onDismissPhantomGate: () -> Unit = {},
     val controller: ControllerActions? = null,
 )
 
@@ -345,14 +357,35 @@ fun FrontEndScreen(s: FrontEndState, a: FrontEndActions, page: (@Composable () -
 private fun FrontEndScreenBody(s: FrontEndState, a: FrontEndActions, page: (@Composable () -> Unit)?, frontFocus: FrontFocus) {
     var selected by rememberSaveable { mutableStateOf("steam") }
     var navOpen by rememberSaveable { mutableStateOf(false) }
+    var showWirelessAdbFix by rememberSaveable { mutableStateOf(false) }
+    var showDeveloperDisplayChoice by rememberSaveable { mutableStateOf(false) }
+    var wirelessAdbDesiredEnabled by rememberSaveable { mutableStateOf(false) }
     var appToChooseDisplay by remember { mutableStateOf<HomeApp.LaunchableApp?>(null) }
     val colors = MaterialTheme.colorScheme
     val ctx = LocalContext.current
-    BackHandler(enabled = s.pageKey != null && page != null) { a.onPageBack() }
+    val phantomGateVisible = s.showPhantomGate && PhantomProcessLimit.blocksSteam(s.phantomProcessStatus)
+    val processSettingsPageVisible = phantomGateVisible || showWirelessAdbFix || showDeveloperDisplayChoice
+    val requestDeveloperOptions = {
+        if (s.secondScreenDisplays.isEmpty()) a.onOpenDeveloperOptions(null)
+        else showDeveloperDisplayChoice = true
+    }
+    val requestWirelessAdbFix: (Boolean) -> Unit = { enabled ->
+        wirelessAdbDesiredEnabled = enabled
+        showWirelessAdbFix = true
+    }
+    LaunchedEffect(s.showPhantomGate, s.phantomProcessStatus) {
+        if (phantomGateVisible) {
+            while (true) {
+                kotlinx.coroutines.delay(2_000)
+                a.onRefreshPhantomStatus()
+            }
+        }
+    }
+    BackHandler(enabled = !processSettingsPageVisible && s.pageKey != null && page != null) { a.onPageBack() }
     // Back (and B) from a game or an emulator steps out one level, as its "‹" link does, instead
     // of leaving the app: a game -> its emulator (or Steam), an emulator -> Desktop.
     BackHandler(
-        enabled = (s.pageKey == null || page == null) &&
+        enabled = !processSettingsPageVisible && (s.pageKey == null || page == null) &&
             (selected.startsWith("app:") || selected.startsWith("emu:") || selected.startsWith("rom:")),
     ) {
         selected = when {
@@ -388,7 +421,8 @@ private fun FrontEndScreenBody(s: FrontEndState, a: FrontEndActions, page: (@Com
         // Start controllers on the current page's main action; the rail is initially collapsed.
         val window = LocalWindowInfo.current
         val inputMode = LocalInputModeManager.current
-        LaunchedEffect(Unit) {
+        LaunchedEffect(processSettingsPageVisible) {
+            if (processSettingsPageVisible) return@LaunchedEffect
             snapshotFlow { window.isWindowFocused }.first { it }
             repeat(20) {
                 if (anyFocused) return@LaunchedEffect
@@ -402,14 +436,16 @@ private fun FrontEndScreenBody(s: FrontEndState, a: FrontEndActions, page: (@Com
         // the pad then had nothing to move from (a press landed back on the rail's first item). So
         // once the new page is in, a controller lands on its main button.
         val inputModeManager = LocalInputModeManager.current
-        LaunchedEffect(selected, s.pageKey) {
+        LaunchedEffect(selected, s.pageKey, processSettingsPageVisible) {
+            if (processSettingsPageVisible) return@LaunchedEffect
             kotlinx.coroutines.delay(450)
             if (!anyFocused && inputModeManager.inputMode == InputMode.Keyboard) runCatching {
                 if (frontFocus.primaryAttached > 0) frontFocus.primary.requestFocus()
                 else frontFocus.menuToggle.requestFocus()
             }
         }
-        LaunchedEffect(navOpen, railSelection) {
+        LaunchedEffect(navOpen, railSelection, processSettingsPageVisible) {
+            if (processSettingsPageVisible) return@LaunchedEffect
             if (navOpen) {
                 frontFocus.focusedRail = null
                 repeat(12) {
@@ -430,10 +466,15 @@ private fun FrontEndScreenBody(s: FrontEndState, a: FrontEndActions, page: (@Com
             .focusProperties { enter = { frontFocus.paneEntry() } }
             .focusGroup()
         val content: @Composable (Modifier) -> Unit = { m ->
-            Pane(s, selected, a, page, m.then(paneFocus), { selected = it }) { app ->
-                if (s.secondScreenDisplays.isEmpty()) a.onAndroidApp(app, null)
-                else appToChooseDisplay = app
-            }
+            Pane(
+                s, selected, a, page, m.then(paneFocus), { selected = it },
+                onAndroidAppClick = { app ->
+                    if (s.secondScreenDisplays.isEmpty()) a.onAndroidApp(app, null)
+                    else appToChooseDisplay = app
+                },
+                onOpenDeveloperOptions = requestDeveloperOptions,
+                onRequestWirelessAdb = requestWirelessAdbFix,
+            )
         }
         Box(modifier = Modifier.fillMaxSize()) {
             Column(modifier = Modifier.fillMaxSize()) {
@@ -480,12 +521,50 @@ private fun FrontEndScreenBody(s: FrontEndState, a: FrontEndActions, page: (@Com
                 onDismiss = { appToChooseDisplay = null },
             )
         }
+        if (phantomGateVisible && !showWirelessAdbFix) {
+            Box(Modifier.fillMaxSize().background(colors.background)) {
+                PhantomProcessGatePage(
+                    status = s.phantomProcessStatus,
+                    onDismiss = a.onDismissPhantomGate,
+                    onOpenDeveloperOptions = requestDeveloperOptions,
+                    onSetUpWirelessAdb = { requestWirelessAdbFix(false) },
+                )
+            }
+        }
+        if (showWirelessAdbFix) {
+            Box(Modifier.fillMaxSize().background(colors.background)) {
+                WirelessAdbFixPage(
+                    onBack = { showWirelessAdbFix = false },
+                    desiredEnabled = wirelessAdbDesiredEnabled,
+                    onOpenDeveloperOptions = requestDeveloperOptions,
+                    onPair = a.onWirelessAdbPair,
+                    onFindConnectPort = a.onFindWirelessAdbPort,
+                    onApply = a.onWirelessAdbApply,
+                )
+            }
+        }
+        if (showDeveloperDisplayChoice) {
+            DeveloperDisplayChoiceDialog(
+                displays = s.secondScreenDisplays.map { display ->
+                    display.id to if (s.secondScreenDisplays.size == 1) "Bottom screen" else display.label
+                },
+                onMainScreen = {
+                    showDeveloperDisplayChoice = false
+                    a.onOpenDeveloperOptions(null)
+                },
+                onSecondaryScreen = { displayId ->
+                    showDeveloperDisplayChoice = false
+                    a.onOpenDeveloperOptions(displayId)
+                },
+                onDismiss = { showDeveloperDisplayChoice = false },
+            )
+        }
     }
-    BackHandler(enabled = navOpen) { navOpen = false }
+    BackHandler(enabled = navOpen && !processSettingsPageVisible) { navOpen = false }
     val hasBackTarget = (s.pageKey != null && page != null) ||
         ((s.pageKey == null || page == null) &&
             (selected.startsWith("app:") || selected.startsWith("emu:") || selected.startsWith("rom:")))
-    BackHandler(enabled = !navOpen && !hasBackTarget) { navOpen = true }
+    BackHandler(enabled = !processSettingsPageVisible && !navOpen && !hasBackTarget) { navOpen = true }
 }
 
 
@@ -699,6 +778,7 @@ private fun NavItem(
 private fun Pane(
     s: FrontEndState, selected: String, a: FrontEndActions, page: (@Composable () -> Unit)?, modifier: Modifier,
     onSelect: (String) -> Unit, onAndroidAppClick: (HomeApp.LaunchableApp) -> Unit,
+    onOpenDeveloperOptions: () -> Unit, onRequestWirelessAdb: (Boolean) -> Unit,
 ) {
     Box(modifier = modifier) {
         val wash: Pair<File?, Float> = when {
@@ -720,7 +800,10 @@ private fun Pane(
                     .apply { targetContentZIndex = 1f }
             },
             label = "pane",
-        ) { key -> if (page != null && key == s.pageKey) page() else Content(s, key, a, Modifier.fillMaxSize(), onSelect, onAndroidAppClick) }
+        ) { key ->
+            if (page != null && key == s.pageKey) page()
+            else Content(s, key, a, Modifier.fillMaxSize(), onSelect, onAndroidAppClick, onOpenDeveloperOptions, onRequestWirelessAdb)
+        }
     }
 }
 
@@ -793,6 +876,7 @@ private fun romFor(s: FrontEndState, selected: String): Pair<Library.Emulator, L
 private fun Content(
     s: FrontEndState, selected: String, a: FrontEndActions, modifier: Modifier,
     onSelect: (String) -> Unit, onAndroidAppClick: (HomeApp.LaunchableApp) -> Unit,
+    onOpenDeveloperOptions: () -> Unit, onRequestWirelessAdb: (Boolean) -> Unit,
 ) {
     val colors = MaterialTheme.colorScheme
     val detailPosterWidth = if (LocalConfiguration.current.screenHeightDp < 600) 72.dp else 120.dp
@@ -876,7 +960,7 @@ private fun Content(
                     ArtGrid(s.emulators.map { e -> Tile(e.name, if (e.installed) (if (e.id == "retroarch") null else "${e.games.size} game${if (e.games.size == 1) "" else "s"}") else "Select to install", null, "emu:${e.id}", e.iconRes, dim = !e.installed) { onSelect("emu:${e.id}") } })
                 }
             }
-            selected == "setup" -> SetupPanel(s, a)
+            selected == "setup" -> SetupPanel(s, a, onOpenDeveloperOptions, onRequestWirelessAdb)
             selected.startsWith("emu:") -> {
                 val e = s.emulators.firstOrNull { "emu:${it.id}" == selected }
                 if (e == null) Note("Not installed.") else {
@@ -995,8 +1079,28 @@ private fun Content(
 }
 
 @Composable
-private fun SetupPanel(s: FrontEndState, a: FrontEndActions) {
+private fun SetupPanel(
+    s: FrontEndState,
+    a: FrontEndActions,
+    onOpenDeveloperOptions: () -> Unit,
+    onRequestWirelessAdb: (Boolean) -> Unit,
+) {
     val host = rememberMenuHost()
+    var processLimitBusy by remember { mutableStateOf(false) }
+    var processLimitMessage by remember { mutableStateOf<String?>(null) }
+    val setProcessLimit: (Boolean) -> Unit = { enabled ->
+        processLimitBusy = true
+        processLimitMessage = null
+        a.onSetPhantomProcessLimit(enabled) { error ->
+            processLimitBusy = false
+            if (error == null) {
+                a.onRefreshPhantomStatus()
+            } else {
+                processLimitMessage = "Check the Wireless debugging IP address & Port, or pair again if Android removed this device."
+                onRequestWirelessAdb(enabled)
+            }
+        }
+    }
     val runtime = when {
         s.busy -> "Working…"
         !s.ready -> "Install"
@@ -1007,6 +1111,34 @@ private fun SetupPanel(s: FrontEndState, a: FrontEndActions) {
         Column(modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(bottom = 24.dp)) {
                 Rise(0) { Eyebrow("Setup") }
                 Rise(1) { Title("Setup") }
+                SettingsGroup("Android process limit") {
+                    Text(
+                        PhantomProcessLimit.title(s.phantomProcessStatus),
+                        fontWeight = FontWeight.SemiBold,
+                        color = if (PhantomProcessLimit.blocksSteam(s.phantomProcessStatus)) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onBackground,
+                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
+                    )
+                    Text(
+                        "Enabling restores Android’s child-process limit. Disabling it is recommended for Steam sessions.",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(horizontal = 14.dp),
+                    )
+                    if (s.phantomProcessStatus != PhantomProcessStatus.NOT_APPLICABLE) {
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp)) {
+                            SecondaryButton("Enable limit", enabled = !processLimitBusy && s.phantomProcessStatus != PhantomProcessStatus.ENABLED) { setProcessLimit(true) }
+                            SecondaryButton("Disable limit", enabled = !processLimitBusy && s.phantomProcessStatus != PhantomProcessStatus.DISABLED) { setProcessLimit(false) }
+                        }
+                        if (processLimitBusy) LinearProgressIndicator(modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 8.dp))
+                        processLimitMessage?.let { Text(it, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(horizontal = 14.dp, vertical = 4.dp)) }
+                    }
+                    Text(PhantomProcessLimit.instructions(s.phantomProcessStatus), color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(horizontal = 14.dp, vertical = 4.dp))
+                    Text(PhantomProcessLimit.ADB_COMMAND, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(horizontal = 14.dp, vertical = 4.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp)) {
+                        SecondaryButton("Developer options", onClick = onOpenDeveloperOptions)
+                        SecondaryButton("Check again", onClick = a.onRefreshPhantomStatus)
+                        SecondaryButton("Copy ADB", onClick = { a.onCopyPhantomCommand(false) })
+                    }
+                }
                 SettingsGroup("Launcher tools") {
                     ActionRow("Files", "Browse and manage files", "Open", a.onFiles)
                     ActionRow("Compatibility tools", "Install ARM64 Proton builds", "Manage", a.onProtons)
@@ -1120,7 +1252,13 @@ private fun Chip(t: String, ok: Boolean) {
 private fun rememberHot(src: MutableInteractionSource): Boolean = src.collectIsFocusedAsState().value || src.collectIsHoveredAsState().value
 
 @Composable
-private fun PrimaryButton(text: String, enabled: Boolean = true, main: Boolean = false, onClick: () -> Unit) {
+internal fun PrimaryButton(
+    text: String,
+    enabled: Boolean = true,
+    main: Boolean = false,
+    compact: Boolean = false,
+    onClick: () -> Unit,
+) {
     val colors = MaterialTheme.colorScheme
     val pal = LocalPalette.current
     // The page's main button is where the pane is entered from the rail.
@@ -1147,14 +1285,14 @@ private fun PrimaryButton(text: String, enabled: Boolean = true, main: Boolean =
             // controller is on it, as the other controls are.
             .border(2.dp, if (hot) pal.signal else Color.Transparent, Shape12)
             .hoverable(src).clickable(interactionSource = src, indication = LocalIndication.current, enabled = enabled, onClick = onClick)
-            .padding(horizontal = 18.dp, vertical = 11.dp),
+            .padding(horizontal = if (compact) 10.dp else 18.dp, vertical = if (compact) 7.dp else 11.dp),
     ) {
-        Text(text, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 0.5.sp, color = if (enabled) colors.onPrimary else colors.onSurfaceVariant, maxLines = 1)
+        Text(text, fontSize = if (compact) 12.sp else 15.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 0.5.sp, color = if (enabled) colors.onPrimary else colors.onSurfaceVariant, maxLines = 1)
     }
 }
 
 @Composable
-internal fun SecondaryButton(text: String, enabled: Boolean = true, onClick: () -> Unit) {
+internal fun SecondaryButton(text: String, enabled: Boolean = true, compact: Boolean = false, onClick: () -> Unit) {
     val colors = MaterialTheme.colorScheme
     val src = remember { MutableInteractionSource() }
     val hot = rememberHot(src) && enabled
@@ -1168,8 +1306,8 @@ internal fun SecondaryButton(text: String, enabled: Boolean = true, onClick: () 
             .alpha(if (enabled) 1f else 0.5f)
             .hoverable(src).clickable(interactionSource = src, indication = LocalIndication.current, enabled = enabled, onClick = onClick)
             .controllerConfirm(enabled = enabled, onClick = onClick)
-            .padding(horizontal = 16.dp, vertical = 11.dp),
-    ) { Text(text, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 0.5.sp, color = colors.onBackground, maxLines = 1) }
+            .padding(horizontal = if (compact) 10.dp else 16.dp, vertical = if (compact) 7.dp else 11.dp),
+    ) { Text(text, fontSize = if (compact) 12.sp else 15.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 0.5.sp, color = colors.onBackground, maxLines = 1) }
 }
 
 @Composable

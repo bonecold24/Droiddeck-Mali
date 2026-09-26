@@ -121,6 +121,10 @@ android {
     }
 
     packagingOptions {
+        resources {
+            // Kadb's Bouncy Castle artifacts repeat the same multi-release JAR manifest.
+            excludes += ['META-INF/versions/9/OSGI-INF/MANIFEST.MF']
+        }
         jniLibs {
             // The PulseAudio daemon is executed from the native library directory and its
             // libraries are read out of the apk by the class loader: both want the old,
@@ -160,6 +164,9 @@ dependencies {
     implementation 'androidx.compose.material:material-icons-extended'
     implementation 'io.coil-kt:coil-compose:2.6.0'
     implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3'
+    // ADB-over-Wi-Fi pairing and authenticated shell client. Users still approve pairing from
+    // Android's Wireless debugging screen; DroidDeck only runs its one fixed setting command.
+    implementation 'com.flyfishxu:kadb-android:1.2.1'
     // Android terminal view/emulator used by the in-session secondary-display Linux shell.
     implementation 'com.termux.termux-app:terminal-view:0.118.0'
 }
