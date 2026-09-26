@@ -1228,7 +1228,7 @@ internal fun Eyebrow(t: String) {
     LaunchedEffect(Unit) { rule.animateTo(1f, Motion.tw(600, 120)) }
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         Box(modifier = Modifier.width(18.dp).height(1.5.dp).graphicsLayer { scaleX = rule.value; transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0f, 0.5f) }.background(pal.signal))
-        Text(t.uppercase(), fontSize = 11.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 2.sp, color = pal.signal)
+        Text(t.uppercase(), fontSize = 12.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 1.5.sp, color = pal.signal)
     }
 }
 @Composable internal fun Title(t: String) = Text(t, fontSize = 26.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onBackground, modifier = Modifier.padding(top = 4.dp, bottom = 4.dp))
@@ -1237,8 +1237,8 @@ internal fun Eyebrow(t: String) {
 private fun SectionTitle(t: String, detail: String?) {
     val colors = MaterialTheme.colorScheme
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth().padding(top = 16.dp, bottom = 8.dp)) {
-        Text(t.uppercase(), fontSize = 11.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 2.sp, color = colors.onSurfaceVariant)
-        if (detail != null) Text(detail, fontSize = 11.sp, color = colors.onBackground)
+        Text(t.uppercase(), fontSize = 12.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 1.5.sp, color = colors.onSurfaceVariant)
+        if (detail != null) Text(detail, fontSize = 12.sp, color = colors.onBackground)
         Box(modifier = Modifier.weight(1f).height(1.dp).background(LocalPalette.current.line))
     }
 }
@@ -1250,7 +1250,7 @@ private fun Chip(t: String, ok: Boolean) {
     val colors = MaterialTheme.colorScheme
     val pal = LocalPalette.current
     Text(
-        t, fontSize = 11.sp, color = if (ok) pal.good else colors.onSurfaceVariant,
+        t, fontSize = 12.sp, color = if (ok) pal.good else colors.onSurfaceVariant,
         modifier = Modifier.clip(RoundedCornerShape(99.dp)).background(colors.surfaceVariant).border(1.dp, if (ok) pal.good.copy(alpha = 0.3f) else pal.line, RoundedCornerShape(99.dp)).padding(horizontal = 9.dp, vertical = 4.dp),
     )
 }
@@ -1343,7 +1343,7 @@ private fun Poster(art: File?, name: String, modifier: Modifier) {
             .clip(Shape12).background(artBrush(hueOf(name))),
     ) {
         if (art != null) CoverImage(art, Modifier.fillMaxSize())
-        else Text(name, fontSize = 11.sp, fontWeight = FontWeight.Bold, color = colors.onBackground, modifier = Modifier.align(Alignment.BottomStart).padding(8.dp), maxLines = 3, overflow = TextOverflow.Ellipsis)
+        else Text(name, fontSize = 12.sp, fontWeight = FontWeight.Bold, color = colors.onBackground, modifier = Modifier.align(Alignment.BottomStart).padding(8.dp), maxLines = 3, overflow = TextOverflow.Ellipsis)
     }
 }
 
@@ -1409,9 +1409,9 @@ private fun GameTile(t: Tile, wide: Boolean, square: Boolean, src: MutableIntera
             }
         }
         if (t.showFooter) {
-            Column(modifier = Modifier.padding(horizontal = 6.dp, vertical = 5.dp)) {
-                Text(t.title, fontSize = 10.sp, fontWeight = FontWeight.SemiBold, color = colors.onBackground, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                if (t.sub != null) Text(t.sub, fontSize = 8.sp, color = colors.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Column(modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp)) {
+                Text(t.title, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = colors.onBackground, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                if (t.sub != null) Text(t.sub, fontSize = 12.sp, color = colors.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
         }
     }
@@ -1456,7 +1456,7 @@ private fun Art(art: File?, iconRes: Int?, label: String, modifier: Modifier, wi
             iconBitmap != null -> Image(bitmap = iconBitmap.asImageBitmap(), contentDescription = null, contentScale = ContentScale.Fit, modifier = Modifier.fillMaxSize().padding(8.dp))
             else -> {
                 Spacer(Modifier.fillMaxSize().background(Brush.verticalGradient(0f to Color.Transparent, 0.45f to Color.Transparent, 1f to Color.Black.copy(alpha = 0.55f))))
-                Text(label, fontSize = 9.sp, fontWeight = FontWeight.Bold, color = Color.White.copy(alpha = 0.92f), modifier = Modifier.align(Alignment.BottomStart).padding(5.dp), maxLines = 3, overflow = TextOverflow.Ellipsis)
+                Text(label, fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color.White.copy(alpha = 0.92f), modifier = Modifier.align(Alignment.BottomStart).padding(6.dp), maxLines = 3, overflow = TextOverflow.Ellipsis)
             }
         }
     }

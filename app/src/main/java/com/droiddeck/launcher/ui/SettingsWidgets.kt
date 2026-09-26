@@ -154,14 +154,14 @@ fun AnchoredMenu(open: Boolean, onDismiss: () -> Unit, title: String? = null, no
                     .padding(6.dp),
             ) {
                 if (title != null) Text(
-                    title.uppercase(), fontSize = 10.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 2.sp, color = colors.onSurfaceVariant,
+                    title.uppercase(), fontSize = 12.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 1.5.sp, color = colors.onSurfaceVariant,
                     modifier = Modifier.padding(start = 10.dp, top = 6.dp, bottom = 6.dp),
                 )
                 Column(Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState())) { content(firstItemFocus) }
                 if (note != null) {
                     Spacer(Modifier.height(4.dp))
                     Box(Modifier.fillMaxWidth().height(1.dp).background(pal.line))
-                    Text(note, fontSize = 11.sp, color = colors.onSurfaceVariant, modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp))
+                    Text(note, fontSize = 12.sp, color = colors.onSurfaceVariant, modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp))
                 }
             }
         }
@@ -198,7 +198,7 @@ fun MenuItem(
         }
         Column(modifier = Modifier.weight(1f)) {
             Text(label, fontSize = 13.5.sp, color = if (checked) pal.signal else colors.onBackground, maxLines = 2, overflow = TextOverflow.Ellipsis)
-            if (detail != null) Text(detail, fontSize = 11.sp, color = colors.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            if (detail != null) Text(detail, fontSize = 12.sp, color = colors.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis)
         }
         if (trailing != null) { Spacer(Modifier.width(8.dp)); trailing() }
     }
@@ -243,7 +243,7 @@ fun SettingsGroup(title: String, compact: Boolean = false, content: @Composable 
         horizontalArrangement = Arrangement.spacedBy(if (compact) 6.dp else 10.dp),
         modifier = Modifier.fillMaxWidth().padding(top = if (compact) 4.dp else 16.dp, bottom = if (compact) 3.dp else 6.dp),
     ) {
-        Text(title.uppercase(), fontSize = 11.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 2.sp, color = colors.onSurfaceVariant)
+        Text(title.uppercase(), fontSize = 12.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 1.5.sp, color = colors.onSurfaceVariant)
         Box(modifier = Modifier.weight(1f).height(1.dp).background(pal.line))
     }
     Column(modifier = Modifier.fillMaxWidth().clip(GroupShape).background(colors.surface).border(1.dp, pal.line, GroupShape)) { content() }
@@ -260,7 +260,7 @@ fun SettingsRow(label: String, hint: String?, highlighted: Boolean = false, cont
     ) {
         Column(modifier = Modifier.weight(1f).padding(end = 12.dp)) {
             Text(label, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = colors.onBackground)
-            if (hint != null) Text(hint, fontSize = 11.5.sp, color = colors.onSurfaceVariant, modifier = Modifier.padding(top = 2.dp))
+            if (hint != null) Text(hint, fontSize = 12.5.sp, color = colors.onSurfaceVariant, modifier = Modifier.padding(top = 2.dp))
         }
         control()
     }
@@ -391,7 +391,7 @@ fun SettingsPage(
             if (compactLayout) {
                 Text(
                     lede,
-                    fontSize = 11.sp,
+                    fontSize = 12.sp,
                     color = colors.onSurfaceVariant,
                     modifier = Modifier.padding(bottom = 3.dp),
                     maxLines = 1,
