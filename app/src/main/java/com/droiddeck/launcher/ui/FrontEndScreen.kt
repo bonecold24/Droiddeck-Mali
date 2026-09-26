@@ -198,6 +198,8 @@ class FrontEndActions(
     val onRuntime: () -> Unit,
     val onFrameGenPick: (engine: String, multiplier: Int) -> Unit,
     val onProtons: () -> Unit,
+    /** The Components page: FEX / DXVK / VKD3D-Proton per Proton. */
+    val onComponents: () -> Unit,
     val onPerformance: () -> Unit,
     val onRoms: () -> Unit,
     val onFiles: () -> Unit,
@@ -408,8 +410,13 @@ private fun FrontEndScreenBody(s: FrontEndState, a: FrontEndActions, page: (@Com
             else -> s.pageKey ?: selected
         }
         val onRailSelect: (String) -> Unit = { key ->
-            if (s.pageKey != null) a.onPageBack()
-            selected = key
+            // Components is a full page like Protons or Performance, opened over the current rail
+            // selection rather than replacing it.
+            if (key == "components") a.onComponents()
+            else {
+                if (s.pageKey != null) a.onPageBack()
+                selected = key
+            }
             navOpen = false
         }
         // Start controllers on the current page's main action; the rail is initially collapsed.
@@ -671,6 +678,7 @@ private fun Rail(
                     }
                     NavItem("Steam", "steam", selected == "steam", count = s.steamGames.size, register = register, unregister = unregister) { onSelect("steam") }
                     NavItem("Desktop", "desktop", selected == "desktop", count = s.emulators.count { it.installed }, register = register, unregister = unregister) { onSelect("desktop") }
+                    NavItem("Components", "components", selected == "components", register = register, unregister = unregister) { onSelect("components") }
                     NavItem("Setup", "setup", selected == "setup", register = register, unregister = unregister) { onSelect("setup") }
                     Spacer(Modifier.height(6.dp))
                 }

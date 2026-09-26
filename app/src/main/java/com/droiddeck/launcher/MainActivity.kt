@@ -15,6 +15,7 @@ import android.os.Handler
 import android.os.Looper
 import android.util.Log
 import android.view.Display
+import android.view.KeyEvent
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
@@ -37,6 +38,8 @@ import com.droiddeck.launcher.session.SessionService
 import com.droiddeck.launcher.ui.PackageRow
 import com.droiddeck.launcher.session.OfflineMode
 import com.droiddeck.launcher.session.ProtonExtras
+import com.droiddeck.launcher.session.ComponentsManager
+import com.droiddeck.launcher.ui.ComponentsPage
 import com.droiddeck.launcher.session.SessionLogShare
 import com.droiddeck.launcher.session.SessionPrefs
 import com.droiddeck.launcher.ui.ProtonPage
@@ -95,6 +98,16 @@ class MainActivity : ComponentActivity() {
     private var steamDeckMode by mutableStateOf(false)
     private var showCredits by mutableStateOf(false)
     private var showProtons by mutableStateOf(false)
+    // Components page: FEX / DXVK / VKD3D-Proton per Proton (ComponentsManager).
+    private var showComponents by mutableStateOf(false)
+    private var compSnapshot by mutableStateOf<ComponentsManager.Snapshot?>(null)
+    private var compCatalog by mutableStateOf<List<ComponentsManager.CatalogItem>>(emptyList())
+    private var compCatalogAt by mutableStateOf(0L)
+    private var compProton by mutableStateOf<String?>(null)
+    private var compComp by mutableStateOf("dxvk")
+    private var compChecking by mutableStateOf(false)
+    private var compBusy by mutableStateOf<String?>(null)
+    private var compDownloads by mutableStateOf<Map<String, Int>>(emptyMap())
     private var deckyInstalled by mutableStateOf<String?>(null)
     private var deckyReleases by mutableStateOf<List<DeckyManager.Release>>(emptyList())
     private var deckyChecking by mutableStateOf(false)
@@ -148,6 +161,9 @@ class MainActivity : ComponentActivity() {
 
     // The app's own picker (files/), once per kind of pick: the two driver lists validate
     // differently, and the reason a zip is refused names the list it belongs in.
+    private val pickComponent = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { r ->
+        if (r.resultCode == RESULT_OK) InAppFilePicker.pickedUri(r.data)?.let { importComponent(it) }
+    }
     private val pickLinuxDriver = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { r ->
         if (r.resultCode == RESULT_OK) InAppFilePicker.pickedUri(r.data)?.let { importDriver(it, linux = true) }
     }
@@ -256,6 +272,7 @@ class MainActivity : ComponentActivity() {
                     sm != null -> { { ModeSettingsHost(sm) } }
                     showPerformance -> { { PerformanceHost() } }
                     showProtons -> { { ProtonHost() } }
+                    showComponents -> { { ComponentsHost() } }
                     showMapping -> { { MappingHost() } }
                     else -> null
                 }
@@ -269,7 +286,7 @@ class MainActivity : ComponentActivity() {
                         steamGames = steamGames, emulators = emulatorList, running = runningLabel,
                         frameGenEngine = FrameGen.engine(this), frameGenMultiplier = FrameGen.multiplier(this),
                         lsfgReady = LsfgNative.isInstalled(this),
-                        pageKey = sm?.let { "settings:$it" } ?: if (showPerformance) "performance" else if (showProtons) "protons" else if (showMapping) "controller-mapping" else null,
+                        pageKey = sm?.let { "settings:$it" } ?: if (showPerformance) "performance" else if (showProtons) "protons" else if (showComponents) "components" else if (showMapping) "controller-mapping" else null,
                         theme = theme,
                         isHomeApp = homeAppSelected,
                         homeScreenEnabled = homeScreenEnabled,
@@ -326,7 +343,8 @@ class MainActivity : ComponentActivity() {
                             frameGenLabel = FrameGen.label(this)
                         },
                         onProtons = { openProtons() },
-                        onPerformance = { refreshCores(); showProtons = false; showMapping = false; showPerformance = true },
+                        onComponents = { openComponents() },
+                        onPerformance = { refreshCores(); showProtons = false; showComponents = false; showMapping = false; showPerformance = true },
                         onRoms = { showRoms = true },
                         onFiles = { startActivity(Intent(this, com.droiddeck.launcher.files.FileManagerActivity::class.java)) },
                         onLogs = {
@@ -347,7 +365,7 @@ class MainActivity : ComponentActivity() {
                             offline = OfflineMode.enabled(this)
                         },
                         onCredits = { showCredits = true },
-                        onPageBack = { settingsMode = null; showPerformance = false; showProtons = false; showMapping = false },
+                        onPageBack = { settingsMode = null; showPerformance = false; showProtons = false; showComponents = false; showMapping = false },
                         onTheme = { id -> SessionPrefs.setTheme(this, id); theme = id },
                         onHomeApp = { manageHomeApp() },
                         onHomeScreen = { on ->
@@ -415,7 +433,7 @@ class MainActivity : ComponentActivity() {
                             onAdaptiveSticks = { on -> ControllerPrefs.setAdaptiveSticks(this, on); refreshController() },
                             onEditLayout = { startActivity(Intent(this, ControllerEditorActivity::class.java)) },
                             onResetLayout = { ControllerPrefs.resetAllLayouts(this); refreshController() },
-                            onMapping = { settingsMode = null; showPerformance = false; showProtons = false; showMapping = true },
+                            onMapping = { settingsMode = null; showPerformance = false; showProtons = false; showComponents = false; showMapping = true },
                             onResetAll = { ControllerPrefs.resetAll(this); refreshController() },
                         ),
                     ),
@@ -472,9 +490,31 @@ class MainActivity : ComponentActivity() {
         }, "finish-abandoned").start()
     }
 
+    /** On the Components page the pad's LB / RB step through FEX, DXVK and VKD3D-Proton, wrapping around. */
+    override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        if (showComponents && (event.keyCode == KeyEvent.KEYCODE_BUTTON_L1 || event.keyCode == KeyEvent.KEYCODE_BUTTON_R1)) {
+            if (event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0) {
+                val all = ComponentsManager.COMPONENTS
+                val step = if (event.keyCode == KeyEvent.KEYCODE_BUTTON_R1) 1 else all.size - 1
+                compComp = all[(all.indexOf(compComp).coerceAtLeast(0) + step) % all.size]
+            }
+            return true
+        }
+        return super.dispatchKeyEvent(event)
+    }
+
     override fun onResume() {
         super.onResume()
         refreshPhantomStatus()
+        // Swaps queued while a game ran on that Proton go in once nothing uses it (usually the
+        // session has just ended). Cheap when nothing is queued.
+        if (!SessionState.running) Thread({
+            val applied = runCatching { ComponentsManager.applyQueued(this) }.getOrDefault(emptyList())
+            if (applied.isNotEmpty()) ui.post {
+                android.widget.Toast.makeText(this, "Applied: " + applied.joinToString(", "), android.widget.Toast.LENGTH_LONG).show()
+                if (showComponents) refreshComponents()
+            }
+        }, "components-queue").start()
         oscMode = SessionPrefs.oscMode(this)
         refreshController()
         refreshHomeAppState()
@@ -548,6 +588,7 @@ class MainActivity : ComponentActivity() {
     private fun openProtons() {
         settingsMode = null
         showPerformance = false
+        showComponents = false
         showMapping = false
         showProtons = true
         refreshProtons()
@@ -596,6 +637,106 @@ class MainActivity : ComponentActivity() {
             onPick = { id, target -> ControllerPrefs.setTarget(this, id, target); refreshController() },
             onReset = { ControllerPrefs.resetMapping(this); refreshController() },
             onBack = { showMapping = false },
+        )
+    }
+
+    private fun openComponents() {
+        settingsMode = null
+        showPerformance = false
+        showProtons = false
+        showMapping = false
+        showComponents = true
+        refreshComponents(snapshotFirst = true)
+    }
+
+    /** Reads the Protons (and on first open saves their originals) off the UI thread; the Nightlies list comes from its cache. */
+    private fun refreshComponents(snapshotFirst: Boolean = false) {
+        Thread({
+            if (snapshotFirst) runCatching { ComponentsManager.snapshotAll(this) }
+            runCatching { ComponentsManager.applyQueued(this) }
+            val snap = runCatching { ComponentsManager.snapshot(this) }.onFailure { Log.w(TAG, "components", it) }.getOrNull()
+            val cat = runCatching { ComponentsManager.catalog(this, false) }.getOrNull()
+            ui.post {
+                compSnapshot = snap ?: ComponentsManager.Snapshot(emptyList(), emptyList())
+                if (cat != null && cat.fetchedAt > 0) { compCatalog = cat.items; compCatalogAt = cat.fetchedAt }
+                if (compProton == null || snap?.protons?.none { it.proton.id == compProton } == true) compProton = snap?.protons?.firstOrNull()?.proton?.id
+            }
+        }, "components").start()
+    }
+
+    private fun componentAction(label: String, work: () -> String) {
+        if (compBusy != null) return
+        compBusy = label
+        Thread({
+            val message = runCatching(work).getOrElse { e -> "$label failed: ${e.message ?: e.javaClass.simpleName}" }
+            ui.post {
+                compBusy = null
+                android.widget.Toast.makeText(this, message, android.widget.Toast.LENGTH_LONG).show()
+                refreshComponents()
+            }
+        }, "components-action").start()
+    }
+
+    private fun refreshComponentCatalog() {
+        if (compChecking) return
+        compChecking = true
+        Thread({
+            val cat = runCatching { ComponentsManager.catalog(this, true) }.getOrNull()
+            ui.post {
+                compChecking = false
+                if (cat == null || cat.items.isEmpty()) android.widget.Toast.makeText(this, "The Nightlies could not be reached", android.widget.Toast.LENGTH_LONG).show()
+                else { compCatalog = cat.items; compCatalogAt = cat.fetchedAt }
+            }
+        }, "components-catalog").start()
+    }
+
+    private fun downloadComponent(item: ComponentsManager.CatalogItem) {
+        if (compDownloads.containsKey(item.file)) return
+        compDownloads = compDownloads + (item.file to -1)
+        Thread({
+            val message = runCatching {
+                val pkg = ComponentsManager.download(this, item) { pc -> ui.post { if (compDownloads.containsKey(item.file)) compDownloads = compDownloads + (item.file to pc) } }
+                "Stored ${pkg.version}"
+            }.getOrElse { e -> "Download failed: ${e.message ?: e.javaClass.simpleName}" }
+            ui.post {
+                compDownloads = compDownloads - item.file
+                android.widget.Toast.makeText(this, message, android.widget.Toast.LENGTH_SHORT).show()
+                refreshComponents()
+            }
+        }, "components-download").start()
+    }
+
+    private fun importComponent(uri: Uri) {
+        val name = displayNameOf(uri) ?: "imported.wcp"
+        componentAction("Importing") {
+            val tmp = File(cacheDir, "component-import.wcp")
+            contentResolver.openInputStream(uri)?.use { input -> tmp.outputStream().use { input.copyTo(it) } } ?: error("cannot read the file")
+            try { "Imported ${ComponentsManager.importPackage(this, tmp, name).version}" } finally { tmp.delete() }
+        }
+    }
+
+    @Composable
+    private fun ComponentsHost() {
+        ComponentsPage(
+            snapshot = compSnapshot,
+            catalog = compCatalog,
+            catalogAt = compCatalogAt,
+            protonId = compProton,
+            comp = compComp,
+            checking = compChecking,
+            busy = compBusy,
+            downloads = compDownloads,
+            onProton = { compProton = it },
+            onComp = { compComp = it },
+            onSwap = { file -> compProton?.let { pid -> componentAction("Swapping") { ComponentsManager.swap(this, pid, file) } } },
+            onRestore = { version -> compProton?.let { pid -> componentAction("Restoring") { ComponentsManager.restore(this, pid, compComp, version) } } },
+            onCancelQueued = { compProton?.let { pid -> componentAction("Cancelling") { ComponentsManager.cancelQueued(this, pid, compComp); "The waiting swap was cancelled." } } },
+            onDeletePackage = { file -> componentAction("Deleting") { ComponentsManager.deletePackage(this, file) } },
+            onDeleteOriginal = { version -> compProton?.let { pid -> componentAction("Deleting") { ComponentsManager.deleteOriginal(this, pid, compComp, version) } } },
+            onDownload = { downloadComponent(it) },
+            onRefresh = { refreshComponentCatalog() },
+            onImport = { pickComponent.launch(InAppFilePicker.buildIntent(this, WCP_EXT, "Choose a component package (-linux .wcp)")) },
+            onBack = { showComponents = false },
         )
     }
 
@@ -837,6 +978,7 @@ class MainActivity : ComponentActivity() {
     private fun openModeSettings(mode: String) {
         showPerformance = false
         showProtons = false
+        showComponents = false
         showMapping = false
         refreshDrivers()
         resolutionCap = SessionPrefs.resolutionCap(this, mode)
@@ -1183,5 +1325,6 @@ class MainActivity : ComponentActivity() {
         private const val TAG = "MainActivity"
         /** What the picker offers for a driver zip; some file apps label a zip as a plain stream. */
         private val ZIP_EXT = listOf("zip")
+        private val WCP_EXT = listOf("wcp")
     }
 }

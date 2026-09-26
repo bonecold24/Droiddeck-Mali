@@ -221,7 +221,7 @@ private fun InstalledRow(row: DriverRow, selected: Boolean, onSelect: () -> Unit
 
 /** A text button that shows where controller focus is: an outline in its own colour. */
 @Composable
-private fun FocusText(text: String, color: Color, modifier: Modifier = Modifier, onClick: () -> Unit) {
+internal fun FocusText(text: String, color: Color, modifier: Modifier = Modifier, onClick: () -> Unit) {
     val src = remember { MutableInteractionSource() }
     val hot = src.collectIsFocusedAsState().value || src.collectIsHoveredAsState().value
     val shape = RoundedCornerShape(8.dp)

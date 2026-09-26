@@ -69,6 +69,8 @@ import com.droiddeck.launcher.ui.DroidDeckTheme
 import com.droiddeck.launcher.wayland.CompositorHost
 import com.droiddeck.launcher.wayland.WaylandCompositor
 import java.io.File
+import com.droiddeck.launcher.session.ComponentsManager
+import com.droiddeck.launcher.ui.DRAWER_PAGES
 import kotlin.math.abs
 
 /**
@@ -140,6 +142,8 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
 
     // Compose reads these; the activity writes them.
     private var drawerOpen by mutableStateOf(false)
+    /** The drawer's Components tab: the Protons as last read (ComponentsManager). */
+    private var drawerComponents by mutableStateOf<ComponentsManager.Snapshot?>(null)
     private var drawerPage by mutableIntStateOf(0)
     private var drawerControllerActive by mutableStateOf(false)
     private var backActionsInverted by mutableStateOf(false)
@@ -342,6 +346,9 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
                         onShareLogs = { drawerOpen = false; shareCurrentSessionLogs() },
                         onStop = { drawerOpen = false; SessionService.stop(this@SessionActivity); finish() },
                         onClose = { drawerOpen = false },
+                        components = drawerComponents,
+                        onComponentsRefresh = { refreshDrawerComponents() },
+                        onComponentSwap = { pid, comp, value -> swapDrawerComponent(pid, comp, value) },
                     ))
                     if (SessionState.suspended) SessionPausedOverlay {
                         SessionService.resume(this@SessionActivity)
@@ -422,6 +429,40 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
         incoming.action = null
         setIntent(incoming)
         if (SessionState.running && SessionState.mode == SessionService.MODE_STEAM) sendSteamGuide()
+    }
+
+
+    /** Re-reads the Protons for the drawer's Components tab, first running swaps a closed game was holding back. */
+    private fun refreshDrawerComponents() {
+        Thread({
+            val applied = runCatching { ComponentsManager.applyQueued(this) }.getOrDefault(emptyList())
+            val snap = runCatching { ComponentsManager.snapshot(this) }.getOrNull()
+            uiHandler.post {
+                drawerComponents = snap
+                if (applied.isNotEmpty()) android.widget.Toast.makeText(this, "Applied: " + applied.joinToString(", "), android.widget.Toast.LENGTH_LONG).show()
+            }
+        }, "drawer-components").start()
+    }
+
+    private fun swapDrawerComponent(protonId: String, comp: String, value: String) {
+        Thread({
+            val message = runCatching {
+                val snap = ComponentsManager.snapshot(this)
+                val queued = snap.protons.firstOrNull { it.proton.id == protonId }?.components?.get(comp)?.queued
+                val active = snap.protons.firstOrNull { it.proton.id == protonId }?.components?.get(comp)?.activeFile
+                val build = snap.protons.firstOrNull { it.proton.id == protonId }?.proton?.version?.let(ComponentsManager::safeName)
+                val current = active ?: "orig:$build"
+                if (queued != null && value == current) {
+                    // Picking what is already in place again cancels the swap waiting for the game.
+                    ComponentsManager.cancelQueued(this, protonId, comp); "The waiting swap was cancelled."
+                } else if (value.startsWith("orig:")) ComponentsManager.restore(this, protonId, comp, value.removePrefix("orig:"))
+                else ComponentsManager.swap(this, protonId, value)
+            }.getOrElse { e -> "Swap failed: ${e.message ?: e.javaClass.simpleName}" }
+            uiHandler.post {
+                android.widget.Toast.makeText(this, message, android.widget.Toast.LENGTH_LONG).show()
+                refreshDrawerComponents()
+            }
+        }, "drawer-components-swap").start()
     }
 
     private fun shareCurrentSessionLogs() {
@@ -854,7 +895,7 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
         if (drawerOpen) {
             if (fromController && (event.keyCode == KeyEvent.KEYCODE_BUTTON_L1 || event.keyCode == KeyEvent.KEYCODE_BUTTON_R1)) {
                 if (event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0) {
-                    drawerPage = (drawerPage + if (event.keyCode == KeyEvent.KEYCODE_BUTTON_R1) 1 else 2) % 3
+                    drawerPage = (drawerPage + if (event.keyCode == KeyEvent.KEYCODE_BUTTON_R1) 1 else DRAWER_PAGES - 1) % DRAWER_PAGES
                     releaseDrawerDirection()
                 }
                 return true
