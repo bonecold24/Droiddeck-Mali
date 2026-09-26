@@ -648,11 +648,17 @@ private fun DrawerPageTabs(page: Int, modifier: Modifier = Modifier, onSelect: (
     val count = drawerPageIcons.size
     val middle = (count - 1) / 2f
     val motion = tween<Float>(durationMillis = 340, easing = FastOutSlowInEasing)
-    val lean by animateFloatAsState(-(page - middle) * DRAWER_TAB_LEAN_DP, motion, label = "tabLean")
-    Box(
+    androidx.compose.foundation.layout.BoxWithConstraints(
         contentAlignment = Alignment.Center,
         modifier = modifier.height(64.dp).clipToBounds(),
     ) {
+        // Fit the line to the room between LB and RB. Worst case is an end tab selected: full size
+        // (56 dp) and pushed outward by the lean, which scales with the spacing. So
+        //   (count-1) * spacing * (1 + lean/64) + 56 <= width
+        // - never more than the mock's 64 dp, never tighter than 32 dp.
+        val spacing = ((maxWidth.value - 56f) / ((count - 1) * (1f + DRAWER_TAB_LEAN_DP / DRAWER_TAB_SPACING_DP))).coerceIn(32f, DRAWER_TAB_SPACING_DP)
+        val leanStep = DRAWER_TAB_LEAN_DP * spacing / DRAWER_TAB_SPACING_DP
+        val lean by animateFloatAsState(-(page - middle) * leanStep, motion, label = "tabLean")
         drawerPageIcons.forEachIndexed { index, icon ->
             val selected = index == page
             val source = remember { MutableInteractionSource() }
@@ -665,7 +671,7 @@ private fun DrawerPageTabs(page: Int, modifier: Modifier = Modifier, onSelect: (
             Box(
                 contentAlignment = Alignment.Center,
                 modifier = Modifier
-                    .offset(x = ((index - middle) * DRAWER_TAB_SPACING_DP + lean).dp)
+                    .offset(x = ((index - middle) * spacing + lean).dp)
                     .size(56.dp)
                     .graphicsLayer { scaleX = scale; scaleY = scale; this.alpha = alpha }
                     .clip(RoundedCornerShape(16.dp))
