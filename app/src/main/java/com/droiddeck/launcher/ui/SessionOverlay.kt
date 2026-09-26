@@ -4,6 +4,11 @@ import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.offset
 import androidx.compose.material.icons.Icons
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.material.icons.outlined.Menu
+import androidx.compose.material.icons.outlined.MoreHoriz
+import androidx.compose.material.icons.outlined.PowerSettingsNew
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.foundation.rememberScrollState
@@ -423,30 +428,22 @@ fun SessionDrawer(open: Boolean, page: Int, controllerActive: Boolean, onPageCha
             Column(
                 modifier = Modifier
                     .fillMaxHeight()
-                    .width(340.dp)
+                    .width(360.dp)
                     .background(pal.background.copy(alpha = 0.97f))
                     .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) {}
                     .focusGroup()
                     .controllerBack {
                         if (host.open != null) host.open = null else a.onClose()
                     }
-                    .padding(horizontal = 14.dp, vertical = 16.dp),
+                    .padding(16.dp),
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().padding(start = 4.dp, bottom = 6.dp)) {
-                    Box(modifier = Modifier.size(10.dp).clip(CircleShape).background(Brush.linearGradient(listOf(colors.primary, pal.primary2))))
-                    Spacer(Modifier.width(10.dp))
-                    Text(a.title ?: if (a.steam) "Steam" else "Desktop", fontSize = 17.sp, fontWeight = FontWeight.Bold,
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().heightIn(min = 44.dp)) {
+                    Text(a.title ?: if (a.steam) "Steam" else "Desktop", fontSize = 20.sp, fontWeight = FontWeight.Bold,
                         color = colors.onBackground, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
-                    ShareSessionLogsButton(modifier = focus.track(page, "share-logs")) {
-                        host.open = null
-                        a.onShareLogs()
-                    }
-                    Spacer(Modifier.width(8.dp))
                     StopSessionButton(modifier = focus.track(page, "stop")) { host.open = null; confirmStop = true }
                 }
                 if (a.onSteamMenu != null && a.onQam != null) {
                     val qamInteraction = remember { MutableInteractionSource() }
-                    val qamHot = qamInteraction.collectIsFocusedAsState().value || qamInteraction.collectIsHoveredAsState().value
                     var qamStartedOnPress by remember { mutableStateOf(false) }
                     LaunchedEffect(qamInteraction) {
                         qamInteraction.interactions.collect { interaction ->
@@ -459,62 +456,28 @@ fun SessionDrawer(open: Boolean, page: Int, controllerActive: Boolean, onPageCha
                     }
                     Row(
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
+                        modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
                     ) {
-                        val steamSrc = remember { MutableInteractionSource() }
-                        val steamHot = steamSrc.collectIsFocusedAsState().value || steamSrc.collectIsHoveredAsState().value
-                        OutlinedButton(
-                            onClick = { host.open = null; a.onSteamMenu.invoke() },
-                            interactionSource = steamSrc,
-                            modifier = Modifier.weight(1f).height(48.dp).then(focus.track(page, "steam")).controllerConfirm {
-                                host.open = null
-                                a.onSteamMenu.invoke()
-                            },
-                            shape = RoundedCornerShape(12.dp),
-                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
-                            border = BorderStroke(if (steamHot) 2.dp else 1.dp, if (steamHot) pal.signal else colors.outline),
-                            colors = ButtonDefaults.outlinedButtonColors(containerColor = if (steamHot) pal.signal.copy(alpha = 0.16f) else Color.Transparent),
-                        ) {
-                            Text("STEAM", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 0.5.sp, maxLines = 1)
+                        QuickAction("Steam menu", Icons.Outlined.Menu, Modifier.weight(1f).then(focus.track(page, "steam"))) {
+                            host.open = null
+                            a.onSteamMenu.invoke()
                         }
-                        OutlinedButton(
-                            onClick = {
-                                host.open = null
-                                if (!qamStartedOnPress) a.onQam.invoke()
-                                qamStartedOnPress = false
-                            },
+                        QuickAction(
+                            "Quick access", Icons.Outlined.MoreHoriz,
+                            Modifier.weight(1f).then(focus.track(page, "qam")).semantics { contentDescription = "Open Quick Access Menu" },
                             interactionSource = qamInteraction,
-                            modifier = Modifier.weight(1f).height(48.dp).then(focus.track(page, "qam"))
-                                .semantics { contentDescription = "Open Quick Access Menu" }.controllerConfirm {
-                                host.open = null
-                                a.onQam.invoke()
-                            },
-                            shape = RoundedCornerShape(12.dp),
-                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
-                            border = BorderStroke(if (qamHot) 2.dp else 1.dp, if (qamHot) pal.signal else colors.outline),
-                            colors = ButtonDefaults.outlinedButtonColors(containerColor = if (qamHot) pal.signal.copy(alpha = 0.16f) else Color.Transparent),
+                            onConfirm = { host.open = null; a.onQam.invoke() },
                         ) {
-                            Text("QAM", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 0.5.sp, maxLines = 1)
+                            host.open = null
+                            if (!qamStartedOnPress) a.onQam.invoke()
+                            qamStartedOnPress = false
                         }
                         // Big Picture's own "Switch to Desktop" waits on SteamOS Manager for ever
                         // here; this does the switch without the client.
                         if (a.onSwitchToDesktop != null) {
-                            val deskSrc = remember { MutableInteractionSource() }
-                            val deskHot = deskSrc.collectIsFocusedAsState().value || deskSrc.collectIsHoveredAsState().value
-                            OutlinedButton(
-                                onClick = { host.open = null; a.onSwitchToDesktop.invoke() },
-                                interactionSource = deskSrc,
-                                modifier = Modifier.weight(1f).height(48.dp).then(focus.track(page, "desktop"))
-                                    .semantics { contentDescription = "Switch to Desktop" }.controllerConfirm {
-                                        host.open = null
-                                        a.onSwitchToDesktop.invoke()
-                                    },
-                                shape = RoundedCornerShape(12.dp),
-                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
-                                border = BorderStroke(if (deskHot) 2.dp else 1.dp, if (deskHot) pal.signal else colors.outline),
-                                colors = ButtonDefaults.outlinedButtonColors(containerColor = if (deskHot) pal.signal.copy(alpha = 0.16f) else Color.Transparent),
-                            ) {
-                                Text("DESKTOP", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 0.5.sp, maxLines = 1)
+                            QuickAction("Desktop", Icons.Outlined.DesktopWindows, Modifier.weight(1f).then(focus.track(page, "desktop"))) {
+                                host.open = null
+                                a.onSwitchToDesktop.invoke()
                             }
                         }
                     }
@@ -522,20 +485,26 @@ fun SessionDrawer(open: Boolean, page: Int, controllerActive: Boolean, onPageCha
 
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
+                    modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
                 ) {
-                    DrawerOutlineButton("LB  ‹", modifier = Modifier.height(48.dp).then(focus.track(page, "prev"))) {
+                    DrawerBumper("LB", "Previous page", modifier = focus.track(page, "prev")) {
                         host.open = null; onPageChange((page + DRAWER_PAGES - 1) % DRAWER_PAGES)
                     }
                     DrawerPageTabs(page = page, modifier = Modifier.weight(1f)) { index -> host.open = null; onPageChange(index) }
-                    DrawerOutlineButton("›  RB", modifier = Modifier.height(48.dp).then(focus.track(page, "next"))) {
+                    DrawerBumper("RB", "Next page", modifier = focus.track(page, "next")) {
                         host.open = null; onPageChange((page + 1) % DRAWER_PAGES)
                     }
                 }
+                // The icons alone never said which page this is.
+                Text(
+                    "${drawerPageTitles[page]} · ${page + 1} of $DRAWER_PAGES", fontSize = 13.sp, fontWeight = FontWeight.SemiBold,
+                    color = colors.onSurfaceVariant, textAlign = TextAlign.Center,
+                    modifier = Modifier.fillMaxWidth().padding(top = 2.dp, bottom = 4.dp),
+                )
 
                 Column(
                     modifier = Modifier.weight(1f).fillMaxWidth().verticalScroll(pageScroll[page]),
-                ) {
+                ) { CompositionLocalProvider(LocalChipMinWidth provides 120.dp) {
                     when (page) {
                         0 -> SettingsGroup("Display") {
                             ToggleRow(host, "hud", "Performance HUD", null, a.hudOn,
@@ -647,13 +616,21 @@ fun SessionDrawer(open: Boolean, page: Int, controllerActive: Boolean, onPageCha
                                     FexPreset.all.map { it.id to it.label }, a.fexPreset,
                                     chipModifier = focus.track(page, "fex"), onPick = a.onFexPreset)
                             }
+                            SettingsGroup("Support") {
+                                SettingsRow("Session logs", "Send this session's logs with a bug report") {
+                                    DrawerOutlineButton("Send logs", modifier = focus.track(page, "share-logs")) {
+                                        host.open = null
+                                        a.onShareLogs()
+                                    }
+                                }
+                            }
                             Spacer(Modifier.height(18.dp))
                             if (!a.isHomeApp) DrawerOutlineButton("Background", modifier = focus.track(page, "background")) {
                                 host.open = null; a.onBackground()
                             }
                         }
                     }
-                }
+                } }
             }
         }
     }
@@ -727,33 +704,75 @@ private fun StopSessionButton(modifier: Modifier = Modifier, onClick: () -> Unit
     val src = remember { MutableInteractionSource() }
     val hot = src.collectIsFocusedAsState().value || src.collectIsHoveredAsState().value
     val fill by animateColorAsState(if (hot) colors.error.copy(alpha = 0.18f) else Color.Transparent, Motion.tw(220), label = "dangerFill")
-    Box(
-        contentAlignment = Alignment.Center,
-        modifier = modifier.size(42.dp).semantics { contentDescription = "Stop session" }
-            .clip(RoundedCornerShape(12.dp)).background(fill).border(1.dp, colors.error.copy(alpha = if (hot) 0.9f else 0.5f), RoundedCornerShape(12.dp))
+    val shape = RoundedCornerShape(20.dp)
+    Row(
+        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp),
+        modifier = modifier.heightIn(min = 40.dp).semantics { contentDescription = "Stop session" }
+            .clip(shape).background(fill).border(if (hot) 2.dp else 1.dp, colors.error.copy(alpha = if (hot) 0.9f else 0.55f), shape)
             .hoverable(src).clickable(interactionSource = src, indication = LocalIndication.current, onClick = onClick)
-            .controllerConfirm(onClick = onClick),
-    ) { Text("×", fontSize = 25.sp, fontWeight = FontWeight.Medium, color = colors.error) }
+            .controllerConfirm(onClick = onClick)
+            .padding(start = 12.dp, end = 14.dp),
+    ) {
+        Icon(Icons.Outlined.PowerSettingsNew, contentDescription = null, tint = colors.error, modifier = Modifier.size(18.dp))
+        Text("Stop", fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = colors.error)
+    }
 }
 
+/** One of the sheet's shortcuts into Steam: an icon over its name, the whole tile the target. */
 @Composable
-private fun ShareSessionLogsButton(modifier: Modifier = Modifier, onClick: () -> Unit) {
+private fun QuickAction(
+    label: String, icon: androidx.compose.ui.graphics.vector.ImageVector, modifier: Modifier,
+    compact: Boolean = false,
+    interactionSource: MutableInteractionSource = remember { MutableInteractionSource() },
+    onConfirm: (() -> Unit)? = null,
+    onClick: () -> Unit,
+) {
+    val colors = MaterialTheme.colorScheme
+    val pal = LocalPalette.current
+    val hot = interactionSource.collectIsFocusedAsState().value || interactionSource.collectIsHoveredAsState().value
+    val shape = RoundedCornerShape(12.dp)
+    val tile = modifier.height(if (compact) 44.dp else 64.dp).clip(shape)
+        .background(if (hot) pal.signal.copy(alpha = 0.14f) else colors.surface)
+        .border(if (hot) 2.dp else 1.dp, if (hot) pal.signal else pal.line, shape)
+        .hoverable(interactionSource)
+        .clickable(interactionSource = interactionSource, indication = LocalIndication.current, onClick = onClick)
+        .controllerConfirm(onClick = onConfirm ?: onClick)
+        .padding(horizontal = 6.dp)
+    val content: @Composable () -> Unit = {
+        Icon(icon, contentDescription = null, tint = if (hot) pal.signal else colors.onBackground, modifier = Modifier.size(20.dp))
+        Text(label, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = colors.onBackground, maxLines = 1, overflow = TextOverflow.Ellipsis)
+    }
+    if (compact) Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp, Alignment.CenterHorizontally), modifier = tile,
+    ) { content() }
+    else Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(5.dp, Alignment.CenterVertically), modifier = tile,
+    ) { content() }
+}
+
+/** A bumper as a keycap, 44dp to touch; LB / RB on the pad turn the page too. */
+@Composable
+private fun DrawerBumper(label: String, description: String, modifier: Modifier = Modifier, onClick: () -> Unit) {
     val colors = MaterialTheme.colorScheme
     val pal = LocalPalette.current
     val src = remember { MutableInteractionSource() }
     val hot = src.collectIsFocusedAsState().value || src.collectIsHoveredAsState().value
+    val ring = RoundedCornerShape(10.dp)
+    val cap = RoundedCornerShape(7.dp)
     Box(
         contentAlignment = Alignment.Center,
-        modifier = modifier.widthIn(min = 88.dp).height(42.dp)
-            .semantics { contentDescription = "Send current session logs" }
-            .clip(RoundedCornerShape(12.dp))
-            .background(if (hot) pal.signal.copy(alpha = 0.16f) else Color.Transparent)
-            .border(1.dp, if (hot) pal.signal else colors.outline.copy(alpha = 0.5f), RoundedCornerShape(12.dp))
-            .hoverable(src).clickable(interactionSource = src, indication = LocalIndication.current, onClick = onClick)
-            .controllerConfirm(onClick = onClick),
+        modifier = modifier.size(44.dp).clip(ring)
+            .border(2.dp, if (hot) pal.signal else Color.Transparent, ring)
+            .hoverable(src).clickable(interactionSource = src, indication = null, onClick = onClick)
+            .controllerConfirm(onClick = onClick)
+            .semantics { contentDescription = description },
     ) {
-        Text("send logs", fontSize = 12.sp, fontWeight = FontWeight.SemiBold,
-            color = if (hot) pal.signal else colors.onSurfaceVariant, maxLines = 1)
+        Text(
+            label, fontSize = 12.sp, fontWeight = FontWeight.Bold, color = if (hot) colors.onBackground else colors.onSurfaceVariant,
+            modifier = Modifier.clip(cap).background(colors.surfaceVariant).border(1.dp, pal.line2, cap).padding(horizontal = 6.dp, vertical = 3.dp),
+        )
     }
 }
 

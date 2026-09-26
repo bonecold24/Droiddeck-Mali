@@ -178,6 +178,9 @@ private fun BumperKey(label: String, description: String, onClick: () -> Unit) {
     }
 }
 
+/** The narrowest a setting's value box gets; the session menu's sheet sets it lower. */
+val LocalChipMinWidth = androidx.compose.runtime.compositionLocalOf { 150.dp }
+
 class MenuHost {
     var open by mutableStateOf<String?>(null)
 }
@@ -297,7 +300,7 @@ fun ValueChip(text: String, open: Boolean, enabled: Boolean = true, modifier: Mo
     Row(
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween,
         modifier = modifier
-            .widthIn(min = 150.dp)
+            .widthIn(min = LocalChipMinWidth.current)
             .clip(RoundedCornerShape(10.dp))
             .background(colors.surfaceVariant)
             .border(1.dp, edge, RoundedCornerShape(10.dp))
