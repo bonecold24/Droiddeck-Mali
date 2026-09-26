@@ -87,6 +87,7 @@ import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.ChevronLeft
+import androidx.compose.material.icons.filled.MoreHoriz
 import androidx.compose.material.icons.filled.PriorityHigh
 import androidx.compose.material.icons.outlined.Apps
 import androidx.compose.material.icons.outlined.Bolt
@@ -832,11 +833,26 @@ private fun Content(
                 val games = remember(s.steamGames) { s.steamGames.sortedByDescending { it.lastPlayed } }
                 val recent = games.firstOrNull { it.lastPlayed > 0L }
                 val heroHeight = if (LocalConfiguration.current.screenHeightDp < 480) 150.dp else 180.dp
-                Rise(0) { PageHeader("Steam") { RuntimeChip(s) } }
+                val short = isShortScreen()
+                // A small screen keeps Launch by the game; Open Steam moves to the header and Desktop
+                // UI and Steam's settings behind its ⋯.
+                val condensed = narrow || short
+                val host = rememberMenuHost()
+                Rise(0) {
+                    PageHeader("Steam") {
+                        RuntimeChip(s)
+                        if (condensed && recent != null) {
+                            Spacer(Modifier.weight(1f))
+                            SecondaryButton("Open Steam", enabled = !s.busy, compact = true, onClick = a.onPlay)
+                            SteamMoreMenu(s, a, host)
+                        }
+                    }
+                }
                 if (recent != null) Rise(2) {
-                    GameHero(recent, Modifier.fillMaxWidth().height(heroHeight)) {
+                    if (short) ContinueStrip(recent, s) { a.onSteamGame(recent) }
+                    else GameHero(recent, Modifier.fillMaxWidth().heightIn(min = heroHeight)) {
                         Text("CONTINUE", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 1.5.sp, color = LocalPalette.current.signal)
-                        Text(recent.name, fontSize = 28.sp, fontWeight = FontWeight.Bold, color = colors.onBackground, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text(recent.name, fontSize = if (narrow) 24.sp else 28.sp, fontWeight = FontWeight.Bold, color = colors.onBackground, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         Text(
                             listOfNotNull(lastPlayedText(recent.lastPlayed), libraryLabel(recent.library)).joinToString(" · "),
                             fontSize = 13.sp, color = colors.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis,
@@ -844,9 +860,11 @@ private fun Content(
                         Spacer(Modifier.height(8.dp))
                         Actions {
                             PrimaryButton("Launch", enabled = s.ready && !s.busy, main = true) { a.onSteamGame(recent) }
-                            SecondaryButton("Open Steam", enabled = !s.busy, onClick = a.onPlay)
-                            SecondaryButton("Desktop UI", enabled = !s.busy, onClick = a.onPlayDesktopUi)
-                            Cog(a.onSteamSettings)
+                            if (!condensed) {
+                                SecondaryButton("Open Steam", enabled = !s.busy, onClick = a.onPlay)
+                                SecondaryButton("Desktop UI", enabled = !s.busy, onClick = a.onPlayDesktopUi)
+                                Cog(a.onSteamSettings)
+                            }
                         }
                     }
                 } else Rise(2) {
@@ -1372,7 +1390,10 @@ private fun PageHeader(title: String, trailing: @Composable RowScope.() -> Unit 
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp),
         modifier = Modifier.fillMaxWidth().padding(bottom = 10.dp),
     ) {
-        Text(title, fontSize = 26.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onBackground)
+        Text(
+            title, fontSize = if (LocalNarrowPane.current) 22.sp else 26.sp, fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.onBackground, maxLines = 1,
+        )
         trailing()
     }
 }
@@ -1384,6 +1405,69 @@ private fun RuntimeChip(s: FrontEndState) = when {
     !s.ready -> Chip("Runtime installs on first Play", ok = false)
     s.available != null && s.available != s.installed -> Chip("Runtime update available", ok = false)
     else -> Chip("● Runtime ready", ok = true)
+}
+
+/** The hero cut to one line for a short screen: the art, the game and Launch. */
+@Composable
+private fun ContinueStrip(g: Library.SteamGame, s: FrontEndState, onLaunch: () -> Unit) {
+    val colors = MaterialTheme.colorScheme
+    val pal = LocalPalette.current
+    Box(modifier = Modifier.fillMaxWidth().heightIn(min = 72.dp).clip(Shape14).background(artBrush(hueOf(g.name)))) {
+        val image = g.hero ?: g.art
+        if (image != null) AsyncImage(
+            model = image, contentDescription = null, contentScale = ContentScale.Crop,
+            modifier = Modifier.matchParentSize().then(if (g.hero == null) Modifier.blur(24.dp) else Modifier),
+        )
+        Spacer(
+            Modifier.matchParentSize().background(
+                Brush.horizontalGradient(listOf(colors.background.copy(alpha = 0.9f), colors.background.copy(alpha = 0.55f))),
+            ),
+        )
+        Row(
+            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp),
+            modifier = Modifier.fillMaxWidth().padding(start = 10.dp, end = 12.dp, top = 9.dp, bottom = 9.dp),
+        ) {
+            Box(Modifier.width(36.dp).aspectRatio(2f / 3f).clip(RoundedCornerShape(6.dp)).background(artBrush(hueOf(g.name)))) {
+                if (g.art != null) AsyncImage(model = g.art, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.matchParentSize())
+            }
+            Column(modifier = Modifier.weight(1f)) {
+                val span = lastPlayedText(g.lastPlayed)?.removePrefix("Last played ")
+                Text(
+                    listOfNotNull("CONTINUE", span?.uppercase()).joinToString(" · "),
+                    fontSize = 12.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 1.2.sp, color = pal.signal,
+                    maxLines = 1, overflow = TextOverflow.Ellipsis,
+                )
+                Text(g.name, fontSize = 17.sp, fontWeight = FontWeight.SemiBold, color = colors.onBackground, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+            PrimaryButton("Launch", enabled = s.ready && !s.busy, main = true, compact = true, onClick = onLaunch)
+        }
+    }
+}
+
+/** Desktop UI and Steam's settings, behind one button where the header has no room for both. */
+@Composable
+private fun SteamMoreMenu(s: FrontEndState, a: FrontEndActions, host: MenuHost) {
+    val colors = MaterialTheme.colorScheme
+    val pal = LocalPalette.current
+    val src = remember { MutableInteractionSource() }
+    val hot = rememberHot(src)
+    val open = host.open == "steam-more"
+    val toggle: () -> Unit = { host.open = if (host.open == "steam-more") null else "steam-more" }
+    Box {
+        Box(
+            contentAlignment = Alignment.Center,
+            modifier = Modifier.paneItem("steam-more").size(40.dp).clip(Shape12)
+                .background(if (hot || open) pal.signal.copy(alpha = 0.14f) else Color.White.copy(alpha = 0.03f))
+                .border(if (hot) 2.dp else 1.dp, if (hot || open) pal.signal else pal.line2, Shape12)
+                .hoverable(src).clickable(interactionSource = src, indication = LocalIndication.current, role = Role.Button, onClick = toggle)
+                .controllerConfirm(onClick = toggle)
+                .semantics { contentDescription = "More Steam options" },
+        ) { Icon(Icons.Filled.MoreHoriz, contentDescription = null, tint = colors.onBackground, modifier = Modifier.size(20.dp)) }
+        AnchoredMenu(open, onDismiss = { if (host.open == "steam-more") host.open = null }, title = "Steam") { first ->
+            MenuItem("Steam desktop UI", checked = false, enabled = !s.busy, focusRequester = first) { host.open = null; a.onPlayDesktopUi() }
+            MenuItem("Steam session settings", checked = false) { host.open = null; a.onSteamSettings() }
+        }
+    }
 }
 
 /** "Last played 3 days ago" from Steam's unix seconds; null for a game never played. */
@@ -1403,7 +1487,8 @@ private fun libraryLabel(library: String): String = when (library) {
 
 /**
  * A game's wide banner: Steam's hero art where the client cached one, else its capsule blurred to
- * fill the width. The copy sits bottom-left over a scrim of the ground colour so it always reads.
+ * fill the width. The copy sits bottom-left over a scrim of the ground colour so it always reads;
+ * the art takes the banner's size, so a banner given a minimum height grows to fit its copy.
  */
 @Composable
 private fun GameHero(g: Library.SteamGame, modifier: Modifier, content: @Composable ColumnScope.() -> Unit) {
@@ -1412,11 +1497,11 @@ private fun GameHero(g: Library.SteamGame, modifier: Modifier, content: @Composa
         val image = g.hero ?: g.art
         if (image != null) AsyncImage(
             model = image, contentDescription = null, contentScale = ContentScale.Crop,
-            modifier = Modifier.fillMaxSize()
+            modifier = Modifier.matchParentSize()
                 .then(if (g.hero == null) Modifier.blur(24.dp).graphicsLayer { scaleX = 1.3f; scaleY = 1.3f } else Modifier),
         )
         Spacer(
-            Modifier.fillMaxSize().background(
+            Modifier.matchParentSize().background(
                 Brush.horizontalGradient(
                     0f to colors.background.copy(alpha = 0.92f),
                     0.55f to colors.background.copy(alpha = 0.6f),
