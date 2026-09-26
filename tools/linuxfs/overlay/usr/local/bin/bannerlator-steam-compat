@@ -72,22 +72,11 @@ TOOL_MANIFEST_VDF = """"manifest"
 
 
 # Steam runs its own graphics probe through EVERY registered tool at once, ~40 s after logging in,
-# all with STEAM_COMPAT_DATA_PATH=.../compatdata/0. A prefix's system32 holds links into the Proton
-# that last set it up, and the Wines of the other Protons, still running outside Proton's pfx.lock,
-# wrote their own builtin DLLs through those links - into that Proton's tree (seen on device: GE's
-# FEX DLLs replaced by Proton Experimental's at session start). So each tool's tool-0 run gets a
-# prefix of its own; games, which each have their own compatdata/<appid>, are not touched.
-BL_PROBE_PREFIX_SETUP = """
-bl_probe_prefix() {
-  case "${STEAM_COMPAT_DATA_PATH:-}" in
-    */compatdata/0|*/compatdata/0/)
-      STEAM_COMPAT_DATA_PATH="${STEAM_COMPAT_DATA_PATH%/}-$1"
-      mkdir -p "$STEAM_COMPAT_DATA_PATH"
-      export STEAM_COMPAT_DATA_PATH
-      echo "bannerlator-proton: Steam's tool-0 run gets its own prefix: $STEAM_COMPAT_DATA_PATH" >&2 ;;
-  esac
-}
-"""
+# all with STEAM_COMPAT_DATA_PATH=.../compatdata/0, and those concurrent Protons can write their
+# builtin DLLs through each other's prefix links into each other's trees (seen: GE's FEX DLLs became
+# Proton Experimental's). Moving those runs to a prefix per tool was tried and crashed the Steam
+# client right after the probe started (segfault, rc 139, first ever in 25 sessions), so the client
+# relies on compatdata/0 itself. The launch-time check below is the protection instead.
 
 # The Components page's choices, enforced in the one place every game launch passes: the app keeps
 # desired.tsv (tool dir, Proton build, component, file, sha256, source copy) and an unpacked copy of
@@ -228,7 +217,6 @@ if [ -f "$fake" ]; then
     *) LD_PRELOAD="$fake${LD_PRELOAD:+:$LD_PRELOAD}"; export LD_PRELOAD ;;
   esac
 fi
-bl_probe_prefix "bannerlator-proton-arm64"
 for name in %s; do
   depot="$steam_root/steamapps/common/$name"
   if [ -d "$depot/files/bin-arm64" ] && [ -x "$depot/proton" ]; then
@@ -247,7 +235,7 @@ exit 1
 # something else.
 LAUNCHER_SH = LAUNCHER_SH.replace(
     "verb=$1; shift", "verb=$1; shift\n" + BL_DIRECTAUDIO_SETUP + BL_GAME_CPUS_SETUP + BL_IDTECH3_SETUP
-    + BL_PROBE_PREFIX_SETUP + BL_COMPONENTS_SETUP, 1)
+    + BL_COMPONENTS_SETUP, 1)
 
 # A third-party Proton dropped into compatibilitytools.d - GE-Proton, proton-cachyos, anything of
 # that shape - is adopted rather than used as shipped, for the same two reasons Valve's ARM64 depot
@@ -279,7 +267,6 @@ if [ -f "$fake" ]; then
     *) LD_PRELOAD="$fake${LD_PRELOAD:+:$LD_PRELOAD}"; export LD_PRELOAD ;;
   esac
 fi
-bl_probe_prefix "${here##*/}"
 bl_components "$here"
 bl_directaudio "$here"
 bl_game_cpus
@@ -446,7 +433,7 @@ def adopt_extras(tools):
             body = (EXTRA_WRAPPER_SH % entry_point).replace(
                     'here=$(dirname "$0")',
                     'here=$(dirname "$0")\n' + BL_DIRECTAUDIO_SETUP + BL_GAME_CPUS_SETUP + BL_IDTECH3_SETUP
-                    + BL_PROBE_PREFIX_SETUP + BL_COMPONENTS_SETUP, 1)
+                    + BL_COMPONENTS_SETUP, 1)
             with open(wrapper, "w", encoding="utf-8") as f:
                 f.write(body)
             os.chmod(wrapper, 0o755)
