@@ -1,7 +1,7 @@
 # DroidDeck boot animation
 
 This source accompanies the single Steam startup movie bundled by the app:
-`app/src/main/assets/steam-startup/droiddeck-startup.webm` (1920×1080, dark theme, VP9 video
+`app/src/main/assets/steam-startup/droiddeck-startup.webm` (1920×1080, pitch black background, VP9 video
 with Opus audio). `droiddeck-boot.html` is the editable animation; the scripts and WAV below
 reproduce the selected render. No alternate MP4 or WebM exports are kept in the repository.
 
