@@ -57,6 +57,8 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.runtime.key
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -760,8 +762,28 @@ private fun Content(
                 }
             }
             selected == "steam" -> {
-                Rise(0) { Eyebrow("Steam") }
-                Rise(3) {
+                // Most recently played first; Steam's own LastPlayed, games never played keep their order.
+                val games = remember(s.steamGames) { s.steamGames.sortedByDescending { it.lastPlayed } }
+                val recent = games.firstOrNull { it.lastPlayed > 0L }
+                val heroHeight = if (LocalConfiguration.current.screenHeightDp < 480) 150.dp else 180.dp
+                Rise(0) { PageHeader("Steam") { RuntimeChip(s) } }
+                if (recent != null) Rise(2) {
+                    GameHero(recent, Modifier.fillMaxWidth().height(heroHeight)) {
+                        Text("CONTINUE", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 1.5.sp, color = LocalPalette.current.signal)
+                        Text(recent.name, fontSize = 28.sp, fontWeight = FontWeight.Bold, color = colors.onBackground, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text(
+                            listOfNotNull(lastPlayedText(recent.lastPlayed), libraryLabel(recent.library)).joinToString(" · "),
+                            fontSize = 13.sp, color = colors.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                        )
+                        Spacer(Modifier.height(8.dp))
+                        Actions {
+                            PrimaryButton("Launch", enabled = s.ready && !s.busy, main = true) { a.onSteamGame(recent) }
+                            SecondaryButton("Open Steam", enabled = !s.busy, onClick = a.onPlay)
+                            SecondaryButton("Desktop UI", enabled = !s.busy, onClick = a.onPlayDesktopUi)
+                            Cog(a.onSteamSettings)
+                        }
+                    }
+                } else Rise(2) {
                     Actions {
                         // Enabled without a runtime: the session's loading screen installs it first.
                         PrimaryButton("Play", enabled = !s.busy, main = true, onClick = a.onPlay)
@@ -769,9 +791,9 @@ private fun Content(
                         Cog(a.onSteamSettings)
                     }
                 }
-                Rise(4) { SectionTitle("Installed", "${s.steamGames.size} game${if (s.steamGames.size == 1) "" else "s"}") }
-                if (s.steamGames.isEmpty()) Rise(5) { Note("No games installed.") }
-                else Rise(5, Modifier.weight(1f).fillMaxWidth()) { ArtGrid(s.steamGames.map { g -> Tile(g.name, null, g.art, "steam:${g.appId}", null) { onSelect("app:${g.appId}") } }) }
+                Rise(4) { SectionTitle("Installed", "${games.size} game${if (games.size == 1) "" else "s"}") }
+                if (games.isEmpty()) Rise(5) { Note("No games installed.") }
+                else Rise(5, Modifier.weight(1f).fillMaxWidth()) { ArtGrid(games.map { g -> Tile(g.name, null, g.art, "steam:${g.appId}", null) { onSelect("app:${g.appId}") } }) }
             }
             selected.startsWith("app:") -> {
                 val g = s.steamGames.firstOrNull { "app:${it.appId}" == selected }
@@ -1101,12 +1123,81 @@ private fun SectionTitle(t: String, detail: String?) {
 @Composable private fun Note(t: String) = Text(t, fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.fillMaxWidth().clip(Shape12).background(MaterialTheme.colorScheme.surface).border(1.dp, LocalPalette.current.line2, Shape12).padding(12.dp))
 @Composable private fun Actions(content: @Composable () -> Unit) = Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) { content() }
 
+private val Shape16 = RoundedCornerShape(16.dp)
+
+/** A page's title, with room at its right for a status chip. */
+@Composable
+private fun PageHeader(title: String, trailing: @Composable RowScope.() -> Unit = {}) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp),
+        modifier = Modifier.fillMaxWidth().padding(bottom = 10.dp),
+    ) {
+        Text(title, fontSize = 26.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onBackground)
+        trailing()
+    }
+}
+
+/** Whether Steam can start, said where Play is rather than only in Setup. */
+@Composable
+private fun RuntimeChip(s: FrontEndState) = when {
+    s.busy -> Chip(if (s.percent >= 0) "${s.stage} · ${s.percent}%" else s.stage, ok = false)
+    !s.ready -> Chip("Runtime installs on first Play", ok = false)
+    s.available != null && s.available != s.installed -> Chip("Runtime update available", ok = false)
+    else -> Chip("● Runtime ready", ok = true)
+}
+
+/** "Last played 3 days ago" from Steam's unix seconds; null for a game never played. */
+private fun lastPlayedText(lastPlayed: Long): String? {
+    if (lastPlayed <= 0L) return null
+    val span = android.text.format.DateUtils.getRelativeTimeSpanString(
+        lastPlayed * 1000L, System.currentTimeMillis(), android.text.format.DateUtils.MINUTE_IN_MILLIS,
+    ).toString()
+    return "Last played " + span.replaceFirstChar { it.lowercase() }
+}
+
+private fun libraryLabel(library: String): String = when (library) {
+    "internal" -> "Internal storage"
+    "added" -> "Added game"
+    else -> library
+}
+
+/**
+ * A game's wide banner: Steam's hero art where the client cached one, else its capsule blurred to
+ * fill the width. The copy sits bottom-left over a scrim of the ground colour so it always reads.
+ */
+@Composable
+private fun GameHero(g: Library.SteamGame, modifier: Modifier, content: @Composable ColumnScope.() -> Unit) {
+    val colors = MaterialTheme.colorScheme
+    Box(modifier = modifier.clip(Shape16).background(artBrush(hueOf(g.name)))) {
+        val image = g.hero ?: g.art
+        if (image != null) AsyncImage(
+            model = image, contentDescription = null, contentScale = ContentScale.Crop,
+            modifier = Modifier.fillMaxSize()
+                .then(if (g.hero == null) Modifier.blur(24.dp).graphicsLayer { scaleX = 1.3f; scaleY = 1.3f } else Modifier),
+        )
+        Spacer(
+            Modifier.fillMaxSize().background(
+                Brush.horizontalGradient(
+                    0f to colors.background.copy(alpha = 0.92f),
+                    0.55f to colors.background.copy(alpha = 0.6f),
+                    1f to Color.Transparent,
+                ),
+            ),
+        )
+        Column(
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+            modifier = Modifier.align(Alignment.BottomStart).padding(horizontal = 22.dp, vertical = 18.dp),
+            content = content,
+        )
+    }
+}
+
 @Composable
 private fun Chip(t: String, ok: Boolean) {
     val colors = MaterialTheme.colorScheme
     val pal = LocalPalette.current
     Text(
-        t, fontSize = 12.sp, color = if (ok) pal.good else colors.onSurfaceVariant,
+        t, fontSize = 12.sp, color = if (ok) pal.good else colors.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis,
         modifier = Modifier.clip(RoundedCornerShape(99.dp)).background(colors.surfaceVariant).border(1.dp, if (ok) pal.good.copy(alpha = 0.3f) else pal.line, RoundedCornerShape(99.dp)).padding(horizontal = 9.dp, vertical = 4.dp),
     )
 }
