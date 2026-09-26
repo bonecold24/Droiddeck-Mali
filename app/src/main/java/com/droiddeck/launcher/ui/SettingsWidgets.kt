@@ -235,10 +235,14 @@ fun ValueChip(text: String, open: Boolean, enabled: Boolean = true, modifier: Mo
 }
 
 @Composable
-fun SettingsGroup(title: String, content: @Composable ColumnScope.() -> Unit) {
+fun SettingsGroup(title: String, compact: Boolean = false, content: @Composable ColumnScope.() -> Unit) {
     val colors = MaterialTheme.colorScheme
     val pal = LocalPalette.current
-    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth().padding(top = 16.dp, bottom = 6.dp)) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(if (compact) 6.dp else 10.dp),
+        modifier = Modifier.fillMaxWidth().padding(top = if (compact) 4.dp else 16.dp, bottom = if (compact) 3.dp else 6.dp),
+    ) {
         Text(title.uppercase(), fontSize = 11.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 2.sp, color = colors.onSurfaceVariant)
         Box(modifier = Modifier.weight(1f).height(1.dp).background(pal.line))
     }
@@ -332,24 +336,32 @@ fun SettingsPage(
     action: (@Composable () -> Unit)? = null,
     /** Pass one held above the page to keep its scroll position across a page opened over it. */
     scroll: androidx.compose.foundation.ScrollState? = null,
+    scrollContent: Boolean = true,
+    compactLayout: Boolean = false,
     content: @Composable ColumnScope.() -> Unit,
 ) {
     val scrollState = scroll ?: rememberScrollState()
     val colors = MaterialTheme.colorScheme
     val dim by animateFloatAsState(if (host.open != null) 0.6f else 1f, Motion.tw(220), label = "pageDim")
-    Column(modifier = Modifier.fillMaxSize().padding(horizontal = 22.dp, vertical = 18.dp)) {
+    Column(
+        modifier = Modifier.fillMaxSize().padding(
+            horizontal = if (compactLayout) 14.dp else 22.dp,
+            vertical = if (compactLayout) 6.dp else 18.dp,
+        ),
+        verticalArrangement = Arrangement.spacedBy(if (compactLayout) 2.dp else 0.dp),
+    ) {
         Rise(0) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 // Outlined when a controller's focus is on it, like every other control here.
                 val backSrc = remember { MutableInteractionSource() }
                 val backHot = backSrc.collectIsFocusedAsState().value || backSrc.collectIsHoveredAsState().value
                 Text(
-                    "‹  Back", fontSize = 12.sp, fontWeight = FontWeight.SemiBold,
+                    "‹  Back", fontSize = if (compactLayout) 11.sp else 12.sp, fontWeight = FontWeight.SemiBold,
                     color = if (backHot) LocalPalette.current.signal else colors.onSurfaceVariant,
                     modifier = Modifier.clip(RoundedCornerShape(8.dp))
                         .border(2.dp, if (backHot) LocalPalette.current.signal else Color.Transparent, RoundedCornerShape(8.dp))
                         .hoverable(backSrc).clickable(interactionSource = backSrc, indication = null, onClick = onBack)
-                        .padding(horizontal = 6.dp, vertical = 4.dp),
+                        .padding(horizontal = 6.dp, vertical = if (compactLayout) 2.dp else 4.dp),
                 )
                 if (eyebrow != null) {
                     Spacer(Modifier.width(10.dp))
@@ -359,13 +371,44 @@ fun SettingsPage(
         }
         Rise(1) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Box(Modifier.weight(1f)) { Title(title) }
+                Box(Modifier.weight(1f)) {
+                    if (compactLayout) {
+                        Text(
+                            title,
+                            fontSize = 20.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = colors.onBackground,
+                            modifier = Modifier.padding(vertical = 2.dp),
+                        )
+                    } else {
+                        Title(title)
+                    }
+                }
                 if (action != null) action()
             }
         }
-        if (lede != null) Rise(2) { Lede(lede) }
+        if (lede != null) Rise(2) {
+            if (compactLayout) {
+                Text(
+                    lede,
+                    fontSize = 11.sp,
+                    color = colors.onSurfaceVariant,
+                    modifier = Modifier.padding(bottom = 3.dp),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            } else {
+                Lede(lede)
+            }
+        }
         Rise(3, Modifier.weight(1f).fillMaxWidth()) {
-            Column(modifier = Modifier.fillMaxSize().graphicsLayer { alpha = dim }.verticalScroll(scrollState).padding(bottom = 24.dp)) { content() }
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .graphicsLayer { alpha = dim }
+                    .then(if (scrollContent) Modifier.verticalScroll(scrollState) else Modifier)
+                    .padding(bottom = if (compactLayout) 0.dp else 24.dp),
+            ) { content() }
         }
     }
 }
