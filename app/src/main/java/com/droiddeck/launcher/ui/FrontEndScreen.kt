@@ -919,7 +919,7 @@ private fun Content(
                 }
                 Rise(4) { SectionTitle("Installed", "${s.steamGames.size} game${if (s.steamGames.size == 1) "" else "s"}") }
                 if (s.steamGames.isEmpty()) Rise(5) { Note("No games installed.") }
-                else Rise(5, Modifier.weight(1f).fillMaxWidth()) { ArtGrid(s.steamGames.map { g -> Tile(g.name, g.library, g.art, "steam:${g.appId}", null, showFooter = false) { onSelect("app:${g.appId}") } }) }
+                else Rise(5, Modifier.weight(1f).fillMaxWidth()) { ArtGrid(s.steamGames.map { g -> Tile(g.name, null, g.art, "steam:${g.appId}", null) { onSelect("app:${g.appId}") } }) }
             }
             selected.startsWith("app:") -> {
                 val g = s.steamGames.firstOrNull { "app:${it.appId}" == selected }
@@ -949,7 +949,7 @@ private fun Content(
                     val others = s.steamGames.filter { it !== g }
                     if (others.isNotEmpty()) {
                         Rise(3) { SectionTitle("More from the library", null) }
-                        Rise(4, Modifier.weight(1f).fillMaxWidth()) { ArtGrid(others.map { x -> Tile(x.name, x.library, x.art, "steam:${x.appId}", null, showFooter = false) { onSelect("app:${x.appId}") } }) }
+                        Rise(4, Modifier.weight(1f).fillMaxWidth()) { ArtGrid(others.map { x -> Tile(x.name, null, x.art, "steam:${x.appId}", null) { onSelect("app:${x.appId}") } }) }
                     }
                 }
             }
@@ -1352,9 +1352,9 @@ private fun Poster(art: File?, name: String, modifier: Modifier) {
 @Composable
 private fun ArtGrid(tiles: List<Tile>, wide: Boolean = false) {
     val square = tiles.isNotEmpty() && tiles.all { it.art == null && (it.iconRes != null || it.iconBitmap != null) }
-    // Thumbnails to recognise a game by, not posters; icon tiles are squares.
-    val minSize = if (square) 64.dp else if (wide) 92.dp else 70.dp
-    val gap = 8.dp
+    // Big enough to recognise a game by its art and read its name under it; icon tiles are squares.
+    val minSize = if (square) 76.dp else if (wide) 120.dp else 96.dp
+    val gap = 12.dp
     // Laid out whole, not lazily: the pad's focus search only finds tiles that exist, and a lazy
     // grid composes only the rows on screen, so a press towards the next row bounced back among
     // the visible tiles. A few hundred tiles lay out fine; the scroll follows the focused one.
@@ -1391,22 +1391,12 @@ private fun GameTile(t: Tile, wide: Boolean, square: Boolean, src: MutableIntera
             .graphicsLayer { scaleX = scale; scaleY = scale; translationY = lift.dp.toPx(); shadowElevation = elev.dp.toPx(); shape = Shape12; clip = false; ambientShadowColor = if (hot) pal.signal else Color.Black; spotShadowColor = if (hot) pal.signal else Color.Black; transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0.5f, 0.9f) }
             .clip(Shape12)
             .background(colors.surface)
-            .border(1.5.dp, ring, Shape12)
+            .border(2.5.dp, ring, Shape12)
             .alpha(if (t.dim && !hot) 0.55f else 1f)
             .hoverable(src).clickable(interactionSource = src, indication = LocalIndication.current, onClick = t.onClick),
     ) {
         Box(modifier = Modifier.fillMaxWidth().shine(hot)) {
             Art(t.art, t.iconRes, t.title, Modifier.fillMaxWidth(), wide, t.iconBitmap)
-            androidx.compose.animation.AnimatedVisibility(
-                visible = hot, modifier = Modifier.align(Alignment.Center),
-                enter = scaleIn(Motion.sp(0.5f), initialScale = 0.5f) + fadeIn(Motion.tw(200)),
-                exit = scaleOut(Motion.tw(150), targetScale = 0.6f) + fadeOut(Motion.tw(150)),
-            ) {
-                Box(
-                    contentAlignment = Alignment.Center,
-                    modifier = Modifier.size(if (square) 26.dp else 32.dp).graphicsLayer { shadowElevation = 10.dp.toPx(); shape = CircleShape; clip = false; spotShadowColor = pal.signal }.clip(CircleShape).background(pal.signal),
-                ) { Text("›", fontSize = if (square) 16.sp else 20.sp, color = Color.White) }
-            }
         }
         if (t.showFooter) {
             Column(modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp)) {
