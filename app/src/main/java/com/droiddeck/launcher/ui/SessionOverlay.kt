@@ -351,10 +351,11 @@ fun SessionDrawer(open: Boolean, page: Int, controllerActive: Boolean, onPageCha
                                 a.onSteamMenu.invoke()
                             },
                             shape = RoundedCornerShape(12.dp),
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
                             border = BorderStroke(if (steamHot) 2.dp else 1.dp, if (steamHot) pal.signal else colors.outline),
                             colors = ButtonDefaults.outlinedButtonColors(containerColor = if (steamHot) pal.signal.copy(alpha = 0.16f) else Color.Transparent),
                         ) {
-                            Text("STEAM", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 0.5.sp)
+                            Text("STEAM", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 0.5.sp, maxLines = 1)
                         }
                         OutlinedButton(
                             onClick = {
@@ -369,10 +370,11 @@ fun SessionDrawer(open: Boolean, page: Int, controllerActive: Boolean, onPageCha
                                 a.onQam.invoke()
                             },
                             shape = RoundedCornerShape(12.dp),
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
                             border = BorderStroke(if (qamHot) 2.dp else 1.dp, if (qamHot) pal.signal else colors.outline),
                             colors = ButtonDefaults.outlinedButtonColors(containerColor = if (qamHot) pal.signal.copy(alpha = 0.16f) else Color.Transparent),
                         ) {
-                            Text("QAM", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 0.5.sp)
+                            Text("QAM", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 0.5.sp, maxLines = 1)
                         }
                         // Big Picture's own "Switch to Desktop" waits on SteamOS Manager for ever
                         // here; this does the switch without the client.
@@ -388,10 +390,11 @@ fun SessionDrawer(open: Boolean, page: Int, controllerActive: Boolean, onPageCha
                                         a.onSwitchToDesktop.invoke()
                                     },
                                 shape = RoundedCornerShape(12.dp),
+                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
                                 border = BorderStroke(if (deskHot) 2.dp else 1.dp, if (deskHot) pal.signal else colors.outline),
                                 colors = ButtonDefaults.outlinedButtonColors(containerColor = if (deskHot) pal.signal.copy(alpha = 0.16f) else Color.Transparent),
                             ) {
-                                Text("DESKTOP", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 0.5.sp)
+                                Text("DESKTOP", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 0.5.sp, maxLines = 1)
                             }
                         }
                     }
@@ -767,4 +770,3 @@ private const val DRAWER_TAB_SPACING_DP = 64f
 private const val DRAWER_TAB_LEAN_DP = 12f
 private const val DRAWER_TAB_SIDE_SCALE = 0.5f
 private const val DRAWER_TAB_SIDE_ALPHA = 0.7f
-

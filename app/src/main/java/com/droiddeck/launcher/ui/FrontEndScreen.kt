@@ -71,6 +71,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -478,7 +479,7 @@ private fun FrontEndScreenBody(s: FrontEndState, a: FrontEndActions, page: (@Com
         }
         Box(modifier = Modifier.fillMaxSize()) {
             Column(modifier = Modifier.fillMaxSize()) {
-                LauncherTopBar(frontFocus.menuToggle) { navOpen = true }
+                LauncherTopBar(frontFocus.menuToggle, s.buildLabel, a.onCheckLatestBuild) { navOpen = true }
                 content(Modifier.weight(1f).fillMaxWidth())
             }
             AnimatedVisibility(
@@ -569,7 +570,12 @@ private fun FrontEndScreenBody(s: FrontEndState, a: FrontEndActions, page: (@Com
 
 
 @Composable
-private fun LauncherTopBar(menuRequester: FocusRequester, onMenu: () -> Unit) {
+private fun LauncherTopBar(
+    menuRequester: FocusRequester,
+    buildLabel: String,
+    onCheckLatestBuild: () -> Unit,
+    onMenu: () -> Unit,
+) {
     val colors = MaterialTheme.colorScheme
     val palette = LocalPalette.current
     var menuFocused by remember { mutableStateOf(false) }
@@ -588,6 +594,12 @@ private fun LauncherTopBar(menuRequester: FocusRequester, onMenu: () -> Unit) {
         Image(painterResource(R.drawable.logo), null, modifier = Modifier.size(24.dp))
         Spacer(Modifier.width(8.dp))
         Text("DroidDeck", fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = colors.onBackground)
+        Spacer(Modifier.weight(1f))
+        BuildStatus(
+            label = buildLabel,
+            onCheckLatest = onCheckLatestBuild,
+            modifier = Modifier.widthIn(max = 220.dp).padding(start = 12.dp, end = 8.dp),
+        )
     }
 }
 
@@ -682,11 +694,6 @@ private fun Rail(
                     .padding(horizontal = 10.dp, vertical = 8.dp),
             )
         }
-        BuildStatus(
-            label = s.buildLabel,
-            onCheckLatest = a.onCheckLatestBuild,
-            modifier = Modifier.align(Alignment.Start).padding(start = 8.dp, top = 4.dp, bottom = 2.dp),
-        )
     }
 }
 
@@ -840,11 +847,11 @@ private fun BuildStatus(label: String, onCheckLatest: () -> Unit, modifier: Modi
             horizontalArrangement = Arrangement.spacedBy(5.dp),
             modifier = Modifier.fillMaxWidth(),
         ) {
-            Text(branch, modifier = Modifier.weight(1f), fontSize = 9.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Medium, color = if (hot) colors.onSurfaceVariant else colors.onSurfaceVariant.copy(alpha = 0.82f), maxLines = 1, overflow = TextOverflow.Ellipsis)
-            if (commit.isNotEmpty()) Text("@$commit", fontSize = 8.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Medium, color = colors.onSurfaceVariant.copy(alpha = 0.82f), maxLines = 1)
+            Text(branch, modifier = Modifier.weight(1f), fontSize = 10.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Medium, color = if (hot) colors.onSurfaceVariant else colors.onSurfaceVariant.copy(alpha = 0.82f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+            if (commit.isNotEmpty()) Text("@$commit", fontSize = 9.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Medium, color = colors.onSurfaceVariant.copy(alpha = 0.82f), maxLines = 1)
             Icon(Icons.Filled.Refresh, contentDescription = null, tint = if (hot) pal.signal else colors.onSurfaceVariant.copy(alpha = 0.82f), modifier = Modifier.size(12.dp))
         }
-        if (context.isNotEmpty()) Text(context, fontSize = 8.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Medium, color = colors.onSurfaceVariant.copy(alpha = 0.82f), maxLines = 1)
+        if (context.isNotEmpty()) Text(context, fontSize = 9.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Medium, color = colors.onSurfaceVariant.copy(alpha = 0.82f), maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
 }
 

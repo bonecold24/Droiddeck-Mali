@@ -36,7 +36,7 @@ h1{font-size:1.35rem;font-weight:600;letter-spacing:-.01em;margin:0}
 .meta{color:var(--muted);font-size:.9rem;margin:0}
 .stage{position:relative;width:100%;aspect-ratio:16/10;border-radius:14px;overflow:hidden;background:#D6E1EA;box-shadow:0 0 0 1px var(--stage-edge),0 18px 50px -24px rgba(10,20,30,.45)}
 .stage canvas{display:block;width:100%;height:100%;cursor:pointer}
-.stage.dark{background:#07090C}
+.stage.dark{background:#000}
 .stage.dark .hint{color:#C9D3DD}
 .head-l{display:flex;align-items:baseline;gap:14px;flex-wrap:wrap}
 .version{display:inline-flex;border-radius:999px;background:var(--panel);box-shadow:inset 0 0 0 1px var(--line);padding:3px}
@@ -185,7 +185,8 @@ const DD = (() => {
   const ORB = '#1A9FFF';
   const THEMES = {
     light: { ink: '#1b1b1b', bg: ['#EDF3F8', '#DCE6EE', '#B6C7D6'], shadow: '22,40,58', shadowK: 1, ringA: 1, ringGlow: 0, glow: 0, noise: 3 },
-    dark:  { ink: '#FFFFFF', bg: ['#1B222B', '#0F1419', '#030405'], shadow: '0,0,0', shadowK: 2.3, ringA: 1.5, ringGlow: 14, glow: .34, noise: 4 },
+    // Keep the shipped Steam render black between and around the animated pieces.
+    dark:  { ink: '#FFFFFF', bg: ['#000000', '#000000', '#000000'], shadow: '0,0,0', shadowK: 2.3, ringA: 1.5, ringGlow: 14, glow: .34, noise: 0 },
   };
   let TH = THEMES.light, THN = 'light';
   const setTheme = n => { THN = THEMES[n] ? n : 'light'; TH = THEMES[THN]; };
