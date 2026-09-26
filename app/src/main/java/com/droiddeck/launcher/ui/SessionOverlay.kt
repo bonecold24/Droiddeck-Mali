@@ -4,6 +4,9 @@ import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.offset
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.outlined.DesktopWindows
 import androidx.compose.material.icons.outlined.Layers
 import androidx.compose.material.icons.outlined.Settings
@@ -139,30 +142,146 @@ fun HudText(text: String) {
     }
 }
 
+/** One line of the loading screen's checklist; [detail] is what it says while it is the one running. */
+private class LoadStage(val label: String, val detail: String)
+
+private fun loadStages(steam: Boolean): List<LoadStage> = if (steam) listOf(
+    LoadStage("Linux runtime", "Getting the Linux runtime ready"),
+    LoadStage("Session", "Starting the display and audio"),
+    LoadStage("Steam client", "Checking the Steam client and its compatibility tools"),
+    LoadStage("Opening Steam", "Waiting for Steam's first frame"),
+) else listOf(
+    LoadStage("Linux runtime", "Getting the Linux runtime ready"),
+    LoadStage("Desktop", "Getting the desktop ready"),
+    LoadStage("Opening", "Waiting for the first frame"),
+)
+
+/**
+ * The checklist stage a loading line belongs to, -1 when it says nothing about the stage. The lines
+ * are the session script's "== STEP" milestones and the installer's own progress; they arrive in
+ * order, and the screen never steps back.
+ */
+private fun stageOf(step: String, steam: Boolean): Int {
+    val t = step.lowercase()
+    return when {
+        "linux runtime" in t -> 0
+        "starting the session" in t -> 1
+        !steam && "desktop" in t -> 1
+        steam && "starting the steam client" in t -> 3
+        steam && ("steam" in t || "client" in t || "proton" in t || "library" in t || "compatibility" in t) -> 2
+        else -> -1
+    }
+}
+
+/** Download and install lines are worth reading as they are; the script's own notes are not. */
+private fun readableStep(step: String): Boolean {
+    val t = step.lowercase()
+    return t.startsWith("download") || t.startsWith("checking the linux") || t.startsWith("unpacking") || t.startsWith("installing")
+}
+
 @Composable
-fun LoadingOverlay(step: String, percent: Int, elapsed: String, hint: String, ended: Boolean) {
-    Column(
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = androidx.compose.foundation.layout.Arrangement.Center,
+fun LoadingOverlay(
+    step: String, percent: Int, elapsed: String, hint: String, ended: Boolean,
+    title: String = "Starting Steam", steam: Boolean = true, onCancel: (() -> Unit)? = null,
+) {
+    val colors = MaterialTheme.colorScheme
+    val pal = LocalPalette.current
+    val stages = remember(steam) { loadStages(steam) }
+    var reached by remember { mutableStateOf(0) }
+    LaunchedEffect(step, steam) {
+        val at = stageOf(step, steam)
+        if (at > reached) reached = at
+    }
+    val active = reached.coerceAtMost(stages.lastIndex)
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier
             .fillMaxSize()
-            .background(Color.Black)
-            .clickable(interactionSource = MutableInteractionSource(), indication = null) {}
-            .padding(32.dp),
+            .background(colors.background)
+            .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) {},
     ) {
-        Image(painterResource(R.drawable.logo), contentDescription = null, modifier = Modifier.size(64.dp))
-        Spacer(Modifier.height(14.dp))
-        Text(if (ended) "The session ended" else "Steam is loading", color = Color.White, fontSize = 17.sp)
-        Text(step, color = Color(0xFFB8C4D0), fontSize = 13.sp, textAlign = TextAlign.Center, modifier = Modifier.padding(top = 6.dp))
-        if (!ended) {
-            Spacer(Modifier.height(14.dp))
-            if (percent >= 0) LinearProgressIndicator(progress = { percent / 100f }, modifier = Modifier.width(220.dp))
-            else LinearProgressIndicator(modifier = Modifier.width(220.dp))
-            Text(elapsed, color = Color(0xFF667788), fontSize = 11.sp, modifier = Modifier.padding(top = 8.dp))
-            Text(
-                hint, color = Color(0xFF667788), fontSize = 11.sp, textAlign = TextAlign.Center,
-                modifier = Modifier.padding(top = 18.dp).widthIn(max = 360.dp),
+        Box(contentAlignment = Alignment.Center, modifier = Modifier.weight(0.4f).fillMaxHeight()) {
+            if (!ended) CircularProgressIndicator(
+                color = pal.signal, trackColor = pal.line, strokeWidth = 2.dp, modifier = Modifier.size(150.dp),
             )
+            Image(painterResource(R.drawable.logo), contentDescription = null, modifier = Modifier.size(84.dp))
+        }
+        // Centred when it fits, scrolling when a long failure message does not.
+        Box(contentAlignment = Alignment.CenterStart, modifier = Modifier.weight(0.6f).fillMaxHeight()) {
+            Column(
+                modifier = Modifier.verticalScroll(rememberScrollState())
+                    .padding(start = 8.dp, end = 48.dp, top = 28.dp, bottom = 28.dp),
+            ) {
+                Text(
+                    if (ended) "The session ended" else title,
+                    color = colors.onBackground, fontSize = 28.sp, fontWeight = FontWeight.Bold,
+                )
+                if (ended) {
+                    Text(step, color = colors.onSurfaceVariant, fontSize = 14.sp, modifier = Modifier.padding(top = 10.dp))
+                } else {
+                    if (elapsed.isNotEmpty()) Text(elapsed, color = colors.onSurfaceVariant, fontSize = 13.sp, modifier = Modifier.padding(top = 2.dp))
+                    Spacer(Modifier.height(16.dp))
+                    stages.forEachIndexed { i, stage ->
+                        StageRow(
+                            label = stage.label,
+                            state = when { i < active -> StageMark.DONE; i == active -> StageMark.ACTIVE; else -> StageMark.PENDING },
+                            detail = if (percent >= 0 || readableStep(step)) step.replaceFirstChar { it.uppercase() } else stage.detail,
+                            percent = percent,
+                        )
+                    }
+                    if (hint.isNotEmpty()) Text(
+                        hint, color = colors.onSurfaceVariant, fontSize = 14.sp,
+                        modifier = Modifier.padding(top = 16.dp).widthIn(max = 480.dp)
+                            .clip(RoundedCornerShape(12.dp)).border(1.dp, pal.line2, RoundedCornerShape(12.dp))
+                            .padding(horizontal = 14.dp, vertical = 10.dp),
+                    )
+                    if (onCancel != null) Box(Modifier.padding(top = 16.dp)) { SecondaryButton("Cancel", onClick = onCancel) }
+                }
+            }
+        }
+    }
+}
+
+private enum class StageMark { DONE, ACTIVE, PENDING }
+
+@Composable
+private fun StageRow(label: String, state: StageMark, detail: String, percent: Int) {
+    val colors = MaterialTheme.colorScheme
+    val pal = LocalPalette.current
+    val shape = RoundedCornerShape(14.dp)
+    Column(
+        modifier = Modifier.widthIn(max = 520.dp).fillMaxWidth()
+            .then(
+                if (state == StageMark.ACTIVE) Modifier.padding(vertical = 4.dp).clip(shape).background(colors.surface)
+                    .border(1.dp, pal.line, shape).padding(horizontal = 12.dp, vertical = 10.dp)
+                else Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+            ),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            when (state) {
+                StageMark.DONE -> Box(contentAlignment = Alignment.Center, modifier = Modifier.size(24.dp).clip(CircleShape).background(pal.good.copy(alpha = 0.16f))) {
+                    Icon(Icons.Filled.Check, contentDescription = "Done", tint = pal.good, modifier = Modifier.size(15.dp))
+                }
+                StageMark.ACTIVE -> Box(contentAlignment = Alignment.Center, modifier = Modifier.size(24.dp).border(2.dp, pal.signal, CircleShape)) {
+                    Box(Modifier.size(9.dp).clip(CircleShape).background(pal.signal))
+                }
+                StageMark.PENDING -> Box(Modifier.size(24.dp).border(2.dp, pal.line2, CircleShape))
+            }
+            Text(
+                label, fontSize = 16.sp, modifier = Modifier.weight(1f),
+                fontWeight = if (state == StageMark.ACTIVE) FontWeight.SemiBold else FontWeight.Normal,
+                color = if (state == StageMark.PENDING) colors.onSurfaceVariant else colors.onBackground,
+            )
+            if (state == StageMark.ACTIVE && percent >= 0) Text("$percent%", fontSize = 14.sp, color = colors.onSurfaceVariant)
+        }
+        if (state == StageMark.ACTIVE) {
+            Text(
+                detail, fontSize = 13.sp, color = colors.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.padding(start = 36.dp, top = 6.dp),
+            )
+            val bar = Modifier.padding(start = 36.dp, top = 8.dp).fillMaxWidth().height(4.dp)
+            if (percent >= 0) LinearProgressIndicator(progress = { percent / 100f }, modifier = bar, color = pal.signal, trackColor = pal.line)
+            else LinearProgressIndicator(modifier = bar, color = pal.signal, trackColor = pal.line)
         }
     }
 }
