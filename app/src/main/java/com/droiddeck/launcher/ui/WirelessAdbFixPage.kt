@@ -64,6 +64,7 @@ fun WirelessAdbFixPage(
     var busy by remember { mutableStateOf(false) }
     var editing by remember { mutableStateOf(false) }
     var message by remember { mutableStateOf<String?>(null) }
+    var messageIsError by remember { mutableStateOf(false) }
     val focusManager = LocalFocusManager.current
     val keyboardController = LocalSoftwareKeyboardController.current
     val pairingEndpoint = parseAdbAddress(pairingAddress)
@@ -75,11 +76,13 @@ fun WirelessAdbFixPage(
             busy = true
             editing = false
             message = null
+            messageIsError = false
             onPair(endpoint.host, endpoint.port, pairingCode) { error ->
                 pairingCode = ""
                 if (error != null) {
                     busy = false
                     message = error
+                    messageIsError = true
                 } else {
                     step = 1
                     busy = true
@@ -88,7 +91,7 @@ fun WirelessAdbFixPage(
                         if (discoveredPort == null) {
                             connectionAddress = formatAddressHost(endpoint.host) + ":"
                             busy = false
-                            message = "Enter the current Wireless debugging address from Settings."
+                            message = "Paired. Enter the port from Settings."
                         } else {
                             connectionAddress = formatAdbAddress(endpoint.host, discoveredPort)
                             message = "Device found. Applying the setting…"
@@ -99,6 +102,7 @@ fun WirelessAdbFixPage(
                                     message = null
                                 } else {
                                     message = "Could not apply automatically. Check the address below and retry. $applyError"
+                                    messageIsError = true
                                 }
                             }
                         }
@@ -114,6 +118,7 @@ fun WirelessAdbFixPage(
             busy = true
             editing = false
             message = null
+            messageIsError = false
             onApply(endpoint.host, endpoint.port, desiredEnabled) { error ->
                 busy = false
                 if (error == null) {
@@ -121,6 +126,7 @@ fun WirelessAdbFixPage(
                     message = null
                 } else {
                     message = error
+                    messageIsError = true
                 }
             }
         }
@@ -141,6 +147,7 @@ fun WirelessAdbFixPage(
                 onConnectionAddressChange = { connectionAddress = it },
                 busy = busy,
                 message = message,
+                messageIsError = messageIsError,
                 compact = compactSplit,
                 editing = editing,
                 onEditingChanged = { editing = it },
@@ -161,10 +168,10 @@ fun WirelessAdbFixPage(
             eyebrow = "Setup",
             lede = when {
                 compactSplit && step == 0 -> "If the option is missing, pair over Wireless debugging."
-                compactSplit && step == 1 -> "Enter the Wireless debugging connection address."
+                compactSplit && step == 1 -> "Use IP address & Port on the main Wireless debugging screen."
                 compactSplit -> "The child-process limit was updated."
                 step == 0 -> "Use step 2 if Developer options has no child-process setting. In Android Settings, open Developer options → Wireless debugging → Pair device with pairing code."
-                step == 1 -> "The pairing and Wireless debugging connection addresses are different."
+                step == 1 -> "Use IP address & Port on the main Wireless debugging screen. The pairing pop-up uses a different port."
                 else -> "The child-process limit was updated over Wireless debugging."
             },
             onBack = { if (!busy) onBack() },
@@ -237,6 +244,7 @@ private fun WirelessStepForm(
     onConnectionAddressChange: (String) -> Unit,
     busy: Boolean,
     message: String?,
+    messageIsError: Boolean,
     compact: Boolean,
     editing: Boolean,
     onEditingChanged: (Boolean) -> Unit,
@@ -255,7 +263,7 @@ private fun WirelessStepForm(
                 AdbTextField(
                     value = pairingAddress,
                     onValueChange = onPairingAddressChange,
-                    label = "Pairing address",
+                    label = "Pairing pop-up IP address & Port",
                     placeholder = "192.168.1.42:37123",
                     keyboardType = KeyboardType.Ascii,
                     imeAction = ImeAction.Next,
@@ -284,7 +292,7 @@ private fun WirelessStepForm(
                     )
                     PrimaryButton("Pair", compact = compact, enabled = !busy && canPair, onClick = onPair)
                 }
-                StatusMessage(busy, message)
+                StatusMessage(busy, message, isError = messageIsError)
             }
         }
     } else {
@@ -296,7 +304,7 @@ private fun WirelessStepForm(
                 AdbTextField(
                     value = connectionAddress,
                     onValueChange = onConnectionAddressChange,
-                    label = "Wireless debugging address",
+                    label = "Connection IP address & Port",
                     placeholder = "192.168.1.42:45678",
                     keyboardType = KeyboardType.Ascii,
                     imeAction = ImeAction.Done,
@@ -309,7 +317,7 @@ private fun WirelessStepForm(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     modifier = Modifier.fillMaxWidth(),
                 ) {
-                    StatusMessage(busy, message, Modifier.weight(1f))
+                    StatusMessage(busy, message, Modifier.weight(1f), isError = messageIsError)
                     PrimaryButton(
                         if (desiredEnabled) "Enable limit" else "Disable limit",
                         compact = compact,
@@ -464,14 +472,21 @@ private fun CompactComputerFallback(desiredEnabled: Boolean) {
 }
 
 @Composable
-private fun StatusMessage(busy: Boolean, message: String?, modifier: Modifier = Modifier) {
+private fun StatusMessage(busy: Boolean, message: String?, modifier: Modifier = Modifier, isError: Boolean = false) {
     if (busy) {
         Row(modifier = modifier, verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
             Text(message ?: "Working…", style = MaterialTheme.typography.bodySmall)
         }
     } else {
-        message?.let { Text(it, modifier = modifier, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error) }
+        message?.let {
+            Text(
+                it,
+                modifier = modifier,
+                style = MaterialTheme.typography.bodySmall,
+                color = if (isError) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
     }
 }
 
