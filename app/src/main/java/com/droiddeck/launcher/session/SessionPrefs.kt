@@ -336,8 +336,8 @@ object SessionPrefs {
         prefs(context).edit().putString("addedExe:$folderPath", path).apply()
     }
 
-    /** The app's colour theme (ui/Themes ids); Paper on black unless chosen otherwise. */
-    fun theme(context: Context): String = prefs(context).getString("theme", "paper") ?: "paper"
+    /** The app's colour theme (ui/Themes ids); Graphite unless chosen otherwise. */
+    fun theme(context: Context): String = prefs(context).getString("theme", "graphite") ?: "graphite"
 
     fun setTheme(context: Context, id: String) {
         prefs(context).edit().putString("theme", id).apply()

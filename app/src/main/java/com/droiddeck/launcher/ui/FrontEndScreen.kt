@@ -163,7 +163,7 @@ class FrontEndState(
     val frameGenMultiplier: Int = 2,
     val lsfgReady: Boolean = false,
     val pageKey: String? = null,
-    val theme: String = Themes.PAPER,
+    val theme: String = Themes.GRAPHITE,
     val isHomeApp: Boolean = false,
     val homeScreenEnabled: Boolean = false,
     val defaultHomeLabel: String? = null,

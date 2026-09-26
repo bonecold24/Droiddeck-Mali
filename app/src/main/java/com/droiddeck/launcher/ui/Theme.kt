@@ -18,11 +18,19 @@ class Palette(
 )
 
 object Themes {
+    const val GRAPHITE = "graphite"
     const val PAPER = "paper"
     const val ICON_BLUE = "blue"
     const val ELECTRIC = "electric"
 
     val all: List<Palette> = listOf(
+        Palette(
+            GRAPHITE, "Graphite", "Graphite surfaces, with the logo's own orb blue for everything selected, focused or pressed.",
+            background = Color(0xFF0A0B0D), surface = Color(0xFF121417), surfaceVariant = Color(0xFF1A1D22), line = Color(0xFF262A31), line2 = Color(0xFF343A43),
+            onBackground = Color(0xFFF2F4F7), onSurfaceVariant = Color(0xFF9AA3AF),
+            primary = Color(0xFF1A9FFF), primary2 = Color(0xFF1487DB), onPrimary = Color(0xFF03111F), signal = Color(0xFF1A9FFF),
+            good = Color(0xFF4CD37F),
+        ),
         Palette(
             PAPER, "Paper on black", "White is the primary, the icon's blue is the signal for rules, rings and dots.",
             background = Color(0xFF000000), surface = Color(0xFF0F0F10), surfaceVariant = Color(0xFF191A1C), line = Color(0xFF262729), line2 = Color(0xFF343638),
@@ -49,7 +57,7 @@ object Themes {
     fun byId(id: String): Palette = all.firstOrNull { it.id == id } ?: all[0]
 }
 
-val LocalPalette = staticCompositionLocalOf { Themes.byId(Themes.PAPER) }
+val LocalPalette = staticCompositionLocalOf { Themes.byId(Themes.GRAPHITE) }
 
 @Composable
 fun DroidDeckTheme(theme: String? = null, content: @Composable () -> Unit) {

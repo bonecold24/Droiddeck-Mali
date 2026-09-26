@@ -205,7 +205,7 @@ class MainActivity : ComponentActivity() {
     private var customResolution by mutableStateOf<Pair<Int, Int>?>(null)
     private var fexPreset by mutableStateOf("")
     private var steamChannel by mutableStateOf("publicbeta")
-    private var theme by mutableStateOf("paper")
+    private var theme by mutableStateOf("graphite")
     private var shapeMode by mutableStateOf(SessionPrefs.SHAPE_AUTO)
     private var hdrOn by mutableStateOf(false)
     private var hdrReason by mutableStateOf<String?>(null)
