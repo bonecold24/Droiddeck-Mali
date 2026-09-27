@@ -149,28 +149,44 @@ object SessionFiles {
             Log.e(TAG, "could not write ld.so.preload")
         }
 
-        val startupMovie = File(root, "root/.local/share/Steam/config/uioverrides/movies/droiddeck-startup.webm")
-        val stagedMovie = File(startupMovie.parentFile, startupMovie.name + ".staged")
-        var movieInstalled = false
-        try {
-            startupMovie.parentFile?.mkdirs()
-            context.assets.open("steam-startup/droiddeck-startup.webm").use { input ->
-                stagedMovie.outputStream().use { output -> FileUtils.copy(input, output) }
-            }
-            movieInstalled = stagedMovie.setReadable(true, false) && stagedMovie.renameTo(startupMovie)
-        } catch (e: Exception) {
-            Log.w(TAG, "could not stage Steam startup movie", e)
-        } finally {
-            if (!movieInstalled) stagedMovie.delete()
+        val startupMovieDir = File(root, "root/.local/share/Steam/config/uioverrides/movies")
+        // Steam looks up these conventional names in its user override directory. Keep both
+        // variants populated because the startup movie name differs across Steam clients.
+        val bigPictureMovieInstalled = stageStartupMovie(
+            context,
+            startupMovieDir,
+            "bigpicture_startup.webm",
+        )
+        stageStartupMovie(context, startupMovieDir, "steam_os_startup.webm")
+        if (bigPictureMovieInstalled) {
+            ensureStartupMovieDefault(File(root, "root/.local/share/Steam/config/config.vdf"))
         }
-        if (!movieInstalled) Log.e(TAG, "Steam startup movie NOT staged")
-        if (movieInstalled) ensureStartupMovieDefault(File(root, "root/.local/share/Steam/config/config.vdf"))
+    }
+
+    private fun stageStartupMovie(context: Context, directory: File, name: String): Boolean {
+        val movie = File(directory, name)
+        val staged = File(directory, "$name.staged")
+        var installed = false
+        try {
+            directory.mkdirs()
+            context.assets.open("steam-startup/droiddeck-startup.webm").use { input ->
+                staged.outputStream().use { output -> FileUtils.copy(input, output) }
+            }
+            installed = staged.setReadable(true, false) && staged.renameTo(movie)
+        } catch (e: Exception) {
+            Log.w(TAG, "could not stage Steam startup movie $name", e)
+        } finally {
+            if (!installed) staged.delete()
+        }
+        if (!installed) Log.e(TAG, "Steam startup movie $name NOT staged")
+        return installed
     }
 
     private data class VdfBlock(val keyStart: Int, val open: Int, val close: Int)
 
     private fun ensureStartupMovieDefault(config: File) {
-        val path = "/uioverrides/movies/droiddeck-startup.webm"
+        val path = "/uioverrides/movies/bigpicture_startup.webm"
+        val legacyPath = "/uioverrides/movies/droiddeck-startup.webm"
         var text = if (config.isFile) runCatching { config.readText() }.getOrElse {
             Log.w(TAG, "could not read Steam config for startup movie", it)
             return
@@ -185,7 +201,10 @@ object SessionFiles {
                 Log.i(TAG, "Steam startup movie is set to DroidDeck")
                 return
             }
-            if ((!selectedId.isNullOrEmpty() && selectedId != "0") || !selectedPath.isNullOrEmpty()) {
+            val legacyDefault = selectedId == "0" && selectedPath == legacyPath
+            val hasExplicitSelection =
+                (!selectedId.isNullOrEmpty() && selectedId != "0") || !selectedPath.isNullOrEmpty()
+            if (!legacyDefault && hasExplicitSelection) {
                 Log.i(TAG, "Steam startup movie selection preserved")
                 return
             }
