@@ -65,7 +65,6 @@ import androidx.compose.ui.platform.LocalInputModeManager
 import androidx.compose.ui.input.InputMode
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -218,32 +217,25 @@ internal fun SetupPanel(
                                 }
                             }
                             AnimatedVisibility(showLimitDetails, enter = expandVertically() + fadeIn(), exit = shrinkVertically() + fadeOut()) {
+                                // One sentence and at most three buttons. The computer route and its
+                                // raw command live on the full page Wireless debugging opens.
                                 Column(modifier = Modifier.fillMaxWidth().padding(start = 56.dp, end = 14.dp, top = 4.dp, bottom = 10.dp)) {
                                     Text(
-                                        PhantomProcessLimit.instructions(s.phantomProcessStatus),
+                                        if (limitBlocks) PhantomProcessLimit.gateInstructions(s.phantomProcessStatus)
+                                        else PhantomProcessLimit.instructions(s.phantomProcessStatus),
                                         fontSize = 14.sp, color = colors.onSurfaceVariant, modifier = Modifier.padding(vertical = 4.dp),
                                     )
-                                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(vertical = 6.dp)) {
-                                        SecondaryButton("Developer options", compact = true, onClick = onOpenDeveloperOptions)
-                                        SecondaryButton("Check again", compact = true, onClick = a.onRefreshPhantomStatus)
-                                        SecondaryButton("Copy ADB command", compact = true, onClick = { a.onCopyPhantomCommand(false) })
-                                    }
-                                    Text(
-                                        PhantomProcessLimit.ADB_COMMAND, fontSize = 12.sp, fontFamily = FontFamily.Monospace,
-                                        color = colors.onSurfaceVariant, modifier = Modifier.padding(vertical = 4.dp),
-                                    )
-                                    if (s.phantomProcessStatus != PhantomProcessStatus.NOT_APPLICABLE) {
-                                        Text(
-                                            "With wireless debugging paired, DroidDeck can switch the limit itself. Turning it off is recommended for Steam sessions.",
-                                            fontSize = 14.sp, color = colors.onSurfaceVariant, modifier = Modifier.padding(top = 8.dp),
-                                        )
-                                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(vertical = 6.dp)) {
-                                            SecondaryButton("Turn limit off", compact = true, enabled = !processLimitBusy && s.phantomProcessStatus != PhantomProcessStatus.DISABLED) { setProcessLimit(false) }
-                                            SecondaryButton("Turn limit on", compact = true, enabled = !processLimitBusy && s.phantomProcessStatus != PhantomProcessStatus.ENABLED) { setProcessLimit(true) }
+                                    Actions {
+                                        if (limitBlocks) {
+                                            PrimaryButton("Developer options", compact = true, onClick = onOpenDeveloperOptions)
+                                            SecondaryButton("Use Wireless debugging", compact = true, enabled = !processLimitBusy) { setProcessLimit(false) }
+                                            SecondaryButton("Check again", compact = true, onClick = a.onRefreshPhantomStatus)
+                                        } else if (s.phantomProcessStatus == PhantomProcessStatus.DISABLED) {
+                                            SecondaryButton("Turn limit on", compact = true, enabled = !processLimitBusy) { setProcessLimit(true) }
                                         }
-                                        if (processLimitBusy) LinearProgressIndicator(modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp))
-                                        processLimitMessage?.let { Text(it, fontSize = 14.sp, color = colors.onSurfaceVariant, modifier = Modifier.padding(vertical = 4.dp)) }
                                     }
+                                    if (processLimitBusy) LinearProgressIndicator(modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp))
+                                    processLimitMessage?.let { Text(it, fontSize = 14.sp, color = colors.onSurfaceVariant, modifier = Modifier.padding(vertical = 4.dp)) }
                                 }
                             }
                             CheckRow(
