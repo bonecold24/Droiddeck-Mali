@@ -370,12 +370,7 @@ private fun ToolCard(t: ToolSpec, modifier: Modifier) {
 
 @Composable
 private fun FrameGenMenu(s: FrontEndState, a: FrontEndActions, host: MenuHost) {
-    AnchoredMenu(host.open == "fg", onDismiss = { if (host.open == "fg") host.open = null }, title = "Frame generation") { firstItemFocus ->
-        val need = if (s.lsfgReady) null else "Install Lossless Scaling in Steam"
-        MenuItem("Off", checked = s.frameGenEngine == FrameGen.ENGINE_OFF, focusRequester = firstItemFocus) { a.onFrameGenPick(FrameGen.ENGINE_OFF, 2); host.open = null }
-        for (m in 2..4) MenuItem("Win-FG ${m}×", checked = s.frameGenEngine == FrameGen.ENGINE_WINFG && s.frameGenMultiplier == m) { a.onFrameGenPick(FrameGen.ENGINE_WINFG, m); host.open = null }
-        for (m in 2..4) MenuItem("LSFG ${m}×", checked = s.frameGenEngine == FrameGen.ENGINE_LSFG && s.frameGenMultiplier == m, enabled = s.lsfgReady, detail = need) { a.onFrameGenPick(FrameGen.ENGINE_LSFG, m); host.open = null }
-    }
+    FrameGenMenu(host, s.frameGenEngine, s.frameGenMultiplier, s.lsfgReady, a.onFrameGenPick)
 }
 
 /**

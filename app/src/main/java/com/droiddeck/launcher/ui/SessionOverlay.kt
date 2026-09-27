@@ -316,20 +316,11 @@ fun SessionDrawer(open: Boolean, page: Int, controllerActive: Boolean, onPageCha
                                 chipModifier = focus.track(page, "fill"), onChange = a.onFillScreen,
                             )
                             val fgOpen = host.open == "fg"
-                            val fgLabel = when (a.frameGenEngine) {
-                                FrameGen.ENGINE_WINFG -> "Win-FG ${a.frameGenMultiplier}×"
-                                FrameGen.ENGINE_LSFG -> "LSFG ${a.frameGenMultiplier}×"
-                                else -> "Off"
-                            }
+                            val fgLabel = FrameGen.label(a.frameGenEngine, a.frameGenMultiplier)
                             SettingsRow("Frame generation", null, highlighted = fgOpen) {
                                 Box {
                                     ValueChip(fgLabel, fgOpen, modifier = focus.track(page, "fg")) { host.open = if (fgOpen) null else "fg" }
-                                    AnchoredMenu(fgOpen, onDismiss = { if (host.open == "fg") host.open = null }, title = "Frame generation") { firstItemFocus ->
-                                        val need = if (a.lsfgReady) null else "Requires Lossless Scaling"
-                                        MenuItem("Off", checked = a.frameGenEngine == FrameGen.ENGINE_OFF, focusRequester = firstItemFocus) { a.onFrameGenPick(FrameGen.ENGINE_OFF, 2); host.open = null }
-                                        for (m in 2..4) MenuItem("Win-FG ${m}×", checked = a.frameGenEngine == FrameGen.ENGINE_WINFG && a.frameGenMultiplier == m) { a.onFrameGenPick(FrameGen.ENGINE_WINFG, m); host.open = null }
-                                        for (m in 2..4) MenuItem("LSFG ${m}×", checked = a.frameGenEngine == FrameGen.ENGINE_LSFG && a.frameGenMultiplier == m, enabled = a.lsfgReady, detail = need) { a.onFrameGenPick(FrameGen.ENGINE_LSFG, m); host.open = null }
-                                    }
+                                    FrameGenMenu(host, a.frameGenEngine, a.frameGenMultiplier, a.lsfgReady, a.onFrameGenPick)
                                 }
                             }
                         }
