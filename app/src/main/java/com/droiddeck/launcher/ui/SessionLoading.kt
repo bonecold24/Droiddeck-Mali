@@ -223,7 +223,8 @@ private fun LoadSegments(count: Int, active: Int, percent: Int, modifier: Modifi
     val pal = LocalPalette.current
     val track = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.12f)
     val run = rememberInfiniteTransition(label = "segment")
-        .animateFloat(-0.4f, 1f, infiniteRepeatable(tween(1300, easing = FastOutSlowInEasing)), label = "run")
+        .animateFloat(-0.4f, 1f, infiniteRepeatable(tween(Motion.ms(1300).coerceAtLeast(1), easing = FastOutSlowInEasing)), label = "run")
+    val still = Motion.scale == 0f
     Row(
         horizontalArrangement = Arrangement.spacedBy(6.dp),
         modifier = modifier.semantics { contentDescription = "Step ${active + 1} of $count" },
@@ -235,6 +236,7 @@ private fun LoadSegments(count: Int, active: Int, percent: Int, modifier: Modifi
                     .drawBehind {
                         if (i != active) return@drawBehind
                         if (percent >= 0) drawRect(pal.signal, size = Size(size.width * percent.coerceIn(0, 100) / 100f, size.height))
+                        else if (still) drawRect(pal.signal.copy(alpha = 0.5f))
                         else drawRect(pal.signal, topLeft = Offset(size.width * run.value, 0f), size = Size(size.width * 0.4f, size.height))
                     },
             )

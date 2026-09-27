@@ -231,7 +231,9 @@ private fun ResumeRailItem(name: String, compact: Boolean, iconOnly: Boolean, on
     val focused by src.collectIsFocusedAsState()
     val hovered by src.collectIsHoveredAsState()
     val pulse = rememberInfiniteTransition(label = "pulse")
-    val ringScale by pulse.animateFloat(0.4f, 1.6f, infiniteRepeatable(tween(1600, easing = Motion.Ease), RepeatMode.Restart), label = "ring")
+    val ringScale by pulse.animateFloat(0.4f, 1.6f, infiniteRepeatable(tween(Motion.ms(1600).coerceAtLeast(1), easing = Motion.Ease), RepeatMode.Restart), label = "ring")
+    // Animations off: the live dot alone, no pulsing ring.
+    val still = Motion.scale == 0f
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(3.dp),
@@ -247,7 +249,7 @@ private fun ResumeRailItem(name: String, compact: Boolean, iconOnly: Boolean, on
             .padding(vertical = if (iconOnly) 15.dp else if (compact) 6.dp else 9.dp, horizontal = 4.dp),
     ) {
         Box(modifier = Modifier.size(14.dp), contentAlignment = Alignment.Center) {
-            Box(modifier = Modifier.size(14.dp).graphicsLayer { scaleX = ringScale; scaleY = ringScale; alpha = (1.6f - ringScale) / 1.2f }.border(1.5.dp, pal.good, CircleShape))
+            if (!still) Box(modifier = Modifier.size(14.dp).graphicsLayer { scaleX = ringScale; scaleY = ringScale; alpha = (1.6f - ringScale) / 1.2f }.border(1.5.dp, pal.good, CircleShape))
             Box(modifier = Modifier.size(7.dp).clip(CircleShape).background(pal.good))
         }
         // Icons only: the live dot alone says something is running; its description says what.

@@ -158,6 +158,10 @@ class FrontEndActions(
 
 internal object Motion {
     var scale = 1f
+    /** The system's animator scale, re-read on each resume so "Remove animations" applies without a restart. */
+    fun refresh(context: android.content.Context) {
+        scale = Settings.Global.getFloat(context.contentResolver, Settings.Global.ANIMATOR_DURATION_SCALE, 1f)
+    }
     val Ease = CubicBezierEasing(0.2f, 0.8f, 0.2f, 1f)
     fun ms(base: Int) = (base * scale).roundToInt()
     fun <T> tw(base: Int, delay: Int = 0): FiniteAnimationSpec<T> = if (scale == 0f) snap() else tween(ms(base), ms(delay), Ease)
@@ -328,7 +332,7 @@ private fun FrontEndScreenBody(s: FrontEndState, a: FrontEndActions, page: (@Com
     LaunchedEffect(s.steamGames.isEmpty()) {
         if (s.steamGames.isEmpty() && selected.startsWith("app:")) selected = "games"
     }
-    remember { Motion.scale = Settings.Global.getFloat(ctx.contentResolver, Settings.Global.ANIMATOR_DURATION_SCALE, 1f); true }
+    remember { Motion.refresh(ctx); true }
 
     val railSelection = when {
         s.pageKey == "performance" || s.pageKey == "protons" || s.pageKey == "controller-mapping" -> "setup"

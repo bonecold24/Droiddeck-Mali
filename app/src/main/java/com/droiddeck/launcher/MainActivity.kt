@@ -518,6 +518,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
+        com.droiddeck.launcher.ui.Motion.refresh(this)
         refreshPhantomStatus()
         // Swaps queued while a game ran on that Proton go in once nothing uses it (usually the
         // session has just ended). Cheap when nothing is queued.

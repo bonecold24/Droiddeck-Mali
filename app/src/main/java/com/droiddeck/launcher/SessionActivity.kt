@@ -1468,6 +1468,7 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
 
     override fun onResume() {
         super.onResume()
+        com.droiddeck.launcher.ui.Motion.refresh(this)
         refreshHomeApp()
         if (intent?.action == SessionService.ACTION_RESUME) {
             intent.action = null
