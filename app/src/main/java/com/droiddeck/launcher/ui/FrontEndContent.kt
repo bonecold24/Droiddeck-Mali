@@ -227,7 +227,7 @@ private fun Content(
                                 BusyChip(s)
                                 SecondaryButton("ROMs folder", onClick = a.onRoms)
                                 if (pkg != null) SecondaryButton(
-                                    if (pkg.kind == "appimage") "Remove" else "Forget",
+                                    if (pkg.kind == "appimage") "Remove" else "Hide",
                                     enabled = s.packageBusyId == null && !s.sessionRunning,
                                 ) { a.onRemovePackage(pkg.id) }
                             }
@@ -275,7 +275,7 @@ private fun Content(
                             if (s.packagePercent >= 0) LinearProgressIndicator(progress = { s.packagePercent / 100f }, modifier = Modifier.fillMaxWidth().height(4.dp))
                             else LinearProgressIndicator(modifier = Modifier.fillMaxWidth().height(4.dp))
                         }
-                        if (pkg?.kind == "tar") Rise(5) { Note("Forgetting this package hides it from Desktop; its files remain in the Linux runtime.") }
+                        if (pkg?.kind == "tar") Rise(5) { Note("Hiding this package takes it off Desktop; its files stay in the Linux runtime.") }
                     }
                 }
             }
@@ -316,7 +316,7 @@ private fun Content(
                     }
                 }
             }
-            else -> Note("Select an item.")
+            else -> Note("That page is gone. Pick a section on the left.")
         }
     }
 }
