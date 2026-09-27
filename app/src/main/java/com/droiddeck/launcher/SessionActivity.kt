@@ -237,7 +237,9 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
             val needRuntime = com.droiddeck.launcher.runtime.LinuxRuntimeInstaller.installedVersion(this) == null
             val needDesktop = intent.getStringExtra(SessionService.EXTRA_MODE) == SessionService.MODE_DESKTOP &&
                 !com.droiddeck.launcher.runtime.DesktopCatalog.desktopInstalled(this)
-            if (needRuntime || needDesktop) installThenStart(needRuntime, needDesktop)
+            val needProton = (intent.getStringExtra(SessionService.EXTRA_MODE) ?: SessionService.MODE_STEAM) == SessionService.MODE_STEAM &&
+                com.droiddeck.launcher.runtime.DesktopCatalog.protonSeedNeeded(this)
+            if (needRuntime || needDesktop || needProton) installThenStart(needRuntime, needDesktop, needProton)
         }
         hud = PerfHud(this)
         hud.onPresentingWindowChanged = {
@@ -542,17 +544,23 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
      * First Play (or Desktop) on a fresh install: the runtime, and for the desktop its package,
      * are downloaded and unpacked here, on the loading screen's own line and bar, and the session
      * starts when they are in. Nothing else changes.
+     *
+     * The first Steam session also gets Valve's ARM64 Proton here, before the client has ever
+     * started, so the compatibility tool is installed and the default at sign-in with no install
+     * dialog, download or client restart. Not being able to fetch it stops nothing: the session
+     * then asks the client for it after sign-in, as it always has.
      */
-    private fun installThenStart(runtime: Boolean, desktop: Boolean) {
+    private fun installThenStart(runtime: Boolean, desktop: Boolean, proton: Boolean = false) {
         if (SessionState.stopRequested) return
         installingRuntime = true
-        SessionState.installing = if (runtime) "runtime" else "desktop"
+        SessionState.installing = if (runtime) "runtime" else if (desktop) "desktop" else "proton"
         SessionEvents.transition(
             SessionPhase.INSTALLING_RUNTIME,
-            if (runtime) "runtime.installing" else "desktop.installing",
+            "${SessionState.installing}.installing",
             mapOf("component" to SessionState.installing),
         )
-        loading.step = if (runtime) "downloading the Linux runtime" else "downloading the desktop"
+        loading.step = if (runtime) "downloading the Linux runtime" else if (desktop) "downloading the desktop"
+                       else "downloading Proton Experimental (ARM64)"
         loading.percent = -1
         Thread({
             var failedComponent: String? = null
@@ -566,6 +574,13 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
                 SessionEvents.transition(SessionPhase.INSTALLING_RUNTIME, "desktop.installing", mapOf("component" to "desktop"))
                 problem = installDesktop()
                 if (problem == null) SessionEvents.record("desktop.ready") else failedComponent = "desktop"
+            }
+            if (problem == null && proton && !SessionState.stopRequested) {
+                SessionState.installing = "proton"
+                SessionEvents.transition(SessionPhase.INSTALLING_RUNTIME, "proton.installing", mapOf("component" to "proton"))
+                val protonProblem = installProton()
+                if (protonProblem == null) SessionEvents.record("proton.ready")
+                else SessionEvents.record("proton.skipped", mapOf("reason" to protonProblem))
             }
             uiHandler.post {
                 installingRuntime = false
@@ -630,6 +645,15 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
         val problem = com.droiddeck.launcher.runtime.DesktopCatalog.install(this, entry,
             progressFor("the desktop", entry.size / 1_000_000))
         return problem?.let { "The desktop did not install ($it). Check the connection and press Desktop again." }
+    }
+
+    /** Null when the ARM64 Proton is in, else why not; the session goes on either way. */
+    private fun installProton(): String? {
+        uiHandler.post { loading.percent = -1; loading.step = "downloading Proton Experimental (ARM64)" }
+        val catalog = com.droiddeck.launcher.runtime.DesktopCatalog
+        val entry = catalog.fetch(catalog.STEAM_SEED_URL)?.firstOrNull { it.id == catalog.PROTON_SEED_ID }
+            ?: return "catalog unreachable"
+        return catalog.install(this, entry, progressFor("Proton Experimental (ARM64)", entry.size / 1_000_000))
     }
 
     override fun surfaceCreated(holder: SurfaceHolder) {
