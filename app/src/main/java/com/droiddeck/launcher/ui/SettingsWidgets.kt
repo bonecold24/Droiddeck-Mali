@@ -14,6 +14,12 @@ import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.LocalIndication
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.size
+import androidx.compose.ui.focus.focusProperties
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -96,6 +102,85 @@ internal fun Modifier.controllerBack(onBack: () -> Unit): Modifier = onPreviewKe
     }
 }
 
+/** LB and RB turn a page's tabs; the keys are taken whenever focus is anywhere inside [this]. */
+internal fun Modifier.bumpers(onPrevious: () -> Unit, onNext: () -> Unit): Modifier = onPreviewKeyEvent { event ->
+    val keyEvent = event.nativeKeyEvent
+    val previous = keyEvent.keyCode == KeyEvent.KEYCODE_BUTTON_L1
+    if (!previous && keyEvent.keyCode != KeyEvent.KEYCODE_BUTTON_R1) {
+        false
+    } else {
+        if (keyEvent.action == KeyEvent.ACTION_DOWN && keyEvent.repeatCount == 0) { if (previous) onPrevious() else onNext() }
+        true
+    }
+}
+
+/**
+ * A page's tabs with the pad's bumpers drawn beside them. The host turns them with LB/RB (see
+ * [bumpers]); the keycaps are for touch and stay out of the d-pad's path. The row scrolls sideways
+ * when a narrow page cannot fit every tab.
+ */
+@Composable
+internal fun TabStrip(
+    tabs: List<String>, selected: Int, onSelect: (Int) -> Unit,
+    modifier: Modifier = Modifier, focusRequesters: List<FocusRequester>? = null,
+) {
+    val colors = MaterialTheme.colorScheme
+    val pal = LocalPalette.current
+    val shape = RoundedCornerShape(12.dp)
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = modifier) {
+        BumperKey("LB", "Previous tab") { onSelect((selected + tabs.size - 1) % tabs.size) }
+        Row(
+            modifier = Modifier.weight(1f, fill = false).clip(shape).background(colors.surfaceVariant).border(1.dp, pal.line2, shape)
+                .horizontalScroll(rememberScrollState()).padding(3.dp),
+        ) {
+            tabs.forEachIndexed { i, label ->
+                val on = i == selected
+                val src = remember { MutableInteractionSource() }
+                val hot = src.collectIsFocusedAsState().value || src.collectIsHoveredAsState().value
+                val pick = { onSelect(i) }
+                val tabShape = RoundedCornerShape(9.dp)
+                Text(
+                    label, fontSize = 14.sp, fontWeight = if (on) FontWeight.Bold else FontWeight.SemiBold, maxLines = 1,
+                    color = if (on) pal.onSignal else if (hot) colors.onBackground else colors.onSurfaceVariant,
+                    modifier = Modifier
+                        .then(focusRequesters?.getOrNull(i)?.let { Modifier.focusRequester(it) } ?: Modifier)
+                        .clip(tabShape)
+                        .background(if (on) pal.signal else if (hot) pal.signal.copy(alpha = 0.16f) else Color.Transparent)
+                        .border(2.dp, if (!hot) Color.Transparent else if (on) colors.onBackground else pal.signal, tabShape)
+                        .hoverable(src).clickable(interactionSource = src, indication = null, role = Role.Tab, onClick = pick)
+                        .controllerConfirm(onClick = pick)
+                        .padding(horizontal = 16.dp, vertical = 9.dp),
+                )
+            }
+        }
+        BumperKey("RB", "Next tab") { onSelect((selected + 1) % tabs.size) }
+    }
+}
+
+/** A bumper drawn as a keycap, 44dp to touch; the pad presses the real one. */
+@Composable
+private fun BumperKey(label: String, description: String, onClick: () -> Unit) {
+    val colors = MaterialTheme.colorScheme
+    val pal = LocalPalette.current
+    val cap = RoundedCornerShape(7.dp)
+    Box(
+        contentAlignment = Alignment.Center,
+        modifier = Modifier.size(44.dp)
+            .focusProperties { canFocus = false }
+            .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, role = Role.Button, onClick = onClick)
+            .semantics { contentDescription = description },
+    ) {
+        Text(
+            label, fontSize = 12.sp, fontWeight = FontWeight.Bold, color = colors.onSurfaceVariant,
+            modifier = Modifier.clip(cap).background(colors.surfaceVariant).border(1.dp, pal.line2, cap)
+                .padding(horizontal = 6.dp, vertical = 3.dp),
+        )
+    }
+}
+
+/** The narrowest a setting's value box gets; the session menu's sheet sets it lower. */
+val LocalChipMinWidth = androidx.compose.runtime.compositionLocalOf { 150.dp }
+
 class MenuHost {
     var open by mutableStateOf<String?>(null)
 }
@@ -154,14 +239,14 @@ fun AnchoredMenu(open: Boolean, onDismiss: () -> Unit, title: String? = null, no
                     .padding(6.dp),
             ) {
                 if (title != null) Text(
-                    title.uppercase(), fontSize = 10.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 2.sp, color = colors.onSurfaceVariant,
+                    title.uppercase(), fontSize = 12.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 1.5.sp, color = colors.onSurfaceVariant,
                     modifier = Modifier.padding(start = 10.dp, top = 6.dp, bottom = 6.dp),
                 )
                 Column(Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState())) { content(firstItemFocus) }
                 if (note != null) {
                     Spacer(Modifier.height(4.dp))
                     Box(Modifier.fillMaxWidth().height(1.dp).background(pal.line))
-                    Text(note, fontSize = 11.sp, color = colors.onSurfaceVariant, modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp))
+                    Text(note, fontSize = 12.sp, color = colors.onSurfaceVariant, modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp))
                 }
             }
         }
@@ -198,7 +283,7 @@ fun MenuItem(
         }
         Column(modifier = Modifier.weight(1f)) {
             Text(label, fontSize = 13.5.sp, color = if (checked) pal.signal else colors.onBackground, maxLines = 2, overflow = TextOverflow.Ellipsis)
-            if (detail != null) Text(detail, fontSize = 11.sp, color = colors.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            if (detail != null) Text(detail, fontSize = 12.sp, color = colors.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis)
         }
         if (trailing != null) { Spacer(Modifier.width(8.dp)); trailing() }
     }
@@ -215,7 +300,7 @@ fun ValueChip(text: String, open: Boolean, enabled: Boolean = true, modifier: Mo
     Row(
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween,
         modifier = modifier
-            .widthIn(min = 150.dp)
+            .widthIn(min = LocalChipMinWidth.current)
             .clip(RoundedCornerShape(10.dp))
             .background(colors.surfaceVariant)
             .border(1.dp, edge, RoundedCornerShape(10.dp))
@@ -243,7 +328,7 @@ fun SettingsGroup(title: String, compact: Boolean = false, content: @Composable 
         horizontalArrangement = Arrangement.spacedBy(if (compact) 6.dp else 10.dp),
         modifier = Modifier.fillMaxWidth().padding(top = if (compact) 4.dp else 16.dp, bottom = if (compact) 3.dp else 6.dp),
     ) {
-        Text(title.uppercase(), fontSize = 11.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 2.sp, color = colors.onSurfaceVariant)
+        Text(title.uppercase(), fontSize = 12.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 1.5.sp, color = colors.onSurfaceVariant)
         Box(modifier = Modifier.weight(1f).height(1.dp).background(pal.line))
     }
     Column(modifier = Modifier.fillMaxWidth().clip(GroupShape).background(colors.surface).border(1.dp, pal.line, GroupShape)) { content() }
@@ -254,13 +339,20 @@ fun SettingsRow(label: String, hint: String?, highlighted: Boolean = false, cont
     val colors = MaterialTheme.colorScheme
     val pal = LocalPalette.current
     val bg by animateColorAsState(if (highlighted) pal.signal.copy(alpha = 0.10f) else Color.Transparent, Motion.tw(200), label = "rowBg")
-    Row(
+    // A narrow page stacks the control under its label, so neither squeezes the other.
+    if (LocalNarrowPane.current) Column(
+        modifier = Modifier.fillMaxWidth().background(bg).padding(start = 14.dp, end = 14.dp, top = 11.dp, bottom = 12.dp),
+    ) {
+        Text(label, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = colors.onBackground)
+        if (hint != null) Text(hint, fontSize = 13.sp, color = colors.onSurfaceVariant, modifier = Modifier.padding(top = 2.dp))
+        Box(Modifier.padding(top = 8.dp)) { control() }
+    } else Row(
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier.fillMaxWidth().background(bg).padding(horizontal = 14.dp, vertical = 11.dp),
     ) {
         Column(modifier = Modifier.weight(1f).padding(end = 12.dp)) {
             Text(label, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = colors.onBackground)
-            if (hint != null) Text(hint, fontSize = 11.5.sp, color = colors.onSurfaceVariant, modifier = Modifier.padding(top = 2.dp))
+            if (hint != null) Text(hint, fontSize = 12.5.sp, color = colors.onSurfaceVariant, modifier = Modifier.padding(top = 2.dp))
         }
         control()
     }
@@ -343,62 +435,71 @@ fun SettingsPage(
     val scrollState = scroll ?: rememberScrollState()
     val colors = MaterialTheme.colorScheme
     val dim by animateFloatAsState(if (host.open != null) 0.6f else 1f, Motion.tw(220), label = "pageDim")
+    val narrow = LocalNarrowPane.current && !compactLayout
     Column(
         modifier = Modifier.fillMaxSize().padding(
-            horizontal = if (compactLayout) 14.dp else 22.dp,
-            vertical = if (compactLayout) 6.dp else 18.dp,
+            horizontal = if (compactLayout) 14.dp else if (narrow) 16.dp else 22.dp,
+            vertical = if (compactLayout) 6.dp else if (narrow) 12.dp else 18.dp,
         ),
         verticalArrangement = Arrangement.spacedBy(if (compactLayout) 2.dp else 0.dp),
     ) {
-        Rise(0) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                // Outlined when a controller's focus is on it, like every other control here.
-                val backSrc = remember { MutableInteractionSource() }
-                val backHot = backSrc.collectIsFocusedAsState().value || backSrc.collectIsHoveredAsState().value
-                Text(
-                    "‹  Back", fontSize = if (compactLayout) 11.sp else 12.sp, fontWeight = FontWeight.SemiBold,
-                    color = if (backHot) LocalPalette.current.signal else colors.onSurfaceVariant,
-                    modifier = Modifier.clip(RoundedCornerShape(8.dp))
-                        .border(2.dp, if (backHot) LocalPalette.current.signal else Color.Transparent, RoundedCornerShape(8.dp))
-                        .hoverable(backSrc).clickable(interactionSource = backSrc, indication = null, onClick = onBack)
-                        .padding(horizontal = 6.dp, vertical = if (compactLayout) 2.dp else 4.dp),
-                )
-                if (eyebrow != null) {
-                    Spacer(Modifier.width(10.dp))
-                    Eyebrow(eyebrow)
+        if (narrow) {
+            // Back and the title share one line: a 4:3 screen has no height to spare.
+            Rise(0) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    modifier = Modifier.padding(bottom = 6.dp),
+                ) {
+                    BackLink("Back", compact = true, onClick = onBack)
+                    Text(
+                        title, fontSize = 20.sp, fontWeight = FontWeight.Bold, color = colors.onBackground,
+                        maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f),
+                    )
+                    if (action != null) action()
                 }
             }
-        }
-        Rise(1) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Box(Modifier.weight(1f)) {
-                    if (compactLayout) {
-                        Text(
-                            title,
-                            fontSize = 20.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = colors.onBackground,
-                            modifier = Modifier.padding(vertical = 2.dp),
-                        )
-                    } else {
-                        Title(title)
+            if (lede != null) Rise(1) { Lede(lede) }
+        } else {
+            Rise(0) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    BackLink("Back", compact = compactLayout, onClick = onBack)
+                    if (eyebrow != null) {
+                        Spacer(Modifier.width(10.dp))
+                        Eyebrow(eyebrow)
                     }
                 }
-                if (action != null) action()
             }
-        }
-        if (lede != null) Rise(2) {
-            if (compactLayout) {
-                Text(
-                    lede,
-                    fontSize = 11.sp,
-                    color = colors.onSurfaceVariant,
-                    modifier = Modifier.padding(bottom = 3.dp),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            } else {
-                Lede(lede)
+            Rise(1) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(Modifier.weight(1f)) {
+                        if (compactLayout) {
+                            Text(
+                                title,
+                                fontSize = 20.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = colors.onBackground,
+                                modifier = Modifier.padding(vertical = 2.dp),
+                            )
+                        } else {
+                            Title(title)
+                        }
+                    }
+                    if (action != null) action()
+                }
+            }
+            if (lede != null) Rise(2) {
+                if (compactLayout) {
+                    Text(
+                        lede,
+                        fontSize = 12.sp,
+                        color = colors.onSurfaceVariant,
+                        modifier = Modifier.padding(bottom = 3.dp),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                } else {
+                    Lede(lede)
+                }
             }
         }
         Rise(3, Modifier.weight(1f).fillMaxWidth()) {

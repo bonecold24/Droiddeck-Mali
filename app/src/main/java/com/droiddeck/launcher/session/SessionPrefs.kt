@@ -21,6 +21,13 @@ object SessionPrefs {
 
     private fun prefs(context: Context) = context.getSharedPreferences("session", Context.MODE_PRIVATE)
 
+    /** Whether the launcher hides Android's status and navigation bars. */
+    fun launcherFullscreen(context: Context): Boolean = prefs(context).getBoolean("launcherFullscreen", true)
+
+    fun setLauncherFullscreen(context: Context, on: Boolean) {
+        prefs(context).edit().putBoolean("launcherFullscreen", on).apply()
+    }
+
     fun hudEnabled(context: Context): Boolean = prefs(context).getBoolean("hud", true)
 
     fun setHudEnabled(context: Context, on: Boolean) {
@@ -336,8 +343,8 @@ object SessionPrefs {
         prefs(context).edit().putString("addedExe:$folderPath", path).apply()
     }
 
-    /** The app's colour theme (ui/Themes ids); Paper on black unless chosen otherwise. */
-    fun theme(context: Context): String = prefs(context).getString("theme", "paper") ?: "paper"
+    /** The app's colour theme (ui/Themes ids); Graphite unless chosen otherwise. */
+    fun theme(context: Context): String = prefs(context).getString("theme", "graphite") ?: "graphite"
 
     fun setTheme(context: Context, id: String) {
         prefs(context).edit().putString("theme", id).apply()

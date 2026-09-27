@@ -1030,7 +1030,7 @@ fun FileManagerScreen(
                     // when it doesn't fit we drop the /storage/emulated/0 prefix, not the tail.
                     text = elidePathStart(currentDir.absolutePath, 52),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    fontSize = 11.sp,
+                    fontSize = 12.sp,
                     maxLines = 1,
                     // fill = true: the path takes all remaining width, so the free-space figure
                     // is pinned to the right edge instead of sliding around with the path length.
@@ -1040,7 +1040,7 @@ fun FileManagerScreen(
                     Text(
                         "${FileOps.formatBytes(freeSpace)} free",
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        fontSize = 11.sp,
+                        fontSize = 12.sp,
                         maxLines = 1,
                     )
                 }
@@ -1607,7 +1607,7 @@ private fun FileItemRow(
                         append(dateFormat.format(Date(file.lastModified())))
                     },
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    fontSize = 11.sp,
+                    fontSize = 12.sp,
                 )
             }
             if (showActions) Box {
@@ -1760,7 +1760,7 @@ private fun FavoriteCard(
                     Text(
                         text = loc.driveLabel,
                         color = badgeFg,
-                        fontSize = 9.sp,
+                        fontSize = 11.sp,
                         fontWeight = FontWeight.Bold,
                         modifier = Modifier
                             .clip(RoundedCornerShape(4.dp))
@@ -1775,14 +1775,14 @@ private fun FavoriteCard(
                             FavStorage.OTHER -> "Storage"
                         },
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        fontSize = 11.sp,
+                        fontSize = 12.sp,
                     )
                 }
                 Spacer(Modifier.height(2.dp))
                 Text(
                     text = loc.displayPath,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    fontSize = 11.sp,
+                    fontSize = 12.sp,
                     fontFamily = FontFamily.Monospace,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
@@ -1896,7 +1896,7 @@ private fun FileGridTile(
                 Text(
                     file.name,
                     color = MaterialTheme.colorScheme.onSurface,
-                    fontSize = 11.sp,
+                    fontSize = 12.sp,
                     minLines = 2,
                     maxLines = 2,
                     textAlign = androidx.compose.ui.text.style.TextAlign.Center,
@@ -2075,7 +2075,7 @@ private fun AttributeToggleRow(
             Text(
                 text = description,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                fontSize = 11.sp,
+                fontSize = 12.sp,
             )
         }
         Spacer(Modifier.width(8.dp))

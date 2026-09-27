@@ -70,7 +70,7 @@ fun ProtonPage(
                 if (busyId == row.id) Column(modifier = Modifier.fillMaxWidth().padding(start = 12.dp, end = 12.dp, bottom = 10.dp)) {
                     Text(
                         if (stage != null && percent >= 0) "$stage · $percent%" else stage ?: "Starting…",
-                        fontSize = 11.5.sp, color = colors.onSurfaceVariant, modifier = Modifier.padding(bottom = 5.dp),
+                        fontSize = 13.sp, color = colors.onSurfaceVariant, modifier = Modifier.padding(bottom = 5.dp),
                     )
                     if (percent >= 0) LinearProgressIndicator(progress = { percent / 100f }, modifier = Modifier.fillMaxWidth().height(4.dp))
                     else LinearProgressIndicator(modifier = Modifier.fillMaxWidth().height(4.dp))

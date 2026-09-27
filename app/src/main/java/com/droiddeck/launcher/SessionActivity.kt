@@ -262,7 +262,12 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
                     CursorOverlay(cursorPos, cursorVisible, resources.displayMetrics.density,
                         cursorImage, cursorHotX, cursorHotY, cursorImageScale)
                     if (hud.text.isNotEmpty()) HudText(hud.text)
-                    if (loading.visible) LoadingOverlay(loading.step, loading.percent, loading.elapsed, loading.hint, loading.ended)
+                    if (loading.visible) LoadingOverlay(
+                        loading.step, loading.percent, loading.elapsed, loading.hint, loading.ended,
+                        title = loadingTitle(), steam = loadingMode() == SessionService.MODE_STEAM,
+                        // As the drawer's Stop does: the service stops, and a start still installing is cancelled.
+                        onCancel = { SessionService.stop(this@SessionActivity); finish() },
+                    )
                     // Opening the drawer takes the controller away from the game: release its pad.
                     androidx.compose.runtime.LaunchedEffect(drawerOpen) {
                         if (drawerOpen) {
@@ -352,9 +357,10 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
                         onComponentsRefresh = { refreshDrawerComponents() },
                         onComponentSwap = { pid, comp, value -> swapDrawerComponent(pid, comp, value) },
                     ))
-                    if (SessionState.suspended) SessionPausedOverlay {
-                        SessionService.resume(this@SessionActivity)
-                    }
+                    if (SessionState.suspended) SessionPausedOverlay(
+                        title = pausedTitle(),
+                        onResume = { SessionService.resume(this@SessionActivity) },
+                    )
                 }
             }
         }
@@ -465,6 +471,28 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
                 refreshDrawerComponents()
             }
         }, "drawer-components-swap").start()
+    }
+
+    /** The session this screen is bringing up: the live one when re-attached, else the intent's. */
+    private fun loadingMode(): String =
+        if (SessionState.running) SessionState.mode
+        else intent.getStringExtra(SessionService.EXTRA_MODE) ?: SessionService.MODE_STEAM
+
+    private fun pausedTitle(): String = when (SessionState.mode) {
+        SessionService.MODE_DESKTOP -> "The desktop is paused"
+        SessionService.MODE_RUN -> (com.droiddeck.launcher.frontend.Library.nameForProgram(SessionState.program) ?: "The program") + " is paused"
+        else -> "Steam is paused"
+    }
+
+    private fun loadingTitle(): String = when (loadingMode()) {
+        SessionService.MODE_DESKTOP ->
+            if (!SessionState.running && intent.getStringExtra(SessionService.EXTRA_STEAM_UI) != null) "Starting Steam on the desktop"
+            else "Starting the desktop"
+        SessionService.MODE_RUN -> {
+            val program = if (SessionState.running) SessionState.program else intent.getStringExtra(SessionService.EXTRA_PROGRAM)
+            "Starting " + (com.droiddeck.launcher.frontend.Library.nameForProgram(program) ?: "the program")
+        }
+        else -> "Starting Steam"
     }
 
     private fun shareCurrentSessionLogs() {
@@ -915,6 +943,14 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
         if (fromController && event.action == KeyEvent.ACTION_DOWN) {
             if (drawerOpen && !drawerControllerActive) sessionOverlay.requestFocus()
             drawerControllerActive = true
+        }
+        // While the session starts, B is the loading screen's Cancel, as its corner says.
+        if (fromController && event.keyCode == KeyEvent.KEYCODE_BUTTON_B && ::loading.isInitialized && loading.visible && !loading.ended && !drawerOpen) {
+            if (event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0) {
+                SessionService.stop(this)
+                finish()
+            }
+            return true
         }
         if (drawerOpen) {
             if (fromController && (event.keyCode == KeyEvent.KEYCODE_BUTTON_L1 || event.keyCode == KeyEvent.KEYCODE_BUTTON_R1)) {

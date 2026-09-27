@@ -16,6 +16,7 @@ import android.os.Looper
 import android.util.Log
 import android.view.Display
 import android.view.KeyEvent
+import android.view.View
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
@@ -100,6 +101,7 @@ class MainActivity : ComponentActivity() {
     private var showProtons by mutableStateOf(false)
     // Components page: FEX / DXVK / VKD3D-Proton per Proton (ComponentsManager).
     private var showComponents by mutableStateOf(false)
+    private var focusComponentsContent by mutableStateOf(true)
     private var compSnapshot by mutableStateOf<ComponentsManager.Snapshot?>(null)
     private var compCatalog by mutableStateOf<List<ComponentsManager.CatalogItem>>(emptyList())
     private var compCatalogAt by mutableStateOf(0L)
@@ -144,6 +146,7 @@ class MainActivity : ComponentActivity() {
     private var directAudio by mutableStateOf(false)
     private var clientDirectAudio by mutableStateOf(false)
     private var forceFullscreen by mutableStateOf(true)
+    private var launcherFullscreen by mutableStateOf(true)
     private var mic by mutableStateOf(false)
     private var linuxRows by mutableStateOf<List<DriverRow>>(emptyList())
     /** The latest Banners-Turnip release as each driver menu offers it (see [refreshReleaseRows]). */
@@ -205,7 +208,7 @@ class MainActivity : ComponentActivity() {
     private var customResolution by mutableStateOf<Pair<Int, Int>?>(null)
     private var fexPreset by mutableStateOf("")
     private var steamChannel by mutableStateOf("publicbeta")
-    private var theme by mutableStateOf("paper")
+    private var theme by mutableStateOf("graphite")
     private var shapeMode by mutableStateOf(SessionPrefs.SHAPE_AUTO)
     private var hdrOn by mutableStateOf(false)
     private var hdrReason by mutableStateOf<String?>(null)
@@ -265,6 +268,8 @@ class MainActivity : ComponentActivity() {
         refreshPhantomStatus()
         theme = SessionPrefs.theme(this)
         backActionsInverted = SessionPrefs.backActionsInverted(this)
+        launcherFullscreen = SessionPrefs.launcherFullscreen(this)
+        applyLauncherFullscreen()
         setContent {
             DroidDeckTheme(theme) {
                 val sm = settingsMode
@@ -305,6 +310,7 @@ class MainActivity : ComponentActivity() {
                         controller = controllerSettings,
                         phantomProcessStatus = phantomProcessStatus,
                         showPhantomGate = showPhantomGate,
+                        launcherFullscreen = launcherFullscreen,
                     ),
                     FrontEndActions(
                         onPlay = { startSession(Intent(this, SessionActivity::class.java), steamSession = true) },
@@ -343,7 +349,7 @@ class MainActivity : ComponentActivity() {
                             frameGenLabel = FrameGen.label(this)
                         },
                         onProtons = { openProtons() },
-                        onComponents = { openComponents() },
+                        onComponents = { focusContent -> openComponents(focusContent) },
                         onPerformance = { refreshCores(); showProtons = false; showComponents = false; showMapping = false; showPerformance = true },
                         onRoms = { showRoms = true },
                         onFiles = { startActivity(Intent(this, com.droiddeck.launcher.files.FileManagerActivity::class.java)) },
@@ -367,6 +373,11 @@ class MainActivity : ComponentActivity() {
                         onCredits = { showCredits = true },
                         onPageBack = { settingsMode = null; showPerformance = false; showProtons = false; showComponents = false; showMapping = false },
                         onTheme = { id -> SessionPrefs.setTheme(this, id); theme = id },
+                        onLauncherFullscreen = { on ->
+                            SessionPrefs.setLauncherFullscreen(this, on)
+                            launcherFullscreen = on
+                            applyLauncherFullscreen()
+                        },
                         onHomeApp = { manageHomeApp() },
                         onHomeScreen = { on ->
                             HomeApp.setHomeScreenEnabled(this, on)
@@ -488,6 +499,25 @@ class MainActivity : ComponentActivity() {
             SessionArtifacts.finishAbandoned(this)
             SessionArtifacts.scrubOlder(this)
         }, "finish-abandoned").start()
+    }
+
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (hasFocus) applyLauncherFullscreen()
+    }
+
+    private fun applyLauncherFullscreen() {
+        @Suppress("DEPRECATION")
+        window.decorView.systemUiVisibility = if (launcherFullscreen) {
+            (View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
+                    or View.SYSTEM_UI_FLAG_FULLSCREEN
+                    or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
+                    or View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+                    or View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
+                    or View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION)
+        } else {
+            View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+        }
     }
 
     /** On the Components page the pad's LB / RB step through FEX, DXVK and VKD3D-Proton, wrapping around. */
@@ -640,7 +670,8 @@ class MainActivity : ComponentActivity() {
         )
     }
 
-    private fun openComponents() {
+    private fun openComponents(focusContent: Boolean = true) {
+        focusComponentsContent = focusContent
         settingsMode = null
         showPerformance = false
         showProtons = false
@@ -726,6 +757,7 @@ class MainActivity : ComponentActivity() {
             checking = compChecking,
             busy = compBusy,
             downloads = compDownloads,
+            requestInitialFocus = focusComponentsContent,
             onProton = { compProton = it },
             onComp = { compComp = it },
             onSwap = { file -> compProton?.let { pid -> componentAction("Swapping") { ComponentsManager.swap(this, pid, file) } } },
@@ -1230,7 +1262,7 @@ class MainActivity : ComponentActivity() {
         // The libraries, off the main thread: manifests and a folder scan.
         Thread({
             val games = if (ready) Library.steamGames(this) + com.droiddeck.launcher.frontend.AddedGames.scan(this).map { g ->
-                com.droiddeck.launcher.frontend.AddedGameArt.resolve(this, g).let { art -> Library.SteamGame(g.appId.toInt(), g.name, art.portrait ?: art.header, "added", g.gameId) }
+                com.droiddeck.launcher.frontend.AddedGameArt.resolve(this, g).let { art -> Library.SteamGame(g.appId.toInt(), g.name, art.portrait ?: art.header, "added", g.gameId, hero = art.hero ?: art.header) }
             } else emptyList()
             val emus = Library.emulators(this) { id -> DesktopCatalog.installed(this, id) != null }
             ui.post { steamGames = games; emulatorList = emus }

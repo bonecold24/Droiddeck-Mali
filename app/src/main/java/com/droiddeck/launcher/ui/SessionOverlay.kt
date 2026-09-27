@@ -1,9 +1,31 @@
 package com.droiddeck.launcher.ui
 
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.runtime.produceState
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.Role
+import com.droiddeck.launcher.frontend.Library
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.offset
 import androidx.compose.material.icons.Icons
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.material.icons.filled.Pause
+import androidx.compose.material.icons.outlined.Menu
+import androidx.compose.material.icons.outlined.MoreHoriz
+import androidx.compose.material.icons.outlined.PowerSettingsNew
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.outlined.DesktopWindows
 import androidx.compose.material.icons.outlined.Layers
 import androidx.compose.material.icons.outlined.Settings
@@ -139,36 +161,158 @@ fun HudText(text: String) {
     }
 }
 
+/** One line of the loading screen's checklist; [detail] is what it says while it is the one running. */
+private class LoadStage(val label: String, val detail: String)
+
+private fun loadStages(steam: Boolean): List<LoadStage> = if (steam) listOf(
+    LoadStage("Linux runtime", "Getting the Linux runtime ready"),
+    LoadStage("Session", "Starting the display and audio"),
+    LoadStage("Steam client", "Checking the Steam client and its compatibility tools"),
+    LoadStage("Opening Steam", "Waiting for Steam's first frame"),
+) else listOf(
+    LoadStage("Linux runtime", "Getting the Linux runtime ready"),
+    LoadStage("Desktop", "Getting the desktop ready"),
+    LoadStage("Opening", "Waiting for the first frame"),
+)
+
+/**
+ * The checklist stage a loading line belongs to, -1 when it says nothing about the stage. The lines
+ * are the session script's "== STEP" milestones and the installer's own progress; they arrive in
+ * order, and the screen never steps back.
+ */
+private fun stageOf(step: String, steam: Boolean): Int {
+    val t = step.lowercase()
+    return when {
+        "linux runtime" in t -> 0
+        "starting the session" in t -> 1
+        !steam && "desktop" in t -> 1
+        steam && "starting the steam client" in t -> 3
+        steam && ("steam" in t || "client" in t || "proton" in t || "library" in t || "compatibility" in t) -> 2
+        else -> -1
+    }
+}
+
+/** Download and install lines are worth reading as they are; the script's own notes are not. */
+private fun readableStep(step: String): Boolean {
+    val t = step.lowercase()
+    return t.startsWith("download") || t.startsWith("checking the linux") || t.startsWith("unpacking") || t.startsWith("installing")
+}
+
 @Composable
-fun LoadingOverlay(step: String, percent: Int, elapsed: String, hint: String, ended: Boolean) {
-    Column(
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = androidx.compose.foundation.layout.Arrangement.Center,
+fun LoadingOverlay(
+    step: String, percent: Int, elapsed: String, hint: String, ended: Boolean,
+    title: String = "Starting Steam", steam: Boolean = true, onCancel: (() -> Unit)? = null,
+) {
+    val colors = MaterialTheme.colorScheme
+    val stages = remember(steam) { loadStages(steam) }
+    var reached by remember { mutableStateOf(0) }
+    LaunchedEffect(step, steam) {
+        val at = stageOf(step, steam)
+        if (at > reached) reached = at
+    }
+    val active = reached.coerceAtMost(stages.lastIndex)
+    val detail = if (percent >= 0 || readableStep(step)) step.replaceFirstChar { it.uppercase() } else stages[active].detail
+    val context = LocalContext.current
+    // The Steam tab's wall behind it, dimmed and slowed: starting Steam reads as the same place settling in.
+    val games by produceState(emptyList<Library.SteamGame>()) {
+        value = withContext(Dispatchers.IO) { runCatching { Library.steamGames(context).sortedByDescending { it.lastPlayed } }.getOrDefault(emptyList()) }
+    }
+    Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color.Black)
-            .clickable(interactionSource = MutableInteractionSource(), indication = null) {}
-            .padding(32.dp),
+            .background(colors.background)
+            .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) {},
     ) {
-        Image(painterResource(R.drawable.logo), contentDescription = null, modifier = Modifier.size(64.dp))
-        Spacer(Modifier.height(14.dp))
-        Text(if (ended) "The session ended" else "Steam is loading", color = Color.White, fontSize = 17.sp)
-        Text(step, color = Color(0xFFB8C4D0), fontSize = 13.sp, textAlign = TextAlign.Center, modifier = Modifier.padding(top = 6.dp))
-        if (!ended) {
-            Spacer(Modifier.height(14.dp))
-            if (percent >= 0) LinearProgressIndicator(progress = { percent / 100f }, modifier = Modifier.width(220.dp))
-            else LinearProgressIndicator(modifier = Modifier.width(220.dp))
-            Text(elapsed, color = Color(0xFF667788), fontSize = 11.sp, modifier = Modifier.padding(top = 8.dp))
+        CapsuleWall(games, driftMs = 65_000, modifier = Modifier.alpha(0.3f))
+        Box(
+            Modifier.fillMaxSize().drawBehind {
+                drawRect(
+                    Brush.radialGradient(
+                        0f to colors.background.copy(alpha = 0.94f),
+                        0.6f to colors.background.copy(alpha = 0.72f),
+                        1f to colors.background.copy(alpha = 0.55f),
+                        center = Offset(size.width / 2f, size.height * 0.46f), radius = maxOf(size.width, size.height) * 0.55f,
+                    ),
+                )
+            },
+        )
+        Box(Modifier.fillMaxSize().background(Brush.verticalGradient(0.7f to Color.Transparent, 1f to colors.background.copy(alpha = 0.95f))))
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            modifier = Modifier.align(Alignment.Center).verticalScroll(rememberScrollState()).padding(horizontal = 32.dp, vertical = 24.dp),
+        ) {
+            LogoThrobber(Modifier.width(if (ended) 88.dp else 110.dp), running = !ended)
+            Spacer(Modifier.height(30.dp))
             Text(
-                hint, color = Color(0xFF667788), fontSize = 11.sp, textAlign = TextAlign.Center,
-                modifier = Modifier.padding(top = 18.dp).widthIn(max = 360.dp),
+                if (ended) "The session ended" else title, fontSize = 20.sp, fontWeight = FontWeight.SemiBold,
+                color = colors.onBackground, textAlign = TextAlign.Center, maxLines = 2, overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                if (ended) step else detail, fontSize = 14.sp, lineHeight = 20.sp, color = colors.onSurfaceVariant, textAlign = TextAlign.Center,
+                maxLines = if (ended) 12 else 2, overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.padding(top = 6.dp).widthIn(max = 520.dp),
+            )
+            if (!ended) LoadSegments(stages.size, active, percent, Modifier.padding(top = 18.dp))
+        }
+        if (!ended && hint.isNotEmpty()) Text(
+            hint, fontSize = 13.sp, lineHeight = 18.sp, color = colors.onSurfaceVariant.copy(alpha = 0.8f), textAlign = TextAlign.Center,
+            maxLines = 3, overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.align(Alignment.BottomCenter).padding(start = 120.dp, end = 120.dp, bottom = 28.dp),
+        )
+        if (!ended && onCancel != null) CancelHint(onCancel, Modifier.align(Alignment.BottomEnd).padding(end = 16.dp, bottom = 16.dp))
+    }
+}
+
+/** One segment per stage: done ones filled, the current one filling (or running, with no percent). */
+@Composable
+private fun LoadSegments(count: Int, active: Int, percent: Int, modifier: Modifier = Modifier) {
+    val pal = LocalPalette.current
+    val track = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.12f)
+    val run = rememberInfiniteTransition(label = "segment")
+        .animateFloat(-0.4f, 1f, infiniteRepeatable(tween(1300, easing = FastOutSlowInEasing)), label = "run")
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        modifier = modifier.semantics { contentDescription = "Step ${active + 1} of $count" },
+    ) {
+        repeat(count) { i ->
+            Box(
+                Modifier.width(44.dp).height(3.dp).clip(RoundedCornerShape(2.dp))
+                    .background(if (i < active) pal.signal else track)
+                    .drawBehind {
+                        if (i != active) return@drawBehind
+                        if (percent >= 0) drawRect(pal.signal, size = Size(size.width * percent.coerceIn(0, 100) / 100f, size.height))
+                        else drawRect(pal.signal, topLeft = Offset(size.width * run.value, 0f), size = Size(size.width * 0.4f, size.height))
+                    },
             )
         }
     }
 }
 
+/** Cancel as the pad's B, in the corner; a tap works too. */
 @Composable
-fun SessionPausedOverlay(onResume: () -> Unit) {
+private fun CancelHint(onCancel: () -> Unit, modifier: Modifier = Modifier) {
+    val colors = MaterialTheme.colorScheme
+    val src = remember { MutableInteractionSource() }
+    val hot = src.collectIsHoveredAsState().value || src.collectIsFocusedAsState().value
+    Row(
+        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp),
+        modifier = modifier.heightIn(min = 44.dp).clip(RoundedCornerShape(22.dp))
+            .background(if (hot) colors.onBackground.copy(alpha = 0.08f) else Color.Transparent)
+            .hoverable(src).clickable(interactionSource = src, indication = LocalIndication.current, role = Role.Button, onClick = onCancel)
+            .padding(horizontal = 12.dp),
+    ) {
+        Box(contentAlignment = Alignment.Center, modifier = Modifier.size(20.dp).clip(CircleShape).background(colors.onBackground)) {
+            Text("B", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = colors.background)
+        }
+        Text("Cancel", fontSize = 13.sp, color = colors.onSurfaceVariant)
+    }
+}
+
+/** A session paused in the background, ready to pick up where it left off. */
+@Composable
+fun SessionPausedOverlay(title: String = "Steam is paused", onResume: () -> Unit) {
+    val colors = MaterialTheme.colorScheme
+    val pal = LocalPalette.current
     val interactionSource = remember { MutableInteractionSource() }
     val resumeFocus = remember { FocusRequester() }
     LaunchedEffect(Unit) {
@@ -178,20 +322,24 @@ fun SessionPausedOverlay(onResume: () -> Unit) {
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color(0xF20B0D10))
+            .background(pal.background.copy(alpha = 0.94f))
             .clickable(interactionSource = interactionSource, indication = null) {},
         contentAlignment = Alignment.Center,
     ) {
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
-            modifier = Modifier.padding(32.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+            modifier = Modifier.widthIn(max = 440.dp).padding(32.dp),
         ) {
-            OutlinedButton(
-                onClick = onResume,
-                modifier = Modifier.focusRequester(resumeFocus).controllerConfirm(onClick = onResume),
-            ) {
-                Text("Resume session")
+            Box(contentAlignment = Alignment.Center, modifier = Modifier.padding(bottom = 6.dp).size(64.dp).border(2.dp, pal.line2, CircleShape)) {
+                Icon(Icons.Filled.Pause, contentDescription = null, tint = colors.onBackground, modifier = Modifier.size(30.dp))
             }
+            Text(title, fontSize = 28.sp, fontWeight = FontWeight.Bold, color = colors.onBackground, textAlign = TextAlign.Center)
+            PrimaryButton(
+                "Resume",
+                modifier = Modifier.padding(top = 14.dp).focusRequester(resumeFocus).controllerConfirm(onClick = onResume),
+                onClick = onResume,
+            )
         }
     }
 }
@@ -295,7 +443,11 @@ fun SessionDrawer(open: Boolean, page: Int, controllerActive: Boolean, onPageCha
         modifier = Modifier.fillMaxSize().graphicsLayer { alpha = veil }.background(Color(0x8A000000))
             .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { host.open = null; a.onClose() },
     )
-    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.CenterEnd) {
+    androidx.compose.foundation.layout.BoxWithConstraints(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.CenterEnd) {
+        // A 4:3 or near-square screen (under 440dp tall) gets one-line shortcuts and a shorter tab row,
+        // so the settings keep most of the height; a narrow one keeps some of the game in view.
+        val short = maxHeight < 440.dp
+        val sheetWidth = minOf(360.dp, maxWidth * 0.92f)
         AnimatedVisibility(
             open,
             enter = slideInHorizontally(Motion.sp(0.8f, Spring.StiffnessLow)) { it } + fadeIn(Motion.tw(220)),
@@ -304,30 +456,22 @@ fun SessionDrawer(open: Boolean, page: Int, controllerActive: Boolean, onPageCha
             Column(
                 modifier = Modifier
                     .fillMaxHeight()
-                    .width(340.dp)
+                    .width(sheetWidth)
                     .background(pal.background.copy(alpha = 0.97f))
                     .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) {}
                     .focusGroup()
                     .controllerBack {
                         if (host.open != null) host.open = null else a.onClose()
                     }
-                    .padding(horizontal = 14.dp, vertical = 16.dp),
+                    .padding(if (short) 12.dp else 16.dp),
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().padding(start = 4.dp, bottom = 6.dp)) {
-                    Box(modifier = Modifier.size(10.dp).clip(CircleShape).background(Brush.linearGradient(listOf(colors.primary, pal.primary2))))
-                    Spacer(Modifier.width(10.dp))
-                    Text(a.title ?: if (a.steam) "Steam" else "Desktop", fontSize = 17.sp, fontWeight = FontWeight.Bold,
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().heightIn(min = if (short) 40.dp else 44.dp)) {
+                    Text(a.title ?: if (a.steam) "Steam" else "Desktop", fontSize = if (short) 18.sp else 20.sp, fontWeight = FontWeight.Bold,
                         color = colors.onBackground, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
-                    ShareSessionLogsButton(modifier = focus.track(page, "share-logs")) {
-                        host.open = null
-                        a.onShareLogs()
-                    }
-                    Spacer(Modifier.width(8.dp))
                     StopSessionButton(modifier = focus.track(page, "stop")) { host.open = null; confirmStop = true }
                 }
                 if (a.onSteamMenu != null && a.onQam != null) {
                     val qamInteraction = remember { MutableInteractionSource() }
-                    val qamHot = qamInteraction.collectIsFocusedAsState().value || qamInteraction.collectIsHoveredAsState().value
                     var qamStartedOnPress by remember { mutableStateOf(false) }
                     LaunchedEffect(qamInteraction) {
                         qamInteraction.interactions.collect { interaction ->
@@ -340,62 +484,29 @@ fun SessionDrawer(open: Boolean, page: Int, controllerActive: Boolean, onPageCha
                     }
                     Row(
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
+                        modifier = Modifier.fillMaxWidth().padding(top = if (short) 8.dp else 12.dp),
                     ) {
-                        val steamSrc = remember { MutableInteractionSource() }
-                        val steamHot = steamSrc.collectIsFocusedAsState().value || steamSrc.collectIsHoveredAsState().value
-                        OutlinedButton(
-                            onClick = { host.open = null; a.onSteamMenu.invoke() },
-                            interactionSource = steamSrc,
-                            modifier = Modifier.weight(1f).height(48.dp).then(focus.track(page, "steam")).controllerConfirm {
-                                host.open = null
-                                a.onSteamMenu.invoke()
-                            },
-                            shape = RoundedCornerShape(12.dp),
-                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
-                            border = BorderStroke(if (steamHot) 2.dp else 1.dp, if (steamHot) pal.signal else colors.outline),
-                            colors = ButtonDefaults.outlinedButtonColors(containerColor = if (steamHot) pal.signal.copy(alpha = 0.16f) else Color.Transparent),
-                        ) {
-                            Text("STEAM", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 0.5.sp, maxLines = 1)
+                        QuickAction("Steam menu", Icons.Outlined.Menu, Modifier.weight(1f).then(focus.track(page, "steam")), compact = short) {
+                            host.open = null
+                            a.onSteamMenu.invoke()
                         }
-                        OutlinedButton(
-                            onClick = {
-                                host.open = null
-                                if (!qamStartedOnPress) a.onQam.invoke()
-                                qamStartedOnPress = false
-                            },
+                        QuickAction(
+                            "Quick access", Icons.Outlined.MoreHoriz,
+                            Modifier.weight(1f).then(focus.track(page, "qam")).semantics { contentDescription = "Open Quick Access Menu" },
+                            compact = short,
                             interactionSource = qamInteraction,
-                            modifier = Modifier.weight(1f).height(48.dp).then(focus.track(page, "qam"))
-                                .semantics { contentDescription = "Open Quick Access Menu" }.controllerConfirm {
-                                host.open = null
-                                a.onQam.invoke()
-                            },
-                            shape = RoundedCornerShape(12.dp),
-                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
-                            border = BorderStroke(if (qamHot) 2.dp else 1.dp, if (qamHot) pal.signal else colors.outline),
-                            colors = ButtonDefaults.outlinedButtonColors(containerColor = if (qamHot) pal.signal.copy(alpha = 0.16f) else Color.Transparent),
+                            onConfirm = { host.open = null; a.onQam.invoke() },
                         ) {
-                            Text("QAM", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 0.5.sp, maxLines = 1)
+                            host.open = null
+                            if (!qamStartedOnPress) a.onQam.invoke()
+                            qamStartedOnPress = false
                         }
                         // Big Picture's own "Switch to Desktop" waits on SteamOS Manager for ever
                         // here; this does the switch without the client.
                         if (a.onSwitchToDesktop != null) {
-                            val deskSrc = remember { MutableInteractionSource() }
-                            val deskHot = deskSrc.collectIsFocusedAsState().value || deskSrc.collectIsHoveredAsState().value
-                            OutlinedButton(
-                                onClick = { host.open = null; a.onSwitchToDesktop.invoke() },
-                                interactionSource = deskSrc,
-                                modifier = Modifier.weight(1f).height(48.dp).then(focus.track(page, "desktop"))
-                                    .semantics { contentDescription = "Switch to Desktop" }.controllerConfirm {
-                                        host.open = null
-                                        a.onSwitchToDesktop.invoke()
-                                    },
-                                shape = RoundedCornerShape(12.dp),
-                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
-                                border = BorderStroke(if (deskHot) 2.dp else 1.dp, if (deskHot) pal.signal else colors.outline),
-                                colors = ButtonDefaults.outlinedButtonColors(containerColor = if (deskHot) pal.signal.copy(alpha = 0.16f) else Color.Transparent),
-                            ) {
-                                Text("DESKTOP", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 0.5.sp, maxLines = 1)
+                            QuickAction("Desktop", Icons.Outlined.DesktopWindows, Modifier.weight(1f).then(focus.track(page, "desktop")), compact = short) {
+                                host.open = null
+                                a.onSwitchToDesktop.invoke()
                             }
                         }
                     }
@@ -403,20 +514,19 @@ fun SessionDrawer(open: Boolean, page: Int, controllerActive: Boolean, onPageCha
 
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
+                    modifier = Modifier.fillMaxWidth().padding(top = if (short) 6.dp else 12.dp),
                 ) {
-                    DrawerOutlineButton("LB  ‹", modifier = Modifier.height(48.dp).then(focus.track(page, "prev"))) {
+                    DrawerBumper("LB", "Previous page", modifier = focus.track(page, "prev")) {
                         host.open = null; onPageChange((page + DRAWER_PAGES - 1) % DRAWER_PAGES)
                     }
-                    DrawerPageTabs(page = page, modifier = Modifier.weight(1f)) { index -> host.open = null; onPageChange(index) }
-                    DrawerOutlineButton("›  RB", modifier = Modifier.height(48.dp).then(focus.track(page, "next"))) {
+                    DrawerPageTabs(page = page, compact = short, modifier = Modifier.weight(1f)) { index -> host.open = null; onPageChange(index) }
+                    DrawerBumper("RB", "Next page", modifier = focus.track(page, "next")) {
                         host.open = null; onPageChange((page + 1) % DRAWER_PAGES)
                     }
                 }
-
                 Column(
                     modifier = Modifier.weight(1f).fillMaxWidth().verticalScroll(pageScroll[page]),
-                ) {
+                ) { CompositionLocalProvider(LocalChipMinWidth provides 120.dp) {
                     when (page) {
                         0 -> SettingsGroup("Display") {
                             ToggleRow(host, "hud", "Performance HUD", null, a.hudOn,
@@ -528,13 +638,21 @@ fun SessionDrawer(open: Boolean, page: Int, controllerActive: Boolean, onPageCha
                                     FexPreset.all.map { it.id to it.label }, a.fexPreset,
                                     chipModifier = focus.track(page, "fex"), onPick = a.onFexPreset)
                             }
+                            SettingsGroup("Support") {
+                                SettingsRow("Session logs", "Send this session's logs with a bug report") {
+                                    DrawerOutlineButton("Send logs", modifier = focus.track(page, "share-logs")) {
+                                        host.open = null
+                                        a.onShareLogs()
+                                    }
+                                }
+                            }
                             Spacer(Modifier.height(18.dp))
                             if (!a.isHomeApp) DrawerOutlineButton("Background", modifier = focus.track(page, "background")) {
                                 host.open = null; a.onBackground()
                             }
                         }
                     }
-                }
+                } }
             }
         }
     }
@@ -608,33 +726,75 @@ private fun StopSessionButton(modifier: Modifier = Modifier, onClick: () -> Unit
     val src = remember { MutableInteractionSource() }
     val hot = src.collectIsFocusedAsState().value || src.collectIsHoveredAsState().value
     val fill by animateColorAsState(if (hot) colors.error.copy(alpha = 0.18f) else Color.Transparent, Motion.tw(220), label = "dangerFill")
-    Box(
-        contentAlignment = Alignment.Center,
-        modifier = modifier.size(42.dp).semantics { contentDescription = "Stop session" }
-            .clip(RoundedCornerShape(12.dp)).background(fill).border(1.dp, colors.error.copy(alpha = if (hot) 0.9f else 0.5f), RoundedCornerShape(12.dp))
+    val shape = RoundedCornerShape(20.dp)
+    Row(
+        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp),
+        modifier = modifier.heightIn(min = 40.dp).semantics { contentDescription = "Stop session" }
+            .clip(shape).background(fill).border(if (hot) 2.dp else 1.dp, colors.error.copy(alpha = if (hot) 0.9f else 0.55f), shape)
             .hoverable(src).clickable(interactionSource = src, indication = LocalIndication.current, onClick = onClick)
-            .controllerConfirm(onClick = onClick),
-    ) { Text("×", fontSize = 25.sp, fontWeight = FontWeight.Medium, color = colors.error) }
+            .controllerConfirm(onClick = onClick)
+            .padding(start = 12.dp, end = 14.dp),
+    ) {
+        Icon(Icons.Outlined.PowerSettingsNew, contentDescription = null, tint = colors.error, modifier = Modifier.size(18.dp))
+        Text("Stop", fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = colors.error)
+    }
 }
 
+/** One of the sheet's shortcuts into Steam: an icon over its name, the whole tile the target. */
 @Composable
-private fun ShareSessionLogsButton(modifier: Modifier = Modifier, onClick: () -> Unit) {
+private fun QuickAction(
+    label: String, icon: androidx.compose.ui.graphics.vector.ImageVector, modifier: Modifier,
+    compact: Boolean = false,
+    interactionSource: MutableInteractionSource = remember { MutableInteractionSource() },
+    onConfirm: (() -> Unit)? = null,
+    onClick: () -> Unit,
+) {
+    val colors = MaterialTheme.colorScheme
+    val pal = LocalPalette.current
+    val hot = interactionSource.collectIsFocusedAsState().value || interactionSource.collectIsHoveredAsState().value
+    val shape = RoundedCornerShape(12.dp)
+    val tile = modifier.height(if (compact) 44.dp else 64.dp).clip(shape)
+        .background(if (hot) pal.signal.copy(alpha = 0.14f) else colors.surface)
+        .border(if (hot) 2.dp else 1.dp, if (hot) pal.signal else pal.line, shape)
+        .hoverable(interactionSource)
+        .clickable(interactionSource = interactionSource, indication = LocalIndication.current, onClick = onClick)
+        .controllerConfirm(onClick = onConfirm ?: onClick)
+        .padding(horizontal = 6.dp)
+    val content: @Composable () -> Unit = {
+        Icon(icon, contentDescription = null, tint = if (hot) pal.signal else colors.onBackground, modifier = Modifier.size(20.dp))
+        Text(label, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = colors.onBackground, maxLines = 1, overflow = TextOverflow.Ellipsis)
+    }
+    if (compact) Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp, Alignment.CenterHorizontally), modifier = tile,
+    ) { content() }
+    else Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(5.dp, Alignment.CenterVertically), modifier = tile,
+    ) { content() }
+}
+
+/** A bumper as a keycap, 44dp to touch; LB / RB on the pad turn the page too. */
+@Composable
+private fun DrawerBumper(label: String, description: String, modifier: Modifier = Modifier, onClick: () -> Unit) {
     val colors = MaterialTheme.colorScheme
     val pal = LocalPalette.current
     val src = remember { MutableInteractionSource() }
     val hot = src.collectIsFocusedAsState().value || src.collectIsHoveredAsState().value
+    val ring = RoundedCornerShape(10.dp)
+    val cap = RoundedCornerShape(7.dp)
     Box(
         contentAlignment = Alignment.Center,
-        modifier = modifier.widthIn(min = 88.dp).height(42.dp)
-            .semantics { contentDescription = "Send current session logs" }
-            .clip(RoundedCornerShape(12.dp))
-            .background(if (hot) pal.signal.copy(alpha = 0.16f) else Color.Transparent)
-            .border(1.dp, if (hot) pal.signal else colors.outline.copy(alpha = 0.5f), RoundedCornerShape(12.dp))
-            .hoverable(src).clickable(interactionSource = src, indication = LocalIndication.current, onClick = onClick)
-            .controllerConfirm(onClick = onClick),
+        modifier = modifier.size(44.dp).clip(ring)
+            .border(2.dp, if (hot) pal.signal else Color.Transparent, ring)
+            .hoverable(src).clickable(interactionSource = src, indication = null, onClick = onClick)
+            .controllerConfirm(onClick = onClick)
+            .semantics { contentDescription = description },
     ) {
-        Text("send logs", fontSize = 12.sp, fontWeight = FontWeight.SemiBold,
-            color = if (hot) pal.signal else colors.onSurfaceVariant, maxLines = 1)
+        Text(
+            label, fontSize = 12.sp, fontWeight = FontWeight.Bold, color = if (hot) colors.onBackground else colors.onSurfaceVariant,
+            modifier = Modifier.clip(cap).background(colors.surfaceVariant).border(1.dp, pal.line2, cap).padding(horizontal = 6.dp, vertical = 3.dp),
+        )
     }
 }
 
@@ -646,7 +806,7 @@ private fun ShareSessionLogsButton(modifier: Modifier = Modifier, onClick: () ->
  * pad like the dots it replaces.
  */
 @Composable
-private fun DrawerPageTabs(page: Int, modifier: Modifier = Modifier, onSelect: (Int) -> Unit) {
+private fun DrawerPageTabs(page: Int, modifier: Modifier = Modifier, compact: Boolean = false, onSelect: (Int) -> Unit) {
     val colors = MaterialTheme.colorScheme
     val pal = LocalPalette.current
     val count = drawerPageIcons.size
@@ -654,13 +814,14 @@ private fun DrawerPageTabs(page: Int, modifier: Modifier = Modifier, onSelect: (
     val motion = tween<Float>(durationMillis = 340, easing = FastOutSlowInEasing)
     androidx.compose.foundation.layout.BoxWithConstraints(
         contentAlignment = Alignment.Center,
-        modifier = modifier.height(64.dp).clipToBounds(),
+        modifier = modifier.height(if (compact) 44.dp else 64.dp).clipToBounds(),
     ) {
+        val tab = if (compact) 40f else 56f
         // Fit the line to the room between LB and RB. Worst case is an end tab selected: full size
-        // (56 dp) and pushed outward by the lean, which scales with the spacing. So
+        // ([tab] dp) and pushed outward by the lean, which scales with the spacing. So
         //   (count-1) * spacing * (1 + lean/64) + 56 <= width
         // - never more than the mock's 64 dp, never tighter than 32 dp.
-        val spacing = ((maxWidth.value - 56f) / ((count - 1) * (1f + DRAWER_TAB_LEAN_DP / DRAWER_TAB_SPACING_DP))).coerceIn(32f, DRAWER_TAB_SPACING_DP)
+        val spacing = ((maxWidth.value - tab) / ((count - 1) * (1f + DRAWER_TAB_LEAN_DP / DRAWER_TAB_SPACING_DP))).coerceIn(32f, DRAWER_TAB_SPACING_DP)
         val leanStep = DRAWER_TAB_LEAN_DP * spacing / DRAWER_TAB_SPACING_DP
         val lean by animateFloatAsState(-(page - middle) * leanStep, motion, label = "tabLean")
         drawerPageIcons.forEachIndexed { index, icon ->
@@ -676,7 +837,7 @@ private fun DrawerPageTabs(page: Int, modifier: Modifier = Modifier, onSelect: (
                 contentAlignment = Alignment.Center,
                 modifier = Modifier
                     .offset(x = ((index - middle) * spacing + lean).dp)
-                    .size(56.dp)
+                    .size(tab.dp)
                     .graphicsLayer { scaleX = scale; scaleY = scale; this.alpha = alpha }
                     .clip(RoundedCornerShape(16.dp))
                     .background(
@@ -690,7 +851,7 @@ private fun DrawerPageTabs(page: Int, modifier: Modifier = Modifier, onSelect: (
                     .clickable(interactionSource = source, indication = LocalIndication.current, onClick = select)
                     .controllerConfirm(onClick = select),
             ) {
-                Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(30.dp))
+                Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(if (compact) 22.dp else 30.dp))
             }
         }
     }

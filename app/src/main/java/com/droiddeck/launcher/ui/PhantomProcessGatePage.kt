@@ -37,7 +37,8 @@ fun PhantomProcessGatePage(
             eyebrow = "Steam",
             lede = if (compact) compactStatus(status) else "${PhantomProcessLimit.title(status)} · checking again every two seconds",
             onBack = onDismiss,
-            scrollContent = false,
+            // Scrolls, so the larger text never pushes the ADB command off a short screen.
+            scrollContent = true,
             compactLayout = compact,
         ) {
             BoxWithConstraints(Modifier.fillMaxWidth()) {
@@ -104,12 +105,12 @@ private fun CompactGateInstructions(
         ) {
             Text(
                 "If the setting is missing and Wireless debugging is unavailable, run this from a computer:",
-                style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.sp),
+                style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Text(
                 PhantomProcessLimit.ADB_COMMAND,
-                style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace, fontSize = 9.sp),
+                style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace, fontSize = 11.sp),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
