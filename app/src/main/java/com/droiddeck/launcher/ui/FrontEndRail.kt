@@ -53,6 +53,8 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -78,7 +80,7 @@ import com.droiddeck.launcher.core.PhantomProcessLimit
 
 /** What the pad's face buttons do here, along the bottom edge as on a console. */
 @Composable
-internal fun ControllerHints() {
+internal fun ControllerHints(select: String = "Select", tabs: Boolean = false) {
     val colors = MaterialTheme.colorScheme
     val pal = LocalPalette.current
     Column(modifier = Modifier.fillMaxWidth()) {
@@ -88,7 +90,8 @@ internal fun ControllerHints() {
             horizontalArrangement = Arrangement.spacedBy(18.dp, Alignment.End),
             modifier = Modifier.fillMaxWidth().height(34.dp).background(colors.surface).padding(horizontal = 20.dp),
         ) {
-            HintGlyph("A", "Select")
+            if (tabs) HintGlyph("LB RB", "Tabs")
+            HintGlyph("A", select)
             HintGlyph("B", "Back")
         }
     }
@@ -98,7 +101,12 @@ internal fun ControllerHints() {
 private fun HintGlyph(button: String, action: String) {
     val colors = MaterialTheme.colorScheme
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-        Box(contentAlignment = Alignment.Center, modifier = Modifier.size(20.dp).clip(CircleShape).background(colors.onBackground)) {
+        // Face buttons are round; bumpers are a wider keycap.
+        val shape = if (button.length == 1) CircleShape else RoundedCornerShape(6.dp)
+        Box(
+            contentAlignment = Alignment.Center,
+            modifier = Modifier.height(20.dp).widthIn(min = 20.dp).clip(shape).background(colors.onBackground).padding(horizontal = if (button.length == 1) 0.dp else 6.dp),
+        ) {
             Text(button, fontSize = 12.sp, fontWeight = FontWeight.Bold, color = colors.background)
         }
         Text(action, fontSize = 13.sp, color = colors.onSurfaceVariant)

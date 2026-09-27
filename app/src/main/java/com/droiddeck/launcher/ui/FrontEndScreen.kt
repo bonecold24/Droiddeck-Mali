@@ -229,7 +229,8 @@ internal class FrontFocus {
     // and the last one focused.
     val items = HashMap<String, FocusRequester>()
     val attached = HashMap<String, Int>()
-    var last: String? = null
+    // State, so the controller hints follow it: A launches from a game row but selects elsewhere.
+    var last by mutableStateOf<String?>(null)
     // The first tile of the page's grid: Down from the page's buttons goes to it, not to whichever
     // tile happens to sit under the button.
     val firstTile = FocusRequester()
@@ -417,7 +418,13 @@ private fun FrontEndScreenBody(s: FrontEndState, a: FrontEndActions, page: (@Com
                 AnimatedVisibility(
                     inputModeManager.inputMode == InputMode.Keyboard,
                     enter = expandVertically() + fadeIn(), exit = shrinkVertically() + fadeOut(),
-                ) { ControllerHints() }
+                ) {
+                    val onGame = frontFocus.focusedRail == null && frontFocus.last?.startsWith("game:") == true
+                    ControllerHints(
+                        select = if (onGame) "Launch" else "Select",
+                        tabs = railSelection == "setup" && s.pageKey == null && frontFocus.focusedRail == null,
+                    )
+                }
             }
         }
 
