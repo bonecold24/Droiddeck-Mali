@@ -996,7 +996,7 @@ private fun DesktopCard(s: FrontEndState, a: FrontEndActions) {
         Actions {
             // Enabled without a runtime or the desktop: the session's loading screen installs them first.
             PrimaryButton(if (s.desktopInstalled) "Open desktop" else "Install & open desktop", enabled = !s.busy, main = true, onClick = a.onDesktop)
-            Cog(a.onDesktopSettings)
+            Cog(onClick = a.onDesktopSettings)
         }
     }
     Column(
