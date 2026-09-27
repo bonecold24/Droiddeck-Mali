@@ -100,7 +100,7 @@ docker run --rm --platform linux/amd64 \
         d=app/src/main/assets/linuxfs
         mkdir -p "$d"
         aarch64-linux-gnu-g++ -shared -fPIC -O2 -Wall -Wno-attributes -Wno-nonnull-compare \
-            -pthread -std=c++17 -static-libstdc++ -static-libgcc \
+            -pthread -std=c++17 -static-libstdc++ -static-libgcc -Wl,--exclude-libs,ALL \
             -o "$d/libfakeinput.so" app/src/main/cpp/fakeinput_steam.cpp -ldl
         aarch64-linux-gnu-strip --strip-unneeded "$d/libfakeinput.so"
         aarch64-linux-gnu-gcc -shared -fPIC -O2 -Wall -pthread \
