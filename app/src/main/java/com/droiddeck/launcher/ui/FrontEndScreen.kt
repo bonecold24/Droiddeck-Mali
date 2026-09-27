@@ -203,6 +203,7 @@ class FrontEndState(
     val controller: com.droiddeck.launcher.input.ControllerPrefs.Settings? = null,
     val phantomProcessStatus: PhantomProcessStatus = PhantomProcessStatus.NOT_APPLICABLE,
     val showPhantomGate: Boolean = false,
+    val launcherFullscreen: Boolean = true,
 )
 
 class FrontEndActions(
@@ -231,6 +232,7 @@ class FrontEndActions(
     val onCredits: () -> Unit,
     val onPageBack: () -> Unit = {},
     val onTheme: (String) -> Unit = {},
+    val onLauncherFullscreen: (Boolean) -> Unit = {},
     val onHomeApp: () -> Unit = {},
     val onHomeScreen: (Boolean) -> Unit = {},
     val onAndroidApp: (HomeApp.LaunchableApp, Int?) -> Unit = { _, _ -> },
@@ -429,7 +431,7 @@ private fun FrontEndScreenBody(s: FrontEndState, a: FrontEndActions, page: (@Com
     }
     // Bumped each time a rail item is picked, so a controller moves on into the new page.
     var railPicks by remember { mutableStateOf(0) }
-    val onRailSelect: (String) -> Unit = { key ->
+    val showRailPage: (String) -> Unit = { key ->
         // Components is a full page like Protons or Performance, opened over the current rail
         // selection rather than replacing it.
         if (key == "components") a.onComponents()
@@ -437,12 +439,22 @@ private fun FrontEndScreenBody(s: FrontEndState, a: FrontEndActions, page: (@Com
             if (s.pageKey != null) a.onPageBack()
             selected = key
         }
+    }
+    val onRailFocus: (String) -> Unit = { key ->
+        if (key != railSelection) showRailPage(key)
+    }
+    val onRailSelect: (String) -> Unit = { key ->
+        showRailPage(key)
         railPicks++
     }
     val inputModeManager = LocalInputModeManager.current
     val window = LocalWindowInfo.current
     var anyFocused by remember { mutableStateOf(false) }
-    Box(modifier = Modifier.fillMaxSize().background(colors.background).systemBarsPadding().onFocusChanged { anyFocused = it.hasFocus }) {
+    Box(
+        modifier = Modifier.fillMaxSize().background(colors.background)
+            .then(if (s.launcherFullscreen) Modifier else Modifier.systemBarsPadding())
+            .onFocusChanged { anyFocused = it.hasFocus },
+    ) {
         // Start controllers on the current page's main action, else on the rail.
         LaunchedEffect(processSettingsPageVisible) {
             if (processSettingsPageVisible) return@LaunchedEffect
@@ -481,7 +493,7 @@ private fun FrontEndScreenBody(s: FrontEndState, a: FrontEndActions, page: (@Com
             .focusProperties { enter = { frontFocus.railFor(railSelection) } }
             .focusGroup()
         Row(modifier = Modifier.fillMaxSize()) {
-            SideRail(s, railSelection, onRailSelect, a, railFocus.fillMaxHeight())
+            SideRail(s, railSelection, onRailSelect, onRailFocus, a, railFocus.fillMaxHeight())
             Box(Modifier.width(1.dp).fillMaxHeight().background(pal.line))
             Column(modifier = Modifier.weight(1f).fillMaxHeight()) {
                 Pane(
@@ -606,7 +618,7 @@ private val AttentionAmber = Color(0xFFFFB547)
 @Composable
 private fun SideRail(
     s: FrontEndState, selected: String,
-    onSelect: (String) -> Unit, a: FrontEndActions, modifier: Modifier,
+    onSelect: (String) -> Unit, onFocusSelect: (String) -> Unit, a: FrontEndActions, modifier: Modifier,
 ) {
     val colors = MaterialTheme.colorScheme
     val compact = LocalConfiguration.current.screenHeightDp < 420
@@ -625,13 +637,13 @@ private fun SideRail(
             verticalArrangement = Arrangement.spacedBy(4.dp),
             modifier = Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()),
         ) {
-            if (s.isHomeApp) RailItem("Apps", Icons.Outlined.Apps, "android-apps", selected == "android-apps", compact, iconOnly) { onSelect("android-apps") }
-            RailItem("Steam", Icons.Outlined.SportsEsports, "steam", selected == "steam", compact, iconOnly) { onSelect("steam") }
+            if (s.isHomeApp) RailItem("Apps", Icons.Outlined.Apps, "android-apps", selected == "android-apps", compact, iconOnly, onFocus = { onFocusSelect("android-apps") }) { onSelect("android-apps") }
+            RailItem("Steam", Icons.Outlined.SportsEsports, "steam", selected == "steam", compact, iconOnly, onFocus = { onFocusSelect("steam") }) { onSelect("steam") }
             // Games appears once there is one: an empty list is no place to land.
-            if (s.steamGames.isNotEmpty()) RailItem("Games", Icons.Outlined.VideoLibrary, "games", selected == "games", compact, iconOnly) { onSelect("games") }
-            RailItem("Desktop", Icons.Outlined.DesktopWindows, "desktop", selected == "desktop", compact, iconOnly) { onSelect("desktop") }
-            RailItem("Components", Icons.Outlined.Layers, "components", selected == "components", compact, iconOnly) { onSelect("components") }
-            RailItem("Setup", Icons.Outlined.Tune, "setup", selected == "setup", compact, iconOnly, badge = setupNeedsAttention) { onSelect("setup") }
+            if (s.steamGames.isNotEmpty()) RailItem("Games", Icons.Outlined.VideoLibrary, "games", selected == "games", compact, iconOnly, onFocus = { onFocusSelect("games") }) { onSelect("games") }
+            RailItem("Desktop", Icons.Outlined.DesktopWindows, "desktop", selected == "desktop", compact, iconOnly, onFocus = { onFocusSelect("desktop") }) { onSelect("desktop") }
+            RailItem("Components", Icons.Outlined.Layers, "components", selected == "components", compact, iconOnly, onFocus = { onFocusSelect("components") }) { onSelect("components") }
+            RailItem("Setup", Icons.Outlined.Tune, "setup", selected == "setup", compact, iconOnly, badge = setupNeedsAttention, onFocus = { onFocusSelect("setup") }) { onSelect("setup") }
         }
         AnimatedVisibility(s.busy, enter = expandVertically() + fadeIn(), exit = shrinkVertically() + fadeOut()) {
             Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(bottom = 8.dp)) {
@@ -654,7 +666,7 @@ private fun SideRail(
 @Composable
 private fun RailItem(
     label: String, icon: ImageVector, key: String, current: Boolean, compact: Boolean, iconOnly: Boolean,
-    badge: Boolean = false, onClick: () -> Unit,
+    badge: Boolean = false, onFocus: () -> Unit = {}, onClick: () -> Unit,
 ) {
     val colors = MaterialTheme.colorScheme
     val pal = LocalPalette.current
@@ -664,7 +676,10 @@ private fun RailItem(
     val hovered by src.collectIsHoveredAsState()
     val pressed by src.collectIsPressedAsState()
     if (frontFocus != null) LaunchedEffect(focused) {
-        if (focused) frontFocus.focusedRail = key
+        if (focused) {
+            frontFocus.focusedRail = key
+            onFocus()
+        }
         else if (frontFocus.focusedRail == key) frontFocus.focusedRail = null
     }
     val fg by animateColorAsState(
@@ -1303,6 +1318,11 @@ private fun SetupPanel(
                                 if (s.homeScreenEnabled) "DroidDeck can be the phone's Home app" else "Off: DroidDeck is never offered as a Home app",
                                 s.homeScreenEnabled,
                             ) { a.onHomeScreen(it) }
+                            ToggleRow(
+                                host, "launcher-fullscreen", "Fullscreen",
+                                if (s.launcherFullscreen) "Hide the Android status and navigation bars" else "Show the Android status and navigation bars",
+                                s.launcherFullscreen,
+                            ) { a.onLauncherFullscreen(it) }
                             if (s.homeScreenEnabled) {
                                 ActionRow("Default Home app", s.defaultHomeLabel ?: "Choose a Home app", "Choose", a.onHomeApp)
                             }

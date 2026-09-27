@@ -16,6 +16,7 @@ import android.os.Looper
 import android.util.Log
 import android.view.Display
 import android.view.KeyEvent
+import android.view.View
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
@@ -144,6 +145,7 @@ class MainActivity : ComponentActivity() {
     private var directAudio by mutableStateOf(false)
     private var clientDirectAudio by mutableStateOf(false)
     private var forceFullscreen by mutableStateOf(true)
+    private var launcherFullscreen by mutableStateOf(true)
     private var mic by mutableStateOf(false)
     private var linuxRows by mutableStateOf<List<DriverRow>>(emptyList())
     /** The latest Banners-Turnip release as each driver menu offers it (see [refreshReleaseRows]). */
@@ -265,6 +267,8 @@ class MainActivity : ComponentActivity() {
         refreshPhantomStatus()
         theme = SessionPrefs.theme(this)
         backActionsInverted = SessionPrefs.backActionsInverted(this)
+        launcherFullscreen = SessionPrefs.launcherFullscreen(this)
+        applyLauncherFullscreen()
         setContent {
             DroidDeckTheme(theme) {
                 val sm = settingsMode
@@ -305,6 +309,7 @@ class MainActivity : ComponentActivity() {
                         controller = controllerSettings,
                         phantomProcessStatus = phantomProcessStatus,
                         showPhantomGate = showPhantomGate,
+                        launcherFullscreen = launcherFullscreen,
                     ),
                     FrontEndActions(
                         onPlay = { startSession(Intent(this, SessionActivity::class.java), steamSession = true) },
@@ -367,6 +372,11 @@ class MainActivity : ComponentActivity() {
                         onCredits = { showCredits = true },
                         onPageBack = { settingsMode = null; showPerformance = false; showProtons = false; showComponents = false; showMapping = false },
                         onTheme = { id -> SessionPrefs.setTheme(this, id); theme = id },
+                        onLauncherFullscreen = { on ->
+                            SessionPrefs.setLauncherFullscreen(this, on)
+                            launcherFullscreen = on
+                            applyLauncherFullscreen()
+                        },
                         onHomeApp = { manageHomeApp() },
                         onHomeScreen = { on ->
                             HomeApp.setHomeScreenEnabled(this, on)
@@ -488,6 +498,25 @@ class MainActivity : ComponentActivity() {
             SessionArtifacts.finishAbandoned(this)
             SessionArtifacts.scrubOlder(this)
         }, "finish-abandoned").start()
+    }
+
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (hasFocus) applyLauncherFullscreen()
+    }
+
+    private fun applyLauncherFullscreen() {
+        @Suppress("DEPRECATION")
+        window.decorView.systemUiVisibility = if (launcherFullscreen) {
+            (View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
+                    or View.SYSTEM_UI_FLAG_FULLSCREEN
+                    or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
+                    or View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+                    or View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
+                    or View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION)
+        } else {
+            View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+        }
     }
 
     /** On the Components page the pad's LB / RB step through FEX, DXVK and VKD3D-Proton, wrapping around. */
