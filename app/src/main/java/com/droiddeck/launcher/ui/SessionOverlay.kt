@@ -316,20 +316,11 @@ fun SessionDrawer(open: Boolean, page: Int, controllerActive: Boolean, onPageCha
                                 chipModifier = focus.track(page, "fill"), onChange = a.onFillScreen,
                             )
                             val fgOpen = host.open == "fg"
-                            val fgLabel = when (a.frameGenEngine) {
-                                FrameGen.ENGINE_WINFG -> "Win-FG ${a.frameGenMultiplier}×"
-                                FrameGen.ENGINE_LSFG -> "LSFG ${a.frameGenMultiplier}×"
-                                else -> "Off"
-                            }
+                            val fgLabel = FrameGen.label(a.frameGenEngine, a.frameGenMultiplier)
                             SettingsRow("Frame generation", null, highlighted = fgOpen) {
                                 Box {
                                     ValueChip(fgLabel, fgOpen, modifier = focus.track(page, "fg")) { host.open = if (fgOpen) null else "fg" }
-                                    AnchoredMenu(fgOpen, onDismiss = { if (host.open == "fg") host.open = null }, title = "Frame generation") { firstItemFocus ->
-                                        val need = if (a.lsfgReady) null else "Requires Lossless Scaling"
-                                        MenuItem("Off", checked = a.frameGenEngine == FrameGen.ENGINE_OFF, focusRequester = firstItemFocus) { a.onFrameGenPick(FrameGen.ENGINE_OFF, 2); host.open = null }
-                                        for (m in 2..4) MenuItem("Win-FG ${m}×", checked = a.frameGenEngine == FrameGen.ENGINE_WINFG && a.frameGenMultiplier == m) { a.onFrameGenPick(FrameGen.ENGINE_WINFG, m); host.open = null }
-                                        for (m in 2..4) MenuItem("LSFG ${m}×", checked = a.frameGenEngine == FrameGen.ENGINE_LSFG && a.frameGenMultiplier == m, enabled = a.lsfgReady, detail = need) { a.onFrameGenPick(FrameGen.ENGINE_LSFG, m); host.open = null }
-                                    }
+                                    FrameGenMenu(host, a.frameGenEngine, a.frameGenMultiplier, a.lsfgReady, a.onFrameGenPick)
                                 }
                             }
                         }
@@ -349,16 +340,16 @@ fun SessionDrawer(open: Boolean, page: Int, controllerActive: Boolean, onPageCha
                             }
                             SettingsGroup("Keyboard") {
                                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth().padding(8.dp)) {
-                                    DrawerOutlineButton("Hardware", modifier = Modifier.weight(1f).height(42.dp).then(focus.track(page, "hardware"))) {
+                                    DrawerOutlineButton("PC keyboard", modifier = Modifier.weight(1f).height(48.dp).then(focus.track(page, "hardware"))) {
                                         host.open = null; a.onHardwareKeyboard()
                                     }
-                                    DrawerOutlineButton("Android", modifier = Modifier.weight(1f).height(42.dp).then(focus.track(page, "android"))) {
+                                    DrawerOutlineButton("Android", modifier = Modifier.weight(1f).height(48.dp).then(focus.track(page, "android"))) {
                                         host.open = null; a.onKeyboard()
                                     }
                                 }
                             }
                             if (a.steam && a.secondScreenDisplays.isNotEmpty()) SettingsGroup("Second screen") {
-                                ChoiceRow(host, "second-screen-mode", "Controls", null,
+                                ChoiceRow(host, "second-screen-mode", "Shows", null,
                                     listOf(SecondScreenMode.NONE, SecondScreenMode.KEYBOARD_TRACKPAD, SecondScreenMode.TERMINAL).map { it to it.label },
                                     a.secondScreenMode, chipModifier = focus.track(page, "second-screen-mode"), onPick = a.onSecondScreenMode)
                                 if (a.secondScreenDisplays.size > 1) ChoiceRow(host, "second-screen-display", "Display", null,
@@ -420,7 +411,7 @@ fun SessionDrawer(open: Boolean, page: Int, controllerActive: Boolean, onPageCha
                             }
                             SettingsGroup("Support") {
                                 SettingsRow("Session logs", "Send this session's logs with a bug report") {
-                                    DrawerOutlineButton("Send logs", modifier = focus.track(page, "share-logs")) {
+                                    DrawerOutlineButton("Share logs", modifier = focus.track(page, "share-logs")) {
                                         host.open = null
                                         a.onShareLogs()
                                     }
@@ -509,7 +500,7 @@ private fun StopSessionButton(modifier: Modifier = Modifier, onClick: () -> Unit
     val shape = RoundedCornerShape(20.dp)
     Row(
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp),
-        modifier = modifier.heightIn(min = 40.dp).semantics { contentDescription = "Stop session" }
+        modifier = modifier.heightIn(min = 44.dp).semantics { contentDescription = "Stop session" }
             .clip(shape).background(fill).border(if (hot) 2.dp else 1.dp, colors.error.copy(alpha = if (hot) 0.9f else 0.55f), shape)
             .hoverable(src).clickable(interactionSource = src, indication = LocalIndication.current, onClick = onClick)
             .controllerConfirm(onClick = onClick)

@@ -223,10 +223,11 @@ private fun Content(
                     if (e.installed) {
                         Rise(3) {
                             Actions {
-                                PrimaryButton("Open ${e.name}", enabled = s.ready && !s.busy, main = true) { a.onEmulator(e) }
+                                PrimaryButton("Open ${e.name}", enabled = !s.busy, main = true) { a.onEmulator(e) }
+                                BusyChip(s)
                                 SecondaryButton("ROMs folder", onClick = a.onRoms)
                                 if (pkg != null) SecondaryButton(
-                                    if (pkg.kind == "appimage") "Remove" else "Forget",
+                                    if (pkg.kind == "appimage") "Remove" else "Hide",
                                     enabled = s.packageBusyId == null && !s.sessionRunning,
                                 ) { a.onRemovePackage(pkg.id) }
                             }
@@ -274,7 +275,7 @@ private fun Content(
                             if (s.packagePercent >= 0) LinearProgressIndicator(progress = { s.packagePercent / 100f }, modifier = Modifier.fillMaxWidth().height(4.dp))
                             else LinearProgressIndicator(modifier = Modifier.fillMaxWidth().height(4.dp))
                         }
-                        if (pkg?.kind == "tar") Rise(5) { Note("Forgetting this package hides it from Desktop; its files remain in the Linux runtime.") }
+                        if (pkg?.kind == "tar") Rise(5) { Note("Hiding this package takes it off Desktop; its files stay in the Linux runtime.") }
                     }
                 }
             }
@@ -296,8 +297,8 @@ private fun Content(
                                 Spacer(Modifier.height(14.dp))
                                 Actions {
                                     Image(painterResource(e.iconRes), null, modifier = Modifier.size(40.dp))
-                                    PrimaryButton("Launch in ${e.name}", enabled = s.ready && !s.busy, main = true) { a.onRom(g) }
-                                    ActionChip(g.hostPath.extension.uppercase().ifEmpty { "folder" }, ok = false)
+                                    PrimaryButton("Launch in ${e.name}", enabled = !s.busy, main = true) { a.onRom(g) }
+                                    if (s.busy) BusyChip(s) else ActionChip(g.hostPath.extension.uppercase().ifEmpty { "folder" }, ok = false)
                                 }
                             }
                             if (g.art != null && !narrow) Poster(g.art, g.name, Modifier.width(detailPosterWidth))
@@ -315,7 +316,7 @@ private fun Content(
                     }
                 }
             }
-            else -> Note("Select an item.")
+            else -> Note("That page is gone. Pick a section on the left.")
         }
     }
 }
@@ -331,6 +332,7 @@ private fun DesktopCard(s: FrontEndState, a: FrontEndActions) {
             // Enabled without a runtime or the desktop: the session's loading screen installs them first.
             PrimaryButton(if (s.desktopInstalled) "Open desktop" else "Install & open desktop", enabled = !s.busy, main = true, onClick = a.onDesktop)
             Cog(onClick = a.onDesktopSettings)
+            BusyChip(s)
         }
     }
     Column(

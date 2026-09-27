@@ -172,9 +172,9 @@ fun WirelessAdbFixPage(
         SettingsPage(
             host = rememberMenuHost(),
             title = when {
-                compactSplit && step < 2 -> "Wireless ADB"
-                step == 2 -> "Wireless ADB ready"
-                else -> "Set up on-device ADB"
+                compactSplit && step < 2 -> "Wireless debugging"
+                step == 2 -> "Child-process limit updated"
+                else -> "Change the child-process limit"
             },
             eyebrow = "Setup",
             lede = when {
@@ -201,7 +201,7 @@ fun WirelessAdbFixPage(
                     ) {
                         SettingsGroup("Child-process limit", compact = compactSplit) {
                             Text(
-                                "Android confirmed the limit is ${if (desiredEnabled) "enabled" else "disabled"}.",
+                                "Android confirmed the limit is ${if (desiredEnabled) "on" else "off"}.",
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 modifier = Modifier.padding(14.dp),
                             )
@@ -332,7 +332,7 @@ private fun WirelessStepForm(
                     StatusMessage(busy, message, Modifier.weight(1f), isError = messageIsError)
                     SecondaryButton("Pair again", compact = compact, enabled = !busy, onClick = onPairAgain)
                     PrimaryButton(
-                        if (desiredEnabled) "Enable limit" else "Disable limit",
+                        if (desiredEnabled) "Turn limit on" else "Turn limit off",
                         compact = compact,
                         enabled = !busy && parseAdbAddress(connectionAddress) != null,
                         onClick = onApply,

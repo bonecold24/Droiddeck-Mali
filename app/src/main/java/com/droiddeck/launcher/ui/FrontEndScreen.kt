@@ -71,6 +71,7 @@ import com.droiddeck.launcher.core.PhantomProcessLimit
 import com.droiddeck.launcher.core.PhantomProcessStatus
 import com.droiddeck.launcher.session.SessionPrefs
 import kotlin.math.roundToInt
+import kotlinx.coroutines.withTimeoutOrNull
 
 class FrontEndState(
     val installed: String?,
@@ -147,10 +148,10 @@ class FrontEndActions(
     val onCheckLatestBuild: () -> Unit = {},
     val onRefreshPhantomStatus: () -> Unit = {},
     val onOpenDeveloperOptions: (Int?) -> Unit = {},
-    val onWirelessAdbPair: (String, Int, String, (String?) -> Unit) -> Unit = { _, _, _, done -> done("Wireless ADB is unavailable") },
+    val onWirelessAdbPair: (String, Int, String, (String?) -> Unit) -> Unit = { _, _, _, done -> done("Wireless debugging is unavailable") },
     val onFindWirelessAdbPort: (String, (Int?) -> Unit) -> Unit = { _, done -> done(null) },
-    val onWirelessAdbApply: (String, Int, Boolean, (String?) -> Unit) -> Unit = { _, _, _, done -> done("Wireless ADB is unavailable") },
-    val onSetPhantomProcessLimit: (Boolean, (String?) -> Unit) -> Unit = { _, done -> done("Wireless ADB is unavailable") },
+    val onWirelessAdbApply: (String, Int, Boolean, (String?) -> Unit) -> Unit = { _, _, _, done -> done("Wireless debugging is unavailable") },
+    val onSetPhantomProcessLimit: (Boolean, (String?) -> Unit) -> Unit = { _, done -> done("Wireless debugging is unavailable") },
     val onCopyPhantomCommand: (Boolean) -> Unit = {},
     val onDismissPhantomGate: () -> Unit = {},
     val controller: ControllerActions? = null,
@@ -158,6 +159,10 @@ class FrontEndActions(
 
 internal object Motion {
     var scale = 1f
+    /** The system's animator scale, re-read on each resume so "Remove animations" applies without a restart. */
+    fun refresh(context: android.content.Context) {
+        scale = Settings.Global.getFloat(context.contentResolver, Settings.Global.ANIMATOR_DURATION_SCALE, 1f)
+    }
     val Ease = CubicBezierEasing(0.2f, 0.8f, 0.2f, 1f)
     fun ms(base: Int) = (base * scale).roundToInt()
     fun <T> tw(base: Int, delay: Int = 0): FiniteAnimationSpec<T> = if (scale == 0f) snap() else tween(ms(base), ms(delay), Ease)
@@ -229,7 +234,8 @@ internal class FrontFocus {
     // and the last one focused.
     val items = HashMap<String, FocusRequester>()
     val attached = HashMap<String, Int>()
-    var last: String? = null
+    // State, so the controller hints follow it: A launches from a game row but selects elsewhere.
+    var last by mutableStateOf<String?>(null)
     // The first tile of the page's grid: Down from the page's buttons goes to it, not to whichever
     // tile happens to sit under the button.
     val firstTile = FocusRequester()
@@ -278,6 +284,22 @@ internal fun Modifier.paneItem(id: String): Modifier {
 
 internal val LocalFrontFocus = staticCompositionLocalOf<FrontFocus?> { null }
 
+/** The pane's exit animation (170ms) and a frame's margin: a new page is in after this. */
+private const val PAGE_EXIT_MS = 200
+
+/**
+ * Asks [target] for focus once a frame until [done] (or a focus request lands), for at most half a
+ * second: a control can take focus only once it is laid out, and that is a frame or two, not a
+ * fixed number of milliseconds.
+ */
+internal suspend fun focusWithinFrames(done: () -> Boolean, target: () -> FocusRequester) {
+    repeat(30) {
+        androidx.compose.runtime.withFrameNanos { }
+        if (done()) return
+        if (runCatching { target().requestFocus() }.isSuccess && done()) return
+    }
+}
+
 @Composable
 fun FrontEndScreen(s: FrontEndState, a: FrontEndActions, page: (@Composable () -> Unit)? = null) {
     val frontFocus = remember { FrontFocus() }
@@ -323,11 +345,11 @@ private fun FrontEndScreenBody(s: FrontEndState, a: FrontEndActions, page: (@Com
         selected = if (selected.startsWith("emu:")) "desktop" else "emu:" + selected.removePrefix("rom:").substringBefore(':')
     }
     LaunchedEffect(s.isHomeApp) { if (!s.isHomeApp && selected == "android-apps") selected = "steam" }
-    // The last game uninstalled takes the Games tab with it.
+    // The last game uninstalled leaves the Games tab on its empty state.
     LaunchedEffect(s.steamGames.isEmpty()) {
-        if (s.steamGames.isEmpty() && (selected == "games" || selected.startsWith("app:"))) selected = "steam"
+        if (s.steamGames.isEmpty() && selected.startsWith("app:")) selected = "games"
     }
-    remember { Motion.scale = Settings.Global.getFloat(ctx.contentResolver, Settings.Global.ANIMATOR_DURATION_SCALE, 1f); true }
+    remember { Motion.refresh(ctx); true }
 
     val railSelection = when {
         s.pageKey == "performance" || s.pageKey == "protons" || s.pageKey == "controller-mapping" -> "setup"
@@ -367,32 +389,27 @@ private fun FrontEndScreenBody(s: FrontEndState, a: FrontEndActions, page: (@Com
         LaunchedEffect(processSettingsPageVisible) {
             if (processSettingsPageVisible) return@LaunchedEffect
             snapshotFlow { window.isWindowFocused }.first { it }
-            repeat(20) {
-                if (anyFocused) return@LaunchedEffect
-                if (inputModeManager.inputMode != InputMode.Keyboard) inputModeManager.requestInputMode(InputMode.Keyboard)
-                val target = if (frontFocus.primaryAttached > 0) frontFocus.primary else frontFocus.railFor(railSelection)
-                runCatching { target.requestFocus() }
-                kotlinx.coroutines.delay(100)
-            }
+            if (inputModeManager.inputMode != InputMode.Keyboard) inputModeManager.requestInputMode(InputMode.Keyboard)
+            focusWithinFrames({ anyFocused }) { if (frontFocus.primaryAttached > 0) frontFocus.primary else frontFocus.railFor(railSelection) }
         }
         // A tile or button that opens a page goes away with the page it was on, and focus with it;
         // the pad then had nothing to move from (a press landed back on the rail's first item). So
         // once the new page is in, a controller lands on its main button.
         LaunchedEffect(selected, s.pageKey, processSettingsPageVisible) {
             if (processSettingsPageVisible) return@LaunchedEffect
-            kotlinx.coroutines.delay(450)
-            if (!anyFocused && inputModeManager.inputMode == InputMode.Keyboard) runCatching {
-                if (frontFocus.primaryAttached > 0) frontFocus.primary.requestFocus()
-                else frontFocus.railFor(railSelection).requestFocus()
-            }
+            // Past the old page's exit (170ms), then the first frame the new page takes focus.
+            kotlinx.coroutines.delay(Motion.ms(PAGE_EXIT_MS).toLong())
+            if (anyFocused || inputModeManager.inputMode != InputMode.Keyboard) return@LaunchedEffect
+            focusWithinFrames({ anyFocused }) { if (frontFocus.primaryAttached > 0) frontFocus.primary else frontFocus.railFor(railSelection) }
         }
         // A rail item picked with a controller moves on into its page, once the page is in.
         LaunchedEffect(railPicks) {
             if (railPicks == 0 || processSettingsPageVisible) return@LaunchedEffect
-            kotlinx.coroutines.delay(450)
-            if (inputModeManager.inputMode == InputMode.Keyboard && frontFocus.primaryAttached > 0) runCatching {
-                frontFocus.paneEntry().requestFocus()
-            }
+            kotlinx.coroutines.delay(Motion.ms(PAGE_EXIT_MS).toLong())
+            if (inputModeManager.inputMode != InputMode.Keyboard) return@LaunchedEffect
+            // Waits for the new page's main button rather than a fixed guess at how long it takes.
+            withTimeoutOrNull(1_000) { snapshotFlow { frontFocus.primaryAttached > 0 }.first { it } } ?: return@LaunchedEffect
+            focusWithinFrames({ frontFocus.focusedRail == null && anyFocused }) { frontFocus.paneEntry() }
         }
         val paneFocus = Modifier
             .focusProperties { enter = { frontFocus.paneEntry() } }
@@ -417,7 +434,13 @@ private fun FrontEndScreenBody(s: FrontEndState, a: FrontEndActions, page: (@Com
                 AnimatedVisibility(
                     inputModeManager.inputMode == InputMode.Keyboard,
                     enter = expandVertically() + fadeIn(), exit = shrinkVertically() + fadeOut(),
-                ) { ControllerHints() }
+                ) {
+                    val onGame = frontFocus.focusedRail == null && frontFocus.last?.startsWith("game:") == true
+                    ControllerHints(
+                        select = if (onGame) "Launch" else "Select",
+                        tabs = railSelection == "setup" && s.pageKey == null && frontFocus.focusedRail == null,
+                    )
+                }
             }
         }
 

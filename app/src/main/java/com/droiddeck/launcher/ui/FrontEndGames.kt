@@ -62,16 +62,29 @@ import com.droiddeck.launcher.frontend.Library
 @Composable
 internal fun GamesPage(s: FrontEndState, a: FrontEndActions, selected: String, onSelect: (String) -> Unit, modifier: Modifier) {
     val games = remember(s.steamGames) { s.steamGames.sortedByDescending { it.lastPlayed } }
-    val current = games.firstOrNull { "app:${it.appId}" == selected } ?: games.firstOrNull() ?: return
-    val host = rememberMenuHost()
     val narrow = LocalNarrowPane.current
+    val current = games.firstOrNull { "app:${it.appId}" == selected } ?: games.firstOrNull()
+    if (current == null) {
+        Column(modifier = modifier.padding(horizontal = if (narrow) 16.dp else 22.dp, vertical = if (narrow) 12.dp else 18.dp)) {
+            Rise(0) { PageHeader("Games") }
+            Rise(1) { Note("Games you install in Steam show up here. Open Steam, install one, and it appears after the session.") }
+            Rise(2) {
+                Actions { PrimaryButton("Play Steam", enabled = !s.busy, main = true, icon = Icons.Filled.PlayArrow, modifier = Modifier.padding(top = 12.dp), onClick = a.onPlay) }
+            }
+        }
+        return
+    }
+    val host = rememberMenuHost()
     if (games.size == 1) {
         Column(modifier = modifier.verticalScroll(rememberScrollState()).padding(horizontal = if (narrow) 16.dp else 22.dp, vertical = if (narrow) 12.dp else 18.dp)) {
             Rise(0) {
                 Row(verticalAlignment = Alignment.Bottom) {
                     GameHero(current, Modifier.weight(1f).heightIn(min = if (narrow) 190.dp else 250.dp)) {
                         GameHeroCopy(current, if (narrow) 28.sp else 38.sp)
-                        PrimaryButton("Launch", enabled = s.ready && !s.busy, main = true, icon = Icons.Filled.PlayArrow) { a.onSteamGame(current) }
+                        Actions {
+                            PrimaryButton("Launch", enabled = !s.busy, main = true, icon = Icons.Filled.PlayArrow) { a.onSteamGame(current) }
+                            BusyChip(s)
+                        }
                     }
                     if (!narrow) Poster(current.art, current.name, Modifier.width(168.dp))
                 }
@@ -92,7 +105,10 @@ internal fun GamesPage(s: FrontEndState, a: FrontEndActions, selected: String, o
         ) {
             GameHero(current, Modifier.fillMaxWidth().heightIn(min = if (narrow) 170.dp else 200.dp)) {
                 GameHeroCopy(current, if (narrow) 24.sp else 32.sp)
-                PrimaryButton("Launch", enabled = s.ready && !s.busy, main = true, icon = Icons.Filled.PlayArrow) { a.onSteamGame(current) }
+                Actions {
+                            PrimaryButton("Launch", enabled = !s.busy, main = true, icon = Icons.Filled.PlayArrow) { a.onSteamGame(current) }
+                            BusyChip(s)
+                        }
             }
             SectionTitle("Launch settings", null)
             LaunchSettings(s, a, host)
@@ -181,6 +197,12 @@ internal fun PageHeader(title: String, trailing: @Composable RowScope.() -> Unit
         )
         trailing()
     }
+}
+
+/** Why a launch button is greyed out: the runtime is being worked on. Nothing when it is not. */
+@Composable
+internal fun BusyChip(s: FrontEndState) {
+    if (s.busy) ActionChip(if (s.percent >= 0) "Runtime busy · ${s.percent}%" else "Runtime busy", ok = false)
 }
 
 /** Whether Steam can start, said where Play is rather than only in Setup. */

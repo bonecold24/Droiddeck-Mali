@@ -273,6 +273,7 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
             override fun handleOnBackPressed() {
                 // The PC keyboard closes first (B on a controller), then Back is the drawer again.
                 when {
+                    ::loading.isInitialized && loading.ended -> finish()
                     drawerOpen -> drawerOpen = false
                     pcKeyboardOpen -> pcKeyboardOpen = false
                     else -> routeBackAction()
@@ -299,6 +300,10 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
                     title = loadingTitle(), steam = loadingMode() == SessionService.MODE_STEAM,
                     // As the drawer's Stop does: the service stops, and a start still installing is cancelled.
                     onCancel = { SessionService.stop(this@SessionActivity); finish() },
+                    endedDetail = loading.endedDetail,
+                    onRetry = { retrySession() },
+                    onShareLogs = { shareCurrentSessionLogs() },
+                    onClose = { finish() },
                 )
                 // Opening the drawer takes the controller away from the game: release its pad.
                 androidx.compose.runtime.LaunchedEffect(drawerOpen) {
@@ -599,6 +604,7 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
                     SessionEvents.fail(code, problem)
                     collectStartArtifacts("session start failed")
                     loading.showEnded(problem)
+                    focusEndedScreen()
                     return@post
                 }
                 loading.percent = -1
@@ -888,19 +894,30 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
     }
 
     private fun showEnded(status: Int, hint: String?) {
-        run {
-            if (status != 0) {
-                loading.showEnded(
-                    "The session ended ($status)\n${SessionState.logFile?.path ?: "-"}" +
-                        (if (hint != null) "\n\n$hint" else "")
-                )
-                // A moment on screen, so a failure is readable rather than a flash of black;
-                // longer when there is advice to read.
-                Handler(Looper.getMainLooper()).postDelayed({ finish() }, if (hint != null) 9000 else 4000)
-            } else {
-                finish()
-            }
+        if (status == 0) {
+            finish()
+            return
         }
+        // It stays until the user leaves: a failure read against a timer is a failure not read.
+        loading.showEnded(
+            hint ?: "Steam stopped unexpectedly. Share the logs with a bug report, or try again.",
+            "Exit status $status · ${SessionState.logFile?.path ?: "no log"}",
+        )
+        focusEndedScreen()
+    }
+
+    /** The ended screen's buttons take the pad: it is no longer driving a game. */
+    private fun focusEndedScreen() {
+        drawerOpen = false
+        padBridge?.releaseAll()
+        uiHandler.post { sessionOverlay.requestFocus() }
+    }
+
+    /** The same start again, in a fresh activity: the ended one keeps no session to reuse. */
+    private fun retrySession() {
+        val again = Intent(intent)
+        finish()
+        startActivity(again)
     }
 
     /**
@@ -955,6 +972,14 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
                 finish()
             }
             return true
+        }
+        // The ended screen is a page of buttons: the pad drives them, and B leaves.
+        if (::loading.isInitialized && loading.ended) {
+            if (event.keyCode == KeyEvent.KEYCODE_BUTTON_B || event.keyCode == KeyEvent.KEYCODE_BACK) {
+                if (event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0) finish()
+                return true
+            }
+            return super.dispatchKeyEvent(event)
         }
         if (drawerOpen) {
             if (fromController && (event.keyCode == KeyEvent.KEYCODE_BUTTON_L1 || event.keyCode == KeyEvent.KEYCODE_BUTTON_R1)) {
@@ -1443,6 +1468,7 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
 
     override fun onResume() {
         super.onResume()
+        com.droiddeck.launcher.ui.Motion.refresh(this)
         refreshHomeApp()
         if (intent?.action == SessionService.ACTION_RESUME) {
             intent.action = null

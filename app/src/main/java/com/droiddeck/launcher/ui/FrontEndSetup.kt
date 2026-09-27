@@ -65,12 +65,10 @@ import androidx.compose.ui.platform.LocalInputModeManager
 import androidx.compose.ui.input.InputMode
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.droiddeck.launcher.gpu.FrameGen
 import com.droiddeck.launcher.core.DeviceSupport
 import com.droiddeck.launcher.core.PhantomProcessLimit
 import com.droiddeck.launcher.core.PhantomProcessStatus
@@ -209,8 +207,8 @@ internal fun SetupPanel(
                             ) { SecondaryButton(runtime, enabled = !s.busy, compact = true, onClick = a.onRuntime) }
                             CheckRow(
                                 if (limitBlocks) CheckState.WARN else CheckState.OK,
-                                if (limitBlocks) "Android may close Steam" else "Android process limit",
-                                if (limitBlocks) "“Restrict child processes” is on - it takes a minute to turn off" else PhantomProcessLimit.title(s.phantomProcessStatus),
+                                "Child-process limit",
+                                if (limitBlocks) "On · Android may close Steam. Turning it off takes a minute" else PhantomProcessLimit.title(s.phantomProcessStatus),
                             ) {
                                 if (limitBlocks) PrimaryButton(if (showLimitDetails) "Hide" else "Fix it", compact = true) { showLimitDetails = !showLimitDetails }
                                 else if (s.phantomProcessStatus != PhantomProcessStatus.NOT_APPLICABLE) {
@@ -218,32 +216,25 @@ internal fun SetupPanel(
                                 }
                             }
                             AnimatedVisibility(showLimitDetails, enter = expandVertically() + fadeIn(), exit = shrinkVertically() + fadeOut()) {
+                                // One sentence and at most three buttons. The computer route and its
+                                // raw command live on the full page Wireless debugging opens.
                                 Column(modifier = Modifier.fillMaxWidth().padding(start = 56.dp, end = 14.dp, top = 4.dp, bottom = 10.dp)) {
                                     Text(
-                                        PhantomProcessLimit.instructions(s.phantomProcessStatus),
+                                        if (limitBlocks) PhantomProcessLimit.gateInstructions(s.phantomProcessStatus)
+                                        else PhantomProcessLimit.instructions(s.phantomProcessStatus),
                                         fontSize = 14.sp, color = colors.onSurfaceVariant, modifier = Modifier.padding(vertical = 4.dp),
                                     )
-                                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(vertical = 6.dp)) {
-                                        SecondaryButton("Developer options", compact = true, onClick = onOpenDeveloperOptions)
-                                        SecondaryButton("Check again", compact = true, onClick = a.onRefreshPhantomStatus)
-                                        SecondaryButton("Copy ADB command", compact = true, onClick = { a.onCopyPhantomCommand(false) })
-                                    }
-                                    Text(
-                                        PhantomProcessLimit.ADB_COMMAND, fontSize = 12.sp, fontFamily = FontFamily.Monospace,
-                                        color = colors.onSurfaceVariant, modifier = Modifier.padding(vertical = 4.dp),
-                                    )
-                                    if (s.phantomProcessStatus != PhantomProcessStatus.NOT_APPLICABLE) {
-                                        Text(
-                                            "With wireless debugging paired, DroidDeck can switch the limit itself. Turning it off is recommended for Steam sessions.",
-                                            fontSize = 14.sp, color = colors.onSurfaceVariant, modifier = Modifier.padding(top = 8.dp),
-                                        )
-                                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(vertical = 6.dp)) {
-                                            SecondaryButton("Turn limit off", compact = true, enabled = !processLimitBusy && s.phantomProcessStatus != PhantomProcessStatus.DISABLED) { setProcessLimit(false) }
-                                            SecondaryButton("Turn limit on", compact = true, enabled = !processLimitBusy && s.phantomProcessStatus != PhantomProcessStatus.ENABLED) { setProcessLimit(true) }
+                                    Actions {
+                                        if (limitBlocks) {
+                                            PrimaryButton("Developer options", compact = true, onClick = onOpenDeveloperOptions)
+                                            SecondaryButton("Use Wireless debugging", compact = true, enabled = !processLimitBusy) { setProcessLimit(false) }
+                                            SecondaryButton("Check again", compact = true, onClick = a.onRefreshPhantomStatus)
+                                        } else if (s.phantomProcessStatus == PhantomProcessStatus.DISABLED) {
+                                            SecondaryButton("Turn limit on", compact = true, enabled = !processLimitBusy) { setProcessLimit(true) }
                                         }
-                                        if (processLimitBusy) LinearProgressIndicator(modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp))
-                                        processLimitMessage?.let { Text(it, fontSize = 14.sp, color = colors.onSurfaceVariant, modifier = Modifier.padding(vertical = 4.dp)) }
                                     }
+                                    if (processLimitBusy) LinearProgressIndicator(modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp))
+                                    processLimitMessage?.let { Text(it, fontSize = 14.sp, color = colors.onSurfaceVariant, modifier = Modifier.padding(vertical = 4.dp)) }
                                 }
                             }
                             CheckRow(
@@ -278,15 +269,13 @@ internal fun SetupPanel(
                                     FrameGenMenu(s, a, host)
                                 }
                             }
-                            SettingsRow("Session logs", "${if (s.logsEnabled) "Enabled" else "Disabled"} · logs are saved after each session") {
-                                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                    SecondaryButton(if (s.logsEnabled) "Turn off" else "Turn on") { a.onLogs() }
-                                    SecondaryButton("Share latest") { a.onShareLogs() }
-                                }
-                            }
-                            SettingsRow("Offline mode", s.offlineAccount?.let { if (s.offline) "Enabled for $it" else "Signed in as $it" } ?: "Sign in to Steam first") {
-                                SecondaryButton(if (s.offline) "Turn off" else "Turn on", enabled = s.offlineAccount != null) { a.onOffline() }
-                            }
+                            ToggleRow(host, "logs", "Session logs", "Saved after each session", s.logsEnabled) { a.onLogs() }
+                            ActionRow("Latest session logs", "Send them with a bug report", "Share logs", a.onShareLogs)
+                            ToggleRow(
+                                host, "offline", "Offline mode",
+                                s.offlineAccount?.let { "Signed in as $it" } ?: "Sign in to Steam first",
+                                s.offline, enabled = s.offlineAccount != null,
+                            ) { a.onOffline() }
                         }
                     }
                     3 -> {
@@ -337,7 +326,7 @@ private fun ToolGrid(s: FrontEndState, a: FrontEndActions) {
     val columns = if (LocalNarrowPane.current) 2 else 4
     val tools = listOf(
         ToolSpec(Icons.Outlined.Folder, "Files", "Browse and manage files", a.onFiles),
-        ToolSpec(Icons.Outlined.Extension, "Compatibility tools", "Install ARM64 Proton builds", a.onProtons),
+        ToolSpec(Icons.Outlined.Extension, "Proton versions", "Install ARM64 Proton builds", a.onProtons),
         ToolSpec(Icons.Outlined.Speed, "Performance", "CPU core assignment", a.onPerformance),
         ToolSpec(Icons.Outlined.VideogameAsset, "ROMs folder", s.romsDir ?: "Choose where emulator games are stored", a.onRoms),
     )
@@ -380,12 +369,7 @@ private fun ToolCard(t: ToolSpec, modifier: Modifier) {
 
 @Composable
 private fun FrameGenMenu(s: FrontEndState, a: FrontEndActions, host: MenuHost) {
-    AnchoredMenu(host.open == "fg", onDismiss = { if (host.open == "fg") host.open = null }, title = "Frame generation") { firstItemFocus ->
-        val need = if (s.lsfgReady) null else "Install Lossless Scaling in Steam"
-        MenuItem("Off", checked = s.frameGenEngine == FrameGen.ENGINE_OFF, focusRequester = firstItemFocus) { a.onFrameGenPick(FrameGen.ENGINE_OFF, 2); host.open = null }
-        for (m in 2..4) MenuItem("Win-FG ${m}×", checked = s.frameGenEngine == FrameGen.ENGINE_WINFG && s.frameGenMultiplier == m) { a.onFrameGenPick(FrameGen.ENGINE_WINFG, m); host.open = null }
-        for (m in 2..4) MenuItem("LSFG ${m}×", checked = s.frameGenEngine == FrameGen.ENGINE_LSFG && s.frameGenMultiplier == m, enabled = s.lsfgReady, detail = need) { a.onFrameGenPick(FrameGen.ENGINE_LSFG, m); host.open = null }
-    }
+    FrameGenMenu(host, s.frameGenEngine, s.frameGenMultiplier, s.lsfgReady, a.onFrameGenPick)
 }
 
 /**
@@ -398,7 +382,7 @@ internal fun LaunchSettings(s: FrontEndState, a: FrontEndActions, host: MenuHost
     val columns = if (LocalNarrowPane.current) 2 else 3
     val controller = a.controller
     val cards = buildList<@Composable (Modifier) -> Unit> {
-        add { m -> SettingCard("Compatibility", "Proton & components", "card:components", m) { a.onComponents(true) } }
+        add { m -> SettingCard("Components", "FEX, DXVK, VKD3D", "card:components", m) { a.onComponents(true) } }
         add { m ->
             Box(m) {
                 SettingCard("Frame generation", s.frameGenLabel, "card:fg", Modifier.fillMaxSize()) {

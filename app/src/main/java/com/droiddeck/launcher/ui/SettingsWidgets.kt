@@ -19,6 +19,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -149,7 +151,7 @@ internal fun TabStrip(
                         .border(2.dp, if (!hot) Color.Transparent else if (on) colors.onBackground else pal.signal, tabShape)
                         .hoverable(src).clickable(interactionSource = src, indication = null, role = Role.Tab, onClick = pick)
                         .controllerConfirm(onClick = pick)
-                        .padding(horizontal = 16.dp, vertical = 9.dp),
+                        .padding(horizontal = 16.dp, vertical = 12.dp),
                 )
             }
         }
@@ -301,6 +303,7 @@ fun ValueChip(text: String, open: Boolean, enabled: Boolean = true, modifier: Mo
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween,
         modifier = modifier
             .widthIn(min = LocalChipMinWidth.current)
+            .heightIn(min = 44.dp)
             .clip(RoundedCornerShape(10.dp))
             .background(colors.surfaceVariant)
             .border(1.dp, edge, RoundedCornerShape(10.dp))
@@ -385,7 +388,46 @@ fun <T> ChoiceRow(
 
 @Composable
 fun ToggleRow(host: MenuHost, key: String, label: String, hint: String?, checked: Boolean, enabled: Boolean = true, chipModifier: Modifier = Modifier, onChange: (Boolean) -> Unit) =
-    ChoiceRow(host, key, label, hint, listOf(true to "On", false to "Off"), checked, enabled, chipModifier = chipModifier, onPick = onChange)
+    SettingsRow(label, hint) {
+        ToggleSwitch(checked, enabled, label, chipModifier) { host.open = null; onChange(it) }
+    }
+
+/** An on/off switch: one tap or one A press flips it, where a menu of On and Off took three. */
+@Composable
+fun ToggleSwitch(checked: Boolean, enabled: Boolean = true, label: String? = null, modifier: Modifier = Modifier, onChange: (Boolean) -> Unit) {
+    val colors = MaterialTheme.colorScheme
+    val pal = LocalPalette.current
+    val src = remember { MutableInteractionSource() }
+    val hot = src.collectIsFocusedAsState().value || src.collectIsHoveredAsState().value
+    val track by animateColorAsState(if (checked) pal.signal else colors.surfaceVariant, Motion.tw(180), label = "switchTrack")
+    val edge by animateColorAsState(if (hot) pal.signal else if (checked) pal.signal else pal.line2, Motion.tw(180), label = "switchEdge")
+    val knob by animateFloatAsState(if (checked) 1f else 0f, Motion.sp(0.7f), label = "switchKnob")
+    val flip = { onChange(!checked) }
+    val shape = RoundedCornerShape(99.dp)
+    // 48dp tall to touch; the visible track sits inside it.
+    Box(
+        contentAlignment = Alignment.Center,
+        modifier = modifier
+            .heightIn(min = 48.dp).widthIn(min = 64.dp)
+            .alpha(if (enabled) 1f else 0.5f)
+            .hoverable(src)
+            .clickable(interactionSource = src, indication = null, enabled = enabled, role = Role.Switch, onClick = flip)
+            .controllerConfirm(enabled = enabled, onClick = flip)
+            .semantics { stateDescription = if (checked) "On" else "Off"; if (label != null) contentDescription = label },
+    ) {
+        Box(
+            Modifier.size(width = 52.dp, height = 30.dp).clip(shape).background(track)
+                .border(if (hot) 2.dp else 1.dp, if (hot && checked) colors.onBackground else edge, shape),
+        ) {
+            Box(
+                Modifier.padding(4.dp).size(22.dp)
+                    .graphicsLayer { translationX = knob * 22.dp.toPx() }
+                    .clip(CircleShape)
+                    .background(if (checked) pal.onSignal else colors.onSurfaceVariant),
+            )
+        }
+    }
+}
 
 @Composable
 fun MultiRow(

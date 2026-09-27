@@ -94,7 +94,7 @@ private fun CompactGateInstructions(
             )
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 PrimaryButton("Open Developer options", compact = true, onClick = onOpenDeveloperOptions)
-                SecondaryButton("Use on-device ADB", compact = true, onClick = onSetUpWirelessAdb)
+                SecondaryButton("Use Wireless debugging", compact = true, onClick = onSetUpWirelessAdb)
             }
         }
     }
@@ -133,7 +133,7 @@ private fun GateInstructions(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             PrimaryButton("Open Developer options", onClick = onOpenDeveloperOptions)
-            SecondaryButton("Use on-device ADB", onClick = onSetUpWirelessAdb)
+            SecondaryButton("Use Wireless debugging", onClick = onSetUpWirelessAdb)
         }
     }
 }

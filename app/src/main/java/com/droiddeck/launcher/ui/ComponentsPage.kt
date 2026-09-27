@@ -325,7 +325,7 @@ private fun SmallButton(text: String, enabled: Boolean = true, accent: Boolean =
     val hot = (src.collectIsFocusedAsState().value || src.collectIsHoveredAsState().value) && enabled
     Box(
         contentAlignment = Alignment.Center,
-        modifier = modifier.heightIn(min = 40.dp).clip(RoundedCornerShape(10.dp))
+        modifier = modifier.heightIn(min = 44.dp).clip(RoundedCornerShape(10.dp))
             .background(if (hot) pal.signal else colors.surfaceVariant)
             .border(2.dp, if (hot) colors.onBackground else pal.line2, RoundedCornerShape(10.dp))
             .hoverable(src).clickable(interactionSource = src, indication = null, enabled = enabled, onClick = onClick)
