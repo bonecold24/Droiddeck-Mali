@@ -278,15 +278,13 @@ internal fun SetupPanel(
                                     FrameGenMenu(s, a, host)
                                 }
                             }
-                            SettingsRow("Session logs", "${if (s.logsEnabled) "Enabled" else "Disabled"} · logs are saved after each session") {
-                                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                    SecondaryButton(if (s.logsEnabled) "Turn off" else "Turn on") { a.onLogs() }
-                                    SecondaryButton("Share latest") { a.onShareLogs() }
-                                }
-                            }
-                            SettingsRow("Offline mode", s.offlineAccount?.let { if (s.offline) "Enabled for $it" else "Signed in as $it" } ?: "Sign in to Steam first") {
-                                SecondaryButton(if (s.offline) "Turn off" else "Turn on", enabled = s.offlineAccount != null) { a.onOffline() }
-                            }
+                            ToggleRow(host, "logs", "Session logs", "Saved after each session", s.logsEnabled) { a.onLogs() }
+                            ActionRow("Latest session logs", "Send them with a bug report", "Share logs", a.onShareLogs)
+                            ToggleRow(
+                                host, "offline", "Offline mode",
+                                s.offlineAccount?.let { "Signed in as $it" } ?: "Sign in to Steam first",
+                                s.offline, enabled = s.offlineAccount != null,
+                            ) { a.onOffline() }
                         }
                     }
                     3 -> {

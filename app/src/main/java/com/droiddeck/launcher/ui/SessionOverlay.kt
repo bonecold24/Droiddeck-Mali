@@ -420,7 +420,7 @@ fun SessionDrawer(open: Boolean, page: Int, controllerActive: Boolean, onPageCha
                             }
                             SettingsGroup("Support") {
                                 SettingsRow("Session logs", "Send this session's logs with a bug report") {
-                                    DrawerOutlineButton("Send logs", modifier = focus.track(page, "share-logs")) {
+                                    DrawerOutlineButton("Share logs", modifier = focus.track(page, "share-logs")) {
                                         host.open = null
                                         a.onShareLogs()
                                     }
