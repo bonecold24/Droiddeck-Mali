@@ -24,6 +24,8 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.StandardCopyOption;
 import java.security.MessageDigest;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.CountDownLatch;
 
 /**
  * Downloads and unpacks the Linux runtime rootfs into {@code files/linuxfs}. It is opt-in: nothing
@@ -59,6 +61,23 @@ public final class LinuxRuntimeInstaller {
             this.size = size;
         }
     }
+
+    /**
+     * One install per process. The launcher and the session screen can both start one, and a
+     * launcher rebuilt mid-install (a pad plugged in, dark mode switched) forgets it had: a second
+     * install would share the first one's archive and staging directory and wreck both.
+     */
+    private static final class Job {
+        final CopyOnWriteArrayList<ProgressListener> listeners = new CopyOnWriteArrayList<>();
+        final CountDownLatch done = new CountDownLatch(1);
+        volatile String stage = "Starting\u2026";
+        volatile int percent = -1;
+        volatile boolean ok;
+    }
+
+    private static final Object JOB_LOCK = new Object();
+    private static Job running;
+    private static boolean removing;
 
     private LinuxRuntimeInstaller() {}
 
@@ -104,6 +123,66 @@ public final class LinuxRuntimeInstaller {
      * not. An update therefore keeps Steam, the login and the installed games.
      */
     public static boolean install(Context context, Release release, ProgressListener listener) {
+        Job job;
+        boolean owner;
+        synchronized (JOB_LOCK) {
+            if (removing) return false;
+            owner = running == null;
+            if (owner) running = new Job();
+            job = running;
+            if (listener != null) job.listeners.add(listener);
+        }
+        if (!owner) return join(job, listener);
+        try {
+            job.ok = installOnce(context.getApplicationContext(), release, (stage, percent) -> {
+                job.stage = stage;
+                job.percent = percent;
+                for (ProgressListener l : job.listeners) l.onProgress(stage, percent);
+            });
+            return job.ok;
+        } finally {
+            synchronized (JOB_LOCK) {
+                running = null;
+            }
+            job.done.countDown();
+        }
+    }
+
+    /** True while an install is running in this process, whoever started it. */
+    public static boolean isInstalling() {
+        synchronized (JOB_LOCK) {
+            return running != null;
+        }
+    }
+
+    /**
+     * Follows the install already running, for a screen that was rebuilt mid-install. Blocks until
+     * it ends and returns its result, or returns null at once when nothing is installing.
+     */
+    public static Boolean attach(ProgressListener listener) {
+        Job job;
+        synchronized (JOB_LOCK) {
+            job = running;
+            if (job == null) return null;
+            if (listener != null) job.listeners.add(listener);
+        }
+        return join(job, listener);
+    }
+
+    private static boolean join(Job job, ProgressListener listener) {
+        try {
+            if (listener != null) listener.onProgress(job.stage, job.percent);
+            job.done.await();
+            return job.ok;
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return false;
+        } finally {
+            if (listener != null) job.listeners.remove(listener);
+        }
+    }
+
+    private static boolean installOnce(Context context, Release release, ProgressListener listener) {
         File archive = new File(context.getCacheDir(), "linuxfs.tar.zst");
         try {
             if (listener != null) listener.onProgress("Downloading", 0);
@@ -177,8 +256,20 @@ public final class LinuxRuntimeInstaller {
         }
     }
 
-    public static void uninstall(Context context) {
-        FileUtils.delete(LinuxRuntime.rootDir(context));
+    /** Removes the runtime; returns false without touching it while an install is running. */
+    public static boolean uninstall(Context context) {
+        synchronized (JOB_LOCK) {
+            if (running != null || removing) return false;
+            removing = true;
+        }
+        try {
+            FileUtils.delete(LinuxRuntime.rootDir(context));
+            return true;
+        } finally {
+            synchronized (JOB_LOCK) {
+                removing = false;
+            }
+        }
     }
 
     /**

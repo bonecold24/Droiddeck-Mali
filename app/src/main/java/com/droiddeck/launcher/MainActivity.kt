@@ -1269,6 +1269,7 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun refresh() {
+        if (!busy && LinuxRuntimeInstaller.isInstalling()) followInstall { LinuxRuntimeInstaller.attach(it) }
         desktopInstalled = DesktopCatalog.desktopInstalled(this)
         offlineAccount = OfflineMode.account(this)
         offline = OfflineMode.enabled(this)
@@ -1353,18 +1354,25 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private fun install(release: LinuxRuntimeInstaller.Release) {
+    private fun install(release: LinuxRuntimeInstaller.Release) =
+        followInstall { listener -> LinuxRuntimeInstaller.install(this, release, listener) }
+
+    /**
+     * Shows an install's progress until it ends. [run] either starts one or joins the one already
+     * running (null: nothing was), which is how a launcher rebuilt mid-install picks it back up.
+     */
+    private fun followInstall(run: (LinuxRuntimeInstaller.ProgressListener) -> Boolean?) {
         busy = true
         failed = false
         stage = "Starting…"
         percent = -1
         Thread({
-            val ok = LinuxRuntimeInstaller.install(this, release) { s, p ->
+            val ok = run(LinuxRuntimeInstaller.ProgressListener { s, p ->
                 ui.post { stage = s; percent = p }
-            }
+            })
             ui.post {
                 busy = false
-                failed = !ok
+                if (ok != null) failed = !ok
                 refresh()
             }
         }, "install").start()
