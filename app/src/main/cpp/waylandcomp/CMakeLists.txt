@@ -13,6 +13,7 @@ add_library(bannerwayland SHARED
         src/ahb_swapchain.c
         src/waylandcomp_jni.c
         src/banner_ext.c
+        src/wl_dmabuf.c
         src/wl_clipboard.c
         src/wl_text_input.c
         src/wl_toplevel_icon.c
