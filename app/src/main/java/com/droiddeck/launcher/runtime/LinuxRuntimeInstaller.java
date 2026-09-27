@@ -6,6 +6,7 @@ import android.util.Log;
 
 import com.droiddeck.launcher.core.ArchivePaths;
 import com.droiddeck.launcher.core.Downloader;
+import com.droiddeck.launcher.core.Hashes;
 import com.droiddeck.launcher.core.FileUtils;
 
 import org.apache.commons.compress.archivers.tar.TarArchiveEntry;
@@ -24,7 +25,6 @@ import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.StandardCopyOption;
-import java.security.MessageDigest;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
 
@@ -200,7 +200,7 @@ public final class LinuxRuntimeInstaller {
             }
 
             if (listener != null) listener.onProgress("Verifying", -1);
-            String actual = sha256(archive);
+            String actual = Hashes.sha256(archive);
             if (!release.sha256.equalsIgnoreCase(actual)) {
                 Log.w(TAG, "checksum mismatch: wanted " + release.sha256 + ", got " + actual);
                 return false;
@@ -339,17 +339,5 @@ public final class LinuxRuntimeInstaller {
             Log.e(TAG, "extract", e);
             return false;
         }
-    }
-
-    public static String sha256(File file) throws Exception {
-        MessageDigest digest = MessageDigest.getInstance("SHA-256");
-        try (InputStream in = new BufferedInputStream(new FileInputStream(file), 1 << 16)) {
-            byte[] buffer = new byte[1 << 16];
-            int read;
-            while ((read = in.read(buffer)) != -1) digest.update(buffer, 0, read);
-        }
-        StringBuilder sb = new StringBuilder();
-        for (byte b : digest.digest()) sb.append(String.format("%02x", b));
-        return sb.toString();
     }
 }

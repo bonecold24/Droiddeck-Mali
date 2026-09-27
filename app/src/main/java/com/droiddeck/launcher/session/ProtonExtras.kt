@@ -1,5 +1,6 @@
 package com.droiddeck.launcher.session
 
+import com.droiddeck.launcher.core.Hashes
 import android.content.Context
 import android.os.StatFs
 import android.util.Log
@@ -7,7 +8,6 @@ import com.droiddeck.launcher.core.Downloader
 import com.droiddeck.launcher.core.FileUtils
 import com.droiddeck.launcher.runtime.LinuxRuntime
 import java.io.File
-import java.security.MessageDigest
 import org.json.JSONArray
 
 /** Immediate download and installation of the optional ARM64 Proton builds. */
@@ -105,11 +105,11 @@ object ProtonExtras {
         // release's own sha512 file. A download neither vouches for is not installed.
         onProgress("Verifying download", -1)
         val verified = when {
-            asset.sha256 != null -> asset.sha256.equals(com.droiddeck.launcher.runtime.LinuxRuntimeInstaller.sha256(archive), ignoreCase = true)
+            asset.sha256 != null -> asset.sha256.equals(Hashes.sha256(archive), ignoreCase = true)
             asset.sha512 != null -> {
                 val expected = Downloader.downloadString(asset.sha512)?.let { Regex("(?i)\\b[0-9a-f]{128}\\b").find(it)?.value }
                     ?: return "Could not read the release checksum; try again"
-                expected.equals(sha512(archive), ignoreCase = true)
+                expected.equals(Hashes.sha512(archive), ignoreCase = true)
             }
             else -> {
                 archive.delete()
@@ -182,7 +182,7 @@ object ProtonExtras {
                     release.optString("tag_name"), name,
                     archive.optString("browser_download_url").takeIf { it.startsWith("http") } ?: continue, checksum,
                     archive.optLong("size", 0L),
-                    archive.optString("digest").takeIf { it.matches(Regex("(?i)sha256:[0-9a-f]{64}")) }?.substringAfter(':'),
+                    Hashes.githubSha256(archive.optString("digest")),
                 )
             }
             null
@@ -190,19 +190,6 @@ object ProtonExtras {
             Log.w(TAG, "release metadata for ${tool.id}", e)
             null
         }
-    }
-
-    private fun sha512(file: File): String {
-        val digest = MessageDigest.getInstance("SHA-512")
-        file.inputStream().buffered().use { input ->
-            val buffer = ByteArray(4 * 1024 * 1024)
-            while (true) {
-                val read = input.read(buffer)
-                if (read < 0) break
-                digest.update(buffer, 0, read)
-            }
-        }
-        return digest.digest().joinToString("") { "%02x".format(it.toInt() and 0xff) }
     }
 
     private fun requestLines(context: Context): List<String> =

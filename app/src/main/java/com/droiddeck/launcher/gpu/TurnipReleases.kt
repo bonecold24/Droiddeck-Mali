@@ -1,8 +1,8 @@
 package com.droiddeck.launcher.gpu
 
+import com.droiddeck.launcher.core.Hashes
 import android.content.Context
 import com.droiddeck.launcher.core.FileUtils
-import com.droiddeck.launcher.runtime.LinuxRuntimeInstaller
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
@@ -93,7 +93,7 @@ object TurnipReleases {
                         val name = a.getString("name")
                         val (linux, label) = src.classify(name, tag) ?: continue
                         // Only assets GitHub has a sha256 for are offered: the download is checked against it.
-                        val sha = sha256Of(a) ?: continue
+                        val sha = Hashes.githubSha256(a.optString("digest")) ?: continue
                         // Newest first: the first release carrying a variant is the one offered.
                         if (!seen.add("$linux|$label")) continue
                         assets.put(JSONObject().put("source", src.label).put("tag", tag).put("name", name)
@@ -113,12 +113,6 @@ object TurnipReleases {
         prefs(context).edit().putString(KEY_RELEASE, stored.toString()).apply()
         return parse(stored)
     }
-
-    /** The asset's sha256 from GitHub's "digest" field ("sha256:<hex>"), or null when it has none. */
-    private fun sha256Of(asset: JSONObject): String? =
-        asset.optString("digest").takeIf { it.matches(SHA256_DIGEST) }?.substringAfter(':')
-
-    private val SHA256_DIGEST = Regex("(?i)sha256:[0-9a-f]{64}")
 
     private fun get(url: String): String {
         val c = URL(url).openConnection() as HttpURLConnection
@@ -203,7 +197,7 @@ object TurnipReleases {
                     }
                 }
             }
-            if (!asset.sha256.equals(LinuxRuntimeInstaller.sha256(target), ignoreCase = true)) {
+            if (!asset.sha256.equals(Hashes.sha256(target), ignoreCase = true)) {
                 throw IOException("Checksum mismatch - the download was discarded")
             }
             return target

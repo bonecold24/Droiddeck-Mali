@@ -1,5 +1,6 @@
 package com.droiddeck.launcher.runtime
 
+import com.droiddeck.launcher.core.Hashes
 import android.content.Context
 import android.util.Log
 import com.droiddeck.launcher.core.Downloader
@@ -91,7 +92,7 @@ object DesktopCatalog {
             }
             if (!ok) return "Download failed"
             listener?.onProgress("Verifying", -1)
-            val actual = LinuxRuntimeInstaller.sha256(download)
+            val actual = Hashes.sha256(download)
             if (!entry.sha256.equals(actual, ignoreCase = true)) return "Checksum mismatch - nothing was changed"
             listener?.onProgress("Installing ${entry.name}", -1)
             when (entry.kind) {
