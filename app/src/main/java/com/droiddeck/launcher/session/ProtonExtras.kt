@@ -21,7 +21,9 @@ object ProtonExtras {
 
     class Tool(val id: String, val name: String, val prefix: String, val repo: String, val assetPattern: Regex)
 
-    private data class Asset(val tag: String, val name: String, val url: String, val sha512: String?, val size: Long)
+    /** [sha256] from GitHub's asset digest; [sha512] the URL of a checksum file published beside it. */
+    private data class Asset(val tag: String, val name: String, val url: String, val sha512: String?, val size: Long,
+                             val sha256: String? = null)
 
     val tools = listOf(
         Tool("ge", "GE-Proton", "GE-Proton", "GloriousEggroll/proton-ge-custom", Regex("aarch64\\.tar\\.(gz|xz)$")),
@@ -99,14 +101,24 @@ object ProtonExtras {
             return "Download was incomplete; the partial file is kept for a resumable retry"
         }
 
-        asset.sha512?.let { checksumUrl ->
-            onProgress("Verifying download", -1)
-            val checksumText = Downloader.downloadString(checksumUrl)
-            val expected = checksumText?.let { Regex("(?i)\\b[0-9a-f]{128}\\b").find(it)?.value }
-            if (expected != null && !expected.equals(sha512(archive), ignoreCase = true)) {
-                archive.delete()
-                return "Checksum mismatch; the download was deleted"
+        // One checksum has to be found and has to match: GitHub's sha256 digest, else the
+        // release's own sha512 file. A download neither vouches for is not installed.
+        onProgress("Verifying download", -1)
+        val verified = when {
+            asset.sha256 != null -> asset.sha256.equals(com.droiddeck.launcher.runtime.LinuxRuntimeInstaller.sha256(archive), ignoreCase = true)
+            asset.sha512 != null -> {
+                val expected = Downloader.downloadString(asset.sha512)?.let { Regex("(?i)\\b[0-9a-f]{128}\\b").find(it)?.value }
+                    ?: return "Could not read the release checksum; try again"
+                expected.equals(sha512(archive), ignoreCase = true)
             }
+            else -> {
+                archive.delete()
+                return "${tool.name} ${asset.tag} publishes no checksum; nothing was installed"
+            }
+        }
+        if (!verified) {
+            archive.delete()
+            return "Checksum mismatch; the download was deleted"
         }
 
         if (SessionState.running) return "A session started during the download; stop it before installing compatibility tools"
@@ -170,6 +182,7 @@ object ProtonExtras {
                     release.optString("tag_name"), name,
                     archive.optString("browser_download_url").takeIf { it.startsWith("http") } ?: continue, checksum,
                     archive.optLong("size", 0L),
+                    archive.optString("digest").takeIf { it.matches(Regex("(?i)sha256:[0-9a-f]{64}")) }?.substringAfter(':'),
                 )
             }
             null
