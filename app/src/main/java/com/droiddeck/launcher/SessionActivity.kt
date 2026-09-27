@@ -252,118 +252,7 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
         }
         readPrefs()
 
-        // One Compose layer for every menu and overlay. Touches nothing in it consumes fall
-        // through to the pad and the game underneath.
-        sessionOverlay = ComposeView(this).apply {
-            isFocusable = true
-            isFocusableInTouchMode = true
-            setContent {
-                DroidDeckTheme {
-                    CursorOverlay(cursorPos, cursorVisible, resources.displayMetrics.density,
-                        cursorImage, cursorHotX, cursorHotY, cursorImageScale)
-                    if (hud.text.isNotEmpty()) HudText(hud.text)
-                    if (loading.visible) LoadingOverlay(
-                        loading.step, loading.percent, loading.elapsed, loading.hint, loading.ended,
-                        title = loadingTitle(), steam = loadingMode() == SessionService.MODE_STEAM,
-                        // As the drawer's Stop does: the service stops, and a start still installing is cancelled.
-                        onCancel = { SessionService.stop(this@SessionActivity); finish() },
-                    )
-                    // Opening the drawer takes the controller away from the game: release its pad.
-                    androidx.compose.runtime.LaunchedEffect(drawerOpen) {
-                        if (drawerOpen) {
-                            padBridge?.releaseAll()
-                            androidx.compose.runtime.withFrameNanos { }
-                            val requested = sessionOverlay.requestFocus()
-                            Log.i(TAG, "drawer root focus requested=$requested focused=${sessionOverlay.hasFocus()}")
-                        } else {
-                            releaseDrawerDirection()
-                        }
-                    }
-                    // The PC keyboard takes it too, for moving over the keys; the drawer opens over it.
-                    androidx.compose.runtime.LaunchedEffect(pcKeyboardOpen) { if (pcKeyboardOpen) padBridge?.releaseAll() }
-                    if (pcKeyboardOpen) com.droiddeck.launcher.ui.PcKeyboard(
-                        sendKey = { code, down -> if (CompositorHost.isStarted) WaylandCompositor.nativeSendKey(code, if (down) 1 else 0) },
-                        onAndroidKeyboard = { pcKeyboardOpen = false; keyboard?.toggle() },
-                        onClose = { pcKeyboardOpen = false },
-                    )
-                    SessionDrawer(drawerOpen, drawerPage, drawerControllerActive, onPageChange = { drawerPage = it }, a = DrawerActions(
-                        steam = SessionState.mode == SessionService.MODE_STEAM,
-                        title = if (SessionState.mode == SessionService.MODE_RUN)
-                            com.droiddeck.launcher.frontend.Library.nameForProgram(SessionState.program) ?: "Game" else null,
-                        isHomeApp = isHomeApp,
-                        androidApps = androidApps,
-                        hudOn = hudOn,
-                        fillScreen = if (SessionState.mode == SessionService.MODE_STEAM) fillScreen else null,
-                        frameGenEngine = frameGenEngine, frameGenMultiplier = frameGenMultiplier,
-                        lsfgReady = LsfgNative.isInstalled(this@SessionActivity),
-                        oscMode = oscMode, suspendPolicy = suspendPolicy, touchMode = touchMode,
-                        touchAuto = if (usingTouchpad()) "touchpad" else "direct",
-                        shapeMode = shapeMode, fexPreset = fexPreset,
-                        secondScreenMode = secondScreenMode,
-                        secondScreenDisplays = secondScreenDisplays,
-                        selectedSecondScreenDisplay = selectedSecondScreenDisplay,
-                        onHud = { on -> SessionPrefs.setHudEnabled(this@SessionActivity, on); hudOn = on; hud.refresh() },
-                        onFillScreen = { on -> SessionPrefs.setForceFullscreen(this@SessionActivity, on); fillScreen = on },
-                        onFrameGenPick = { engine, multiplier ->
-                            FrameGen.set(this@SessionActivity, engine, multiplier)
-                            readPrefs()
-                            applyFrameGen()
-                        },
-                        onKeyboard = { drawerOpen = false; pcKeyboardOpen = false; keyboard?.toggle() },
-                        onHardwareKeyboard = { drawerOpen = false; pcKeyboardOpen = !pcKeyboardOpen },
-                        onSteamMenu = if (SessionState.mode == SessionService.MODE_STEAM) ({ sendSteamGuide() }) else null,
-                        onQam = if (SessionState.mode == SessionService.MODE_STEAM) ({ triggerSteamQam() }) else null,
-                        // The desktop with Steam's desktop client in it, in this session's place: the
-                        // session ends with status 0 and onSessionEnded starts the relaunch (Stop's
-                        // finish() would skip it).
-                        onSwitchToDesktop = if (SessionState.mode == SessionService.MODE_STEAM) ({
-                            drawerOpen = false
-                            SessionState.relaunch = Intent(this@SessionActivity, SessionActivity::class.java)
-                                .putExtra(SessionService.EXTRA_MODE, SessionService.MODE_DESKTOP)
-                                .putExtra(SessionService.EXTRA_STEAM_UI, "desktop")
-                            SessionService.stop(this@SessionActivity)
-                        }) else null,
-                        backActionsInverted = backActionsInverted,
-                        onBackActionsInverted = { inverted ->
-                            SessionPrefs.setBackActionsInverted(this@SessionActivity, inverted)
-                            backActionsInverted = inverted
-                        },
-                        onOsc = { v -> SessionPrefs.setOscMode(this@SessionActivity, v); readPrefs(); updateOnScreenControls() },
-                        onSuspendPolicy = { policy ->
-                            SessionPrefs.setSuspendPolicy(this@SessionActivity, SessionState.mode, policy)
-                            suspendPolicy = policy
-                            SessionService.suspendPolicyChanged(this@SessionActivity)
-                        },
-                        onTouch = { v -> SessionPrefs.setTouchMode(this@SessionActivity, v); readPrefs() },
-                        onShape = { v -> SessionPrefs.setShapeMode(this@SessionActivity, v); readPrefs() },
-                        onFexPreset = { v -> SessionPrefs.setFexPreset(this@SessionActivity, v); readPrefs() },
-                        onSecondScreenMode = ::selectSecondScreenMode,
-                        onSecondScreenDisplay = ::selectSecondScreenDisplay,
-                        onLaunchAndroidApp = { app, displayId ->
-                            drawerOpen = false
-                            try {
-                                HomeApp.launch(this@SessionActivity, app, displayId)
-                            } catch (_: Exception) {
-                                val target = if (displayId == null || displayId == Display.DEFAULT_DISPLAY) "the primary screen"
-                                    else secondScreenDisplays.firstOrNull { it.id == displayId }?.label ?: "display $displayId"
-                                Toast.makeText(this@SessionActivity, "Could not open ${app.label} on $target", Toast.LENGTH_SHORT).show()
-                            }
-                        },
-                        onBackground = { drawerOpen = false; moveTaskToBack(true) },
-                        onShareLogs = { drawerOpen = false; shareCurrentSessionLogs() },
-                        onStop = { drawerOpen = false; SessionService.stop(this@SessionActivity); finish() },
-                        onClose = { drawerOpen = false },
-                        components = drawerComponents,
-                        onComponentsRefresh = { refreshDrawerComponents() },
-                        onComponentSwap = { pid, comp, value -> swapDrawerComponent(pid, comp, value) },
-                    ))
-                    if (SessionState.suspended) SessionPausedOverlay(
-                        title = pausedTitle(),
-                        onResume = { SessionService.resume(this@SessionActivity) },
-                    )
-                }
-            }
-        }
+        sessionOverlay = createSessionOverlay()
         root.addView(sessionOverlay)
         setContentView(root)
         handleHomeGuideIntent(intent)
@@ -391,6 +280,121 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
             }
         })
         watchSession()
+    }
+
+    /**
+     * One Compose layer for every menu and overlay. Touches nothing in it consumes fall through to
+     * the pad and the game underneath.
+     */
+    private fun createSessionOverlay(): ComposeView = ComposeView(this).apply {
+        isFocusable = true
+        isFocusableInTouchMode = true
+        setContent {
+            DroidDeckTheme {
+                CursorOverlay(cursorPos, cursorVisible, resources.displayMetrics.density,
+                    cursorImage, cursorHotX, cursorHotY, cursorImageScale)
+                if (hud.text.isNotEmpty()) HudText(hud.text)
+                if (loading.visible) LoadingOverlay(
+                    loading.step, loading.percent, loading.elapsed, loading.hint, loading.ended,
+                    title = loadingTitle(), steam = loadingMode() == SessionService.MODE_STEAM,
+                    // As the drawer's Stop does: the service stops, and a start still installing is cancelled.
+                    onCancel = { SessionService.stop(this@SessionActivity); finish() },
+                )
+                // Opening the drawer takes the controller away from the game: release its pad.
+                androidx.compose.runtime.LaunchedEffect(drawerOpen) {
+                    if (drawerOpen) {
+                        padBridge?.releaseAll()
+                        androidx.compose.runtime.withFrameNanos { }
+                        val requested = sessionOverlay.requestFocus()
+                        Log.i(TAG, "drawer root focus requested=$requested focused=${sessionOverlay.hasFocus()}")
+                    } else {
+                        releaseDrawerDirection()
+                    }
+                }
+                // The PC keyboard takes it too, for moving over the keys; the drawer opens over it.
+                androidx.compose.runtime.LaunchedEffect(pcKeyboardOpen) { if (pcKeyboardOpen) padBridge?.releaseAll() }
+                if (pcKeyboardOpen) com.droiddeck.launcher.ui.PcKeyboard(
+                    sendKey = { code, down -> if (CompositorHost.isStarted) WaylandCompositor.nativeSendKey(code, if (down) 1 else 0) },
+                    onAndroidKeyboard = { pcKeyboardOpen = false; keyboard?.toggle() },
+                    onClose = { pcKeyboardOpen = false },
+                )
+                SessionDrawer(drawerOpen, drawerPage, drawerControllerActive, onPageChange = { drawerPage = it }, a = DrawerActions(
+                    steam = SessionState.mode == SessionService.MODE_STEAM,
+                    title = if (SessionState.mode == SessionService.MODE_RUN)
+                        com.droiddeck.launcher.frontend.Library.nameForProgram(SessionState.program) ?: "Game" else null,
+                    isHomeApp = isHomeApp,
+                    androidApps = androidApps,
+                    hudOn = hudOn,
+                    fillScreen = if (SessionState.mode == SessionService.MODE_STEAM) fillScreen else null,
+                    frameGenEngine = frameGenEngine, frameGenMultiplier = frameGenMultiplier,
+                    lsfgReady = LsfgNative.isInstalled(this@SessionActivity),
+                    oscMode = oscMode, suspendPolicy = suspendPolicy, touchMode = touchMode,
+                    touchAuto = if (usingTouchpad()) "touchpad" else "direct",
+                    shapeMode = shapeMode, fexPreset = fexPreset,
+                    secondScreenMode = secondScreenMode,
+                    secondScreenDisplays = secondScreenDisplays,
+                    selectedSecondScreenDisplay = selectedSecondScreenDisplay,
+                    onHud = { on -> SessionPrefs.setHudEnabled(this@SessionActivity, on); hudOn = on; hud.refresh() },
+                    onFillScreen = { on -> SessionPrefs.setForceFullscreen(this@SessionActivity, on); fillScreen = on },
+                    onFrameGenPick = { engine, multiplier ->
+                        FrameGen.set(this@SessionActivity, engine, multiplier)
+                        readPrefs()
+                        applyFrameGen()
+                    },
+                    onKeyboard = { drawerOpen = false; pcKeyboardOpen = false; keyboard?.toggle() },
+                    onHardwareKeyboard = { drawerOpen = false; pcKeyboardOpen = !pcKeyboardOpen },
+                    onSteamMenu = if (SessionState.mode == SessionService.MODE_STEAM) ({ sendSteamGuide() }) else null,
+                    onQam = if (SessionState.mode == SessionService.MODE_STEAM) ({ triggerSteamQam() }) else null,
+                    // The desktop with Steam's desktop client in it, in this session's place: the
+                    // session ends with status 0 and onSessionEnded starts the relaunch (Stop's
+                    // finish() would skip it).
+                    onSwitchToDesktop = if (SessionState.mode == SessionService.MODE_STEAM) ({
+                        drawerOpen = false
+                        SessionState.relaunch = Intent(this@SessionActivity, SessionActivity::class.java)
+                            .putExtra(SessionService.EXTRA_MODE, SessionService.MODE_DESKTOP)
+                            .putExtra(SessionService.EXTRA_STEAM_UI, "desktop")
+                        SessionService.stop(this@SessionActivity)
+                    }) else null,
+                    backActionsInverted = backActionsInverted,
+                    onBackActionsInverted = { inverted ->
+                        SessionPrefs.setBackActionsInverted(this@SessionActivity, inverted)
+                        backActionsInverted = inverted
+                    },
+                    onOsc = { v -> SessionPrefs.setOscMode(this@SessionActivity, v); readPrefs(); updateOnScreenControls() },
+                    onSuspendPolicy = { policy ->
+                        SessionPrefs.setSuspendPolicy(this@SessionActivity, SessionState.mode, policy)
+                        suspendPolicy = policy
+                        SessionService.suspendPolicyChanged(this@SessionActivity)
+                    },
+                    onTouch = { v -> SessionPrefs.setTouchMode(this@SessionActivity, v); readPrefs() },
+                    onShape = { v -> SessionPrefs.setShapeMode(this@SessionActivity, v); readPrefs() },
+                    onFexPreset = { v -> SessionPrefs.setFexPreset(this@SessionActivity, v); readPrefs() },
+                    onSecondScreenMode = ::selectSecondScreenMode,
+                    onSecondScreenDisplay = ::selectSecondScreenDisplay,
+                    onLaunchAndroidApp = { app, displayId ->
+                        drawerOpen = false
+                        try {
+                            HomeApp.launch(this@SessionActivity, app, displayId)
+                        } catch (_: Exception) {
+                            val target = if (displayId == null || displayId == Display.DEFAULT_DISPLAY) "the primary screen"
+                                else secondScreenDisplays.firstOrNull { it.id == displayId }?.label ?: "display $displayId"
+                            Toast.makeText(this@SessionActivity, "Could not open ${app.label} on $target", Toast.LENGTH_SHORT).show()
+                        }
+                    },
+                    onBackground = { drawerOpen = false; moveTaskToBack(true) },
+                    onShareLogs = { drawerOpen = false; shareCurrentSessionLogs() },
+                    onStop = { drawerOpen = false; SessionService.stop(this@SessionActivity); finish() },
+                    onClose = { drawerOpen = false },
+                    components = drawerComponents,
+                    onComponentsRefresh = { refreshDrawerComponents() },
+                    onComponentSwap = { pid, comp, value -> swapDrawerComponent(pid, comp, value) },
+                ))
+                if (SessionState.suspended) SessionPausedOverlay(
+                    title = pausedTitle(),
+                    onResume = { SessionService.resume(this@SessionActivity) },
+                )
+            }
+        }
     }
 
     private fun refreshHomeApp() {

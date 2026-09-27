@@ -9,7 +9,6 @@ import java.io.File
 import android.content.pm.PackageManager
 import android.hardware.display.DisplayManager
 import android.net.Uri
-import android.provider.OpenableColumns
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -26,10 +25,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import com.droiddeck.launcher.gpu.FrameGen
-import com.droiddeck.launcher.gpu.LinuxVulkanDriver
-import com.droiddeck.launcher.gpu.LinuxVulkanDriverManager
 import com.droiddeck.launcher.gpu.TurnipDriver
-import com.droiddeck.launcher.gpu.TurnipReleases
 import com.droiddeck.launcher.gpu.LsfgNative
 import com.droiddeck.launcher.runtime.LinuxRuntime
 import com.droiddeck.launcher.runtime.DesktopCatalog
@@ -44,7 +40,6 @@ import com.droiddeck.launcher.ui.ComponentsPage
 import com.droiddeck.launcher.session.SessionLogShare
 import com.droiddeck.launcher.session.SessionPrefs
 import com.droiddeck.launcher.ui.ProtonPage
-import com.droiddeck.launcher.ui.ProtonRow
 import com.droiddeck.launcher.core.CpuCores
 import com.droiddeck.launcher.core.PhantomProcessLimit
 import com.droiddeck.launcher.core.PhantomProcessStatus
@@ -54,7 +49,6 @@ import com.droiddeck.launcher.ui.PerformancePage
 import com.droiddeck.launcher.ui.ModeSettingsPage
 import com.droiddeck.launcher.ui.ModeSettings
 import com.droiddeck.launcher.ui.ModeSettingsActions
-import com.droiddeck.launcher.ui.DriverRow
 import com.droiddeck.launcher.ui.ConfirmDialog
 import com.droiddeck.launcher.ui.ControllerActions
 import com.droiddeck.launcher.ui.ControllerMappingPage
@@ -82,6 +76,10 @@ import com.droiddeck.launcher.input.SecondScreenDisplays
  */
 class MainActivity : ComponentActivity() {
     private val ui = Handler(Looper.getMainLooper())
+    private val drivers = DriverMenus(this, ui)
+    private val components = ComponentsMenu(this, ui)
+    private val decky = DeckyMenu(this, ui)
+    private val protons = ProtonMenu(this, ui)
 
     // The screen's state. Compose redraws whatever reads these when they change.
     private var installed by mutableStateOf<String?>(null)
@@ -102,21 +100,6 @@ class MainActivity : ComponentActivity() {
     // Components page: FEX / DXVK / VKD3D-Proton per Proton (ComponentsManager).
     private var showComponents by mutableStateOf(false)
     private var focusComponentsContent by mutableStateOf(true)
-    private var compSnapshot by mutableStateOf<ComponentsManager.Snapshot?>(null)
-    private var compCatalog by mutableStateOf<List<ComponentsManager.CatalogItem>>(emptyList())
-    private var compCatalogAt by mutableStateOf(0L)
-    private var compProton by mutableStateOf<String?>(null)
-    private var compComp by mutableStateOf("dxvk")
-    private var compChecking by mutableStateOf(false)
-    private var compBusy by mutableStateOf<String?>(null)
-    private var compDownloads by mutableStateOf<Map<String, Int>>(emptyMap())
-    private var deckyInstalled by mutableStateOf<String?>(null)
-    private var deckyReleases by mutableStateOf<List<DeckyManager.Release>>(emptyList())
-    private var deckyChecking by mutableStateOf(false)
-    private var deckyStage by mutableStateOf<String?>(null)
-    private var deckyPercent by mutableIntStateOf(-1)
-    private var deckySupervisor by mutableStateOf(false)
-    private var deckyReleaseRequest = 0
     private var showMapping by mutableStateOf(false)
     private var controllerSettings by mutableStateOf<ControllerPrefs.Settings?>(null)
     private var catalog by mutableStateOf<List<DesktopCatalog.Entry>?>(null)
@@ -128,10 +111,6 @@ class MainActivity : ComponentActivity() {
     private var desktopInstalled by mutableStateOf(false)
     private var offlineAccount by mutableStateOf<String?>(null)
     private var offline by mutableStateOf(false)
-    private var protonRows by mutableStateOf<List<ProtonRow>>(emptyList())
-    private var protonBusyId by mutableStateOf<String?>(null)
-    private var protonStage by mutableStateOf<String?>(null)
-    private var protonPercent by mutableIntStateOf(-1)
     private var showPerformance by mutableStateOf(false)
     private var clientOverride by mutableStateOf(false)
     private var clientCores by mutableStateOf<Set<Int>>(emptySet())
@@ -148,19 +127,6 @@ class MainActivity : ComponentActivity() {
     private var forceFullscreen by mutableStateOf(true)
     private var launcherFullscreen by mutableStateOf(true)
     private var mic by mutableStateOf(false)
-    private var linuxRows by mutableStateOf<List<DriverRow>>(emptyList())
-    /** The latest Banners-Turnip release as each driver menu offers it (see [refreshReleaseRows]). */
-    private var linuxDownloads by mutableStateOf<List<com.droiddeck.launcher.ui.DownloadRow>>(emptyList())
-    private var androidDownloads by mutableStateOf<List<com.droiddeck.launcher.ui.DownloadRow>>(emptyList())
-    private var releaseStatus by mutableStateOf("Not checked yet - tap refresh to look for new drivers")
-    private var releaseChecking by mutableStateOf(false)
-    private var canRestoreBundled by mutableStateOf(false)
-    /** Asset name -> download percent, while it downloads. */
-    private val releaseProgress = HashMap<String, Int>()
-    private var linuxSteam by mutableStateOf("")
-    private var linuxDesktop by mutableStateOf("")
-    private var androidRows by mutableStateOf<List<DriverRow>>(emptyList())
-    private var androidSelected by mutableStateOf("")
 
     // The app's own picker (files/), once per kind of pick: the two driver lists validate
     // differently, and the reason a zip is refused names the list it belongs in.
@@ -168,10 +134,10 @@ class MainActivity : ComponentActivity() {
         if (r.resultCode == RESULT_OK) InAppFilePicker.pickedUri(r.data)?.let { importComponent(it) }
     }
     private val pickLinuxDriver = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { r ->
-        if (r.resultCode == RESULT_OK) InAppFilePicker.pickedUri(r.data)?.let { importDriver(it, linux = true) }
+        if (r.resultCode == RESULT_OK) InAppFilePicker.pickedUri(r.data)?.let { drivers.importDriver(it, linux = true) }
     }
     private val pickAndroidDriver = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { r ->
-        if (r.resultCode == RESULT_OK) InAppFilePicker.pickedUri(r.data)?.let { importDriver(it, linux = false) }
+        if (r.resultCode == RESULT_OK) InAppFilePicker.pickedUri(r.data)?.let { drivers.importDriver(it, linux = false) }
     }
     private val pickAddedGamesDir = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { r ->
         if (r.resultCode == RESULT_OK) InAppFilePicker.pickedPath(r.data)?.let { path ->
@@ -249,7 +215,7 @@ class MainActivity : ComponentActivity() {
     override fun startActivity(intent: Intent?) {
         if (intent?.component?.className == SessionActivity::class.java.name) {
             when {
-                protonBusyId != null || ProtonExtras.installInProgress -> {
+                protons.protonBusyId != null || ProtonExtras.installInProgress -> {
                     android.widget.Toast.makeText(this, "Wait for the compatibility tool install to finish", android.widget.Toast.LENGTH_SHORT).show()
                     return
                 }
@@ -543,7 +509,7 @@ class MainActivity : ComponentActivity() {
             if (event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0) {
                 val all = ComponentsManager.COMPONENTS
                 val step = if (event.keyCode == KeyEvent.KEYCODE_BUTTON_R1) 1 else all.size - 1
-                compComp = all[(all.indexOf(compComp).coerceAtLeast(0) + step) % all.size]
+                components.compComp = all[(all.indexOf(components.compComp).coerceAtLeast(0) + step) % all.size]
             }
             return true
         }
@@ -559,7 +525,7 @@ class MainActivity : ComponentActivity() {
             val applied = runCatching { ComponentsManager.applyQueued(this) }.getOrDefault(emptyList())
             if (applied.isNotEmpty()) ui.post {
                 android.widget.Toast.makeText(this, "Applied: " + applied.joinToString(", "), android.widget.Toast.LENGTH_LONG).show()
-                if (showComponents) refreshComponents()
+                if (showComponents) components.refreshComponents()
             }
         }, "components-queue").start()
         oscMode = SessionPrefs.oscMode(this)
@@ -567,9 +533,9 @@ class MainActivity : ComponentActivity() {
         refreshHomeAppState()
         refreshSecondScreenDisplays()
         refresh()
-        deckyInstalled = DeckyManager.installed(this)
+        decky.deckyInstalled = DeckyManager.installed(this)
         DeckyManager.syncCefMarker(this)
-        deckySupervisor = DeckyManager.supervisorEnabled(this)
+        decky.deckySupervisor = DeckyManager.supervisorEnabled(this)
         // Added games' art (a store lookup for what the folders lack) starts here, not only when
         // the cog opens.
         refreshAddedGames()
@@ -638,38 +604,7 @@ class MainActivity : ComponentActivity() {
         showComponents = false
         showMapping = false
         showProtons = true
-        refreshProtons()
-    }
-
-    private fun refreshDecky() {
-        val request = ++deckyReleaseRequest
-        deckyChecking = true
-        Thread({
-            val channels = runCatching { DeckyManager.releaseChannels(this) }
-                .getOrElse { DeckyManager.ReleaseChannels(emptyList(), emptyList()) }
-            ui.post {
-                if (request == deckyReleaseRequest) {
-                    // Use the newest compatible stable build, or the newest compatible
-                    // prerelease when the fork has not published a stable ARM64 asset.
-                    deckyReleases = channels.stable.ifEmpty { channels.prerelease }
-                    deckyChecking = false
-                }
-            }
-        }, "decky-releases").start()
-    }
-
-    private fun installDecky(release: DeckyManager.Release) {
-        if (deckyStage != null || SessionState.running) return
-        deckyStage = "Starting…"; deckyPercent = -1
-        Thread({
-            val problem = runCatching {
-                DeckyManager.install(this, release) { label, value -> ui.post { deckyStage = label; deckyPercent = value } }
-            }.getOrElse { error -> "Decky install failed: ${error.message ?: error.javaClass.simpleName}" }
-            ui.post {
-                deckyStage = null; deckyPercent = -1; deckyInstalled = DeckyManager.installed(this)
-                if (problem != null) android.widget.Toast.makeText(this, problem, android.widget.Toast.LENGTH_LONG).show()
-            }
-        }, "install-decky").start()
+        protons.refreshProtons()
     }
 
     private fun refreshController() {
@@ -694,69 +629,12 @@ class MainActivity : ComponentActivity() {
         showProtons = false
         showMapping = false
         showComponents = true
-        refreshComponents(snapshotFirst = true)
-    }
-
-    /** Reads the Protons (and on first open saves their originals) off the UI thread; the Nightlies list comes from its cache. */
-    private fun refreshComponents(snapshotFirst: Boolean = false) {
-        Thread({
-            if (snapshotFirst) runCatching { ComponentsManager.snapshotAll(this) }
-            runCatching { ComponentsManager.applyQueued(this) }
-            val snap = runCatching { ComponentsManager.snapshot(this) }.onFailure { Log.w(TAG, "components", it) }.getOrNull()
-            val cat = runCatching { ComponentsManager.catalog(this, false) }.getOrNull()
-            ui.post {
-                compSnapshot = snap ?: ComponentsManager.Snapshot(emptyList(), emptyList())
-                if (cat != null && cat.fetchedAt > 0) { compCatalog = cat.items; compCatalogAt = cat.fetchedAt }
-                if (compProton == null || snap?.protons?.none { it.proton.id == compProton } == true) compProton = snap?.protons?.firstOrNull()?.proton?.id
-            }
-        }, "components").start()
-    }
-
-    private fun componentAction(label: String, work: () -> String) {
-        if (compBusy != null) return
-        compBusy = label
-        Thread({
-            val message = runCatching(work).getOrElse { e -> "$label failed: ${e.message ?: e.javaClass.simpleName}" }
-            ui.post {
-                compBusy = null
-                android.widget.Toast.makeText(this, message, android.widget.Toast.LENGTH_LONG).show()
-                refreshComponents()
-            }
-        }, "components-action").start()
-    }
-
-    private fun refreshComponentCatalog() {
-        if (compChecking) return
-        compChecking = true
-        Thread({
-            val cat = runCatching { ComponentsManager.catalog(this, true) }.getOrNull()
-            ui.post {
-                compChecking = false
-                if (cat == null || cat.items.isEmpty()) android.widget.Toast.makeText(this, "The Nightlies could not be reached", android.widget.Toast.LENGTH_LONG).show()
-                else { compCatalog = cat.items; compCatalogAt = cat.fetchedAt }
-            }
-        }, "components-catalog").start()
-    }
-
-    private fun downloadComponent(item: ComponentsManager.CatalogItem) {
-        if (compDownloads.containsKey(item.file)) return
-        compDownloads = compDownloads + (item.file to -1)
-        Thread({
-            val message = runCatching {
-                val pkg = ComponentsManager.download(this, item) { pc -> ui.post { if (compDownloads.containsKey(item.file)) compDownloads = compDownloads + (item.file to pc) } }
-                "Stored ${pkg.version}"
-            }.getOrElse { e -> "Download failed: ${e.message ?: e.javaClass.simpleName}" }
-            ui.post {
-                compDownloads = compDownloads - item.file
-                android.widget.Toast.makeText(this, message, android.widget.Toast.LENGTH_SHORT).show()
-                refreshComponents()
-            }
-        }, "components-download").start()
+        components.refreshComponents(snapshotFirst = true)
     }
 
     private fun importComponent(uri: Uri) {
         val name = displayNameOf(uri) ?: "imported.wcp"
-        componentAction("Importing") {
+        components.componentAction("Importing") {
             val tmp = File(cacheDir, "component-import.wcp")
             contentResolver.openInputStream(uri)?.use { input -> tmp.outputStream().use { input.copyTo(it) } } ?: error("cannot read the file")
             try { "Imported ${ComponentsManager.importPackage(this, tmp, name).version}" } finally { tmp.delete() }
@@ -766,24 +644,24 @@ class MainActivity : ComponentActivity() {
     @Composable
     private fun ComponentsHost() {
         ComponentsPage(
-            snapshot = compSnapshot,
-            catalog = compCatalog,
-            catalogAt = compCatalogAt,
-            protonId = compProton,
-            comp = compComp,
-            checking = compChecking,
-            busy = compBusy,
-            downloads = compDownloads,
+            snapshot = components.compSnapshot,
+            catalog = components.compCatalog,
+            catalogAt = components.compCatalogAt,
+            protonId = components.compProton,
+            comp = components.compComp,
+            checking = components.compChecking,
+            busy = components.compBusy,
+            downloads = components.compDownloads,
             requestInitialFocus = focusComponentsContent,
-            onProton = { compProton = it },
-            onComp = { compComp = it },
-            onSwap = { file -> compProton?.let { pid -> componentAction("Swapping") { ComponentsManager.swap(this, pid, file) } } },
-            onRestore = { version -> compProton?.let { pid -> componentAction("Restoring") { ComponentsManager.restore(this, pid, compComp, version) } } },
-            onCancelQueued = { compProton?.let { pid -> componentAction("Cancelling") { ComponentsManager.cancelQueued(this, pid, compComp); "The waiting swap was cancelled." } } },
-            onDeletePackage = { file -> componentAction("Deleting") { ComponentsManager.deletePackage(this, file) } },
-            onDeleteOriginal = { version -> compProton?.let { pid -> componentAction("Deleting") { ComponentsManager.deleteOriginal(this, pid, compComp, version) } } },
-            onDownload = { downloadComponent(it) },
-            onRefresh = { refreshComponentCatalog() },
+            onProton = { components.compProton = it },
+            onComp = { components.compComp = it },
+            onSwap = { file -> components.compProton?.let { pid -> components.componentAction("Swapping") { ComponentsManager.swap(this, pid, file) } } },
+            onRestore = { version -> components.compProton?.let { pid -> components.componentAction("Restoring") { ComponentsManager.restore(this, pid, components.compComp, version) } } },
+            onCancelQueued = { components.compProton?.let { pid -> components.componentAction("Cancelling") { ComponentsManager.cancelQueued(this, pid, components.compComp); "The waiting swap was cancelled." } } },
+            onDeletePackage = { file -> components.componentAction("Deleting") { ComponentsManager.deletePackage(this, file) } },
+            onDeleteOriginal = { version -> components.compProton?.let { pid -> components.componentAction("Deleting") { ComponentsManager.deleteOriginal(this, pid, components.compComp, version) } } },
+            onDownload = { components.downloadComponent(it) },
+            onRefresh = { components.refreshComponentCatalog() },
             onImport = { pickComponent.launch(InAppFilePicker.buildIntent(this, WCP_EXT, "Choose a component package (-linux .wcp)")) },
             onBack = { showComponents = false },
         )
@@ -792,54 +670,17 @@ class MainActivity : ComponentActivity() {
     @Composable
     private fun ProtonHost() {
         ProtonPage(
-            rows = protonRows,
-            busyId = protonBusyId,
-            stage = protonStage,
-            percent = protonPercent,
+            rows = protons.protonRows,
+            busyId = protons.protonBusyId,
+            stage = protons.protonStage,
+            percent = protons.protonPercent,
             runtimeReady = ready,
             sessionRunning = SessionState.running,
-            onInstall = { id -> installProton(id) },
-            onCancel = { id -> ProtonExtras.tools.firstOrNull { it.id == id }?.let { ProtonExtras.unqueue(this, it) }; refreshProtons() },
-            onRemove = { id -> removeProton(id) },
+            onInstall = { id -> protons.installProton(id) },
+            onCancel = { id -> ProtonExtras.tools.firstOrNull { it.id == id }?.let { ProtonExtras.unqueue(this, it) }; protons.refreshProtons() },
+            onRemove = { id -> protons.removeProton(id) },
             onBack = { showProtons = false },
         )
-    }
-
-    private fun installProton(id: String) {
-        val tool = ProtonExtras.tools.firstOrNull { it.id == id } ?: return
-        if (protonBusyId != null || SessionState.running) return
-        ProtonExtras.unqueue(this, tool)
-        protonBusyId = id
-        protonStage = "Starting…"
-        protonPercent = -1
-        Thread({
-            val problem = ProtonExtras.install(this, tool) { label, value ->
-                ui.post { protonStage = label; protonPercent = value }
-            }
-            ui.post {
-                protonBusyId = null
-                protonStage = null
-                protonPercent = -1
-                refreshProtons()
-                if (problem != null) android.widget.Toast.makeText(this, problem, android.widget.Toast.LENGTH_LONG).show()
-            }
-        }, "install-proton-$id").start()
-    }
-
-    private fun removeProton(id: String) {
-        val tool = ProtonExtras.tools.firstOrNull { it.id == id } ?: return
-        if (protonBusyId != null || SessionState.running) return
-        protonBusyId = id
-        protonStage = "Removing ${tool.name}…"
-        protonPercent = -1
-        Thread({
-            ProtonExtras.remove(this, tool)
-            ui.post {
-                protonBusyId = null
-                protonStage = null
-                refreshProtons()
-            }
-        }, "remove-proton-$id").start()
     }
 
     private fun refreshPackages() {
@@ -890,9 +731,9 @@ class MainActivity : ComponentActivity() {
             ModeSettings(
                 mode = mode, resolutionCap = resolutionCap, customResolution = customResolution, shapeMode = shapeMode,
                 hdr = hdrOn, hdrReason = hdrReason,
-                linuxRows = linuxRows,
-                linuxSelected = if (mode == SessionService.MODE_STEAM) linuxSteam else linuxDesktop,
-                androidRows = androidRows, androidSelected = androidSelected,
+                linuxRows = drivers.linuxRows,
+                linuxSelected = if (mode == SessionService.MODE_STEAM) drivers.linuxSteam else drivers.linuxDesktop,
+                androidRows = drivers.androidRows, androidSelected = drivers.androidSelected,
                 touchMode = touchMode,
                 suspendPolicy = suspendPolicy,
                 oscMode = if (mode == SessionService.MODE_STEAM) oscMode else null,
@@ -910,27 +751,27 @@ class MainActivity : ComponentActivity() {
                 addedGamesDirs = if (mode == SessionService.MODE_STEAM) addedGamesDirs else null,
                 addedGames = if (mode == SessionService.MODE_STEAM) addedGames else emptyList(),
                 addedGamesArt = addedGamesArt,
-                linuxDownloads = linuxDownloads, androidDownloads = androidDownloads, releaseStatus = releaseStatus,
-                releaseChecking = releaseChecking, canRestoreBundled = canRestoreBundled,
-                deckyInstalled = if (mode == SessionService.MODE_STEAM) deckyInstalled else null,
-                deckyLatestRelease = if (mode == SessionService.MODE_STEAM) deckyReleases.firstOrNull() else null,
-                deckyChecking = deckyChecking, deckyStage = deckyStage, deckyPercent = deckyPercent,
-                deckyEnabled = deckySupervisor, deckySessionRunning = SessionState.running,
+                linuxDownloads = drivers.linuxDownloads, androidDownloads = drivers.androidDownloads, releaseStatus = drivers.releaseStatus,
+                releaseChecking = drivers.releaseChecking, canRestoreBundled = drivers.canRestoreBundled,
+                deckyInstalled = if (mode == SessionService.MODE_STEAM) decky.deckyInstalled else null,
+                deckyLatestRelease = if (mode == SessionService.MODE_STEAM) decky.deckyReleases.firstOrNull() else null,
+                deckyChecking = decky.deckyChecking, deckyStage = decky.deckyStage, deckyPercent = decky.deckyPercent,
+                deckyEnabled = decky.deckySupervisor, deckySessionRunning = SessionState.running,
             ),
             ModeSettingsActions(
                 onResolution = { cap -> SessionPrefs.setResolutionCap(this, mode, cap); resolutionCap = cap },
                 onCustomResolution = { size -> SessionPrefs.setCustomResolution(this, mode, size); customResolution = size },
                 onShape = { shape -> SessionPrefs.setShapeMode(this, shape); shapeMode = shape },
                 onHdr = { on -> SessionPrefs.setHdr(this, mode, on); hdrOn = on },
-                onSelectLinux = { id -> SessionPrefs.setLinuxDriver(this, mode, id); refreshDrivers() },
+                onSelectLinux = { id -> SessionPrefs.setLinuxDriver(this, mode, id); drivers.refreshDrivers() },
                 onImportLinux = { pickLinuxDriver.launch(InAppFilePicker.buildIntent(this, ZIP_EXT, "Choose a Linux runtime driver (-Linux zip)")) },
-                onRemoveLinux = { id -> deleteDriver(id, linux = true) },
-                onRefreshReleases = { checkLatestTurnip() },
-                onDownloadDriver = { name -> downloadReleaseDriver(name) },
-                onRestoreBundled = { TurnipDriver(this).restoreBundled(); refreshDrivers() },
-                onSelectAndroid = { id -> SessionPrefs.setAndroidDriver(this, id); refreshDrivers() },
+                onRemoveLinux = { id -> drivers.deleteDriver(id, linux = true) },
+                onRefreshReleases = { drivers.checkLatestTurnip() },
+                onDownloadDriver = { name -> drivers.downloadReleaseDriver(name) },
+                onRestoreBundled = { TurnipDriver(this).restoreBundled(); drivers.refreshDrivers() },
+                onSelectAndroid = { id -> SessionPrefs.setAndroidDriver(this, id); drivers.refreshDrivers() },
                 onImportAndroid = { pickAndroidDriver.launch(InAppFilePicker.buildIntent(this, ZIP_EXT, "Choose a display driver (AdrenoTools zip)")) },
-                onRemoveAndroid = { id -> deleteDriver(id, linux = false) },
+                onRemoveAndroid = { id -> drivers.deleteDriver(id, linux = false) },
                 onTouch = { t -> SessionPrefs.setTouchMode(this, t); touchMode = t },
                 onSuspendPolicy = { policy -> SessionPrefs.setSuspendPolicy(this, mode, policy); suspendPolicy = policy },
                 onOsc = { o -> SessionPrefs.setOscMode(this, o); oscMode = o },
@@ -969,13 +810,13 @@ class MainActivity : ComponentActivity() {
                     pendingAddedGame = folder
                     pickAddedGameExe.launch(InAppFilePicker.buildIntent(this, listOf("exe"), "Choose the game's .exe", folder))
                 },
-                onDeckyInstall = { release -> installDecky(release) },
-                onDeckyCheck = { refreshDecky() },
-                onDeckyEnabled = { enabled -> DeckyManager.setSupervisorEnabled(this, enabled); deckySupervisor = enabled },
+                onDeckyInstall = { release -> decky.installDecky(release) },
+                onDeckyCheck = { decky.refreshDecky() },
+                onDeckyEnabled = { enabled -> DeckyManager.setSupervisorEnabled(this, enabled); decky.deckySupervisor = enabled },
                 onDeckyUninstall = {
                     DeckyManager.uninstall(this, wipeData = false)
-                    deckyInstalled = null
-                    deckySupervisor = false
+                    decky.deckyInstalled = null
+                    decky.deckySupervisor = false
                 },
                 onDismiss = { settingsMode = null },
             ),
@@ -1034,7 +875,7 @@ class MainActivity : ComponentActivity() {
         showProtons = false
         showComponents = false
         showMapping = false
-        refreshDrivers()
+        drivers.refreshDrivers()
         resolutionCap = SessionPrefs.resolutionCap(this, mode)
         customResolution = SessionPrefs.customResolution(this, mode)
         fexPreset = SessionPrefs.fexPreset(this)
@@ -1057,9 +898,9 @@ class MainActivity : ComponentActivity() {
         gameStorage = SessionPrefs.gameStorage(this)
         storageOptions = GameStorage.options(this).map { it.label to it.path }
         if (mode == SessionService.MODE_STEAM) {
-            deckyInstalled = DeckyManager.installed(this)
-            deckySupervisor = DeckyManager.supervisorEnabled(this)
-            refreshDecky()
+            decky.deckyInstalled = DeckyManager.installed(this)
+            decky.deckySupervisor = DeckyManager.supervisorEnabled(this)
+            decky.refreshDecky()
         }
         settingsMode = mode
     }
@@ -1077,178 +918,6 @@ class MainActivity : ComponentActivity() {
         gameStorage = path
     }
 
-    private fun refreshDrivers() {
-        val lm = LinuxVulkanDriverManager(this)
-        fun origin(id: String) = if (TurnipReleases.isDownloaded(this, id)) DriverRow.DOWNLOADED else DriverRow.IMPORTED
-        linuxRows = LinuxVulkanDriver.optionValues(this).map { id ->
-            if (id.isEmpty()) DriverRow("", "Runtime default", "the Turnip built into the runtime", false)
-            else DriverRow(
-                id, lm.getDriverName(id),
-                listOfNotNull(
-                    lm.getDriverVersion(id).takeIf { it.isNotEmpty() },
-                    lm.getMinGlibc(id).takeIf { it.isNotEmpty() }?.let { "glibc $it+" },
-                ).joinToString(" · "),
-                true, origin(id),
-            )
-        }
-        linuxSteam = SessionPrefs.linuxDriver(this, SessionService.MODE_STEAM)
-        linuxDesktop = SessionPrefs.linuxDriver(this, SessionService.MODE_DESKTOP)
-        val td = TurnipDriver(this)
-        val auto = td.autoId()
-        androidRows = buildList {
-            add(DriverRow(
-                TurnipDriver.AUTO, "Auto - picked by GPU",
-                if (auto == "system") "system Vulkan: no bundled build for this GPU" else "${td.displayName(auto)} (bundled)",
-                false,
-            ))
-            for (id in td.visibleBundled()) add(DriverRow(id, td.displayName(id), td.driverVersion(id), true, DriverRow.BUNDLED))
-            for (id in td.enumerateImported()) add(DriverRow(id, td.displayName(id), td.driverVersion(id), true, origin(id)))
-        }
-        canRestoreBundled = td.hiddenBundled().isNotEmpty()
-        androidSelected = SessionPrefs.androidDriver(this)
-        refreshReleaseRows()
-    }
-
-    /**
-     * Import off the main thread - a driver zip is a few MB and the glibc check reads the whole
-     * library - then say what happened. A refusal's message is the user-facing reason.
-     */
-    private fun importDriver(uri: Uri, linux: Boolean) {
-        val name = displayNameOf(uri)
-        Thread({
-            val problem = try {
-                if (linux) LinuxVulkanDriverManager(this).installDriver(uri, name)
-                else TurnipDriver(this).installFromZip(uri, name)
-                null
-            } catch (e: IllegalArgumentException) {
-                e.message
-            } catch (e: Exception) {
-                Log.w(TAG, "driver import", e)
-                "Import failed: ${e.message}"
-            }
-            ui.post {
-                android.widget.Toast.makeText(
-                    this, problem ?: "Imported ${name ?: "driver"}",
-                    if (problem != null) android.widget.Toast.LENGTH_LONG else android.widget.Toast.LENGTH_SHORT,
-                ).show()
-                refreshDrivers()
-            }
-        }, "import-driver").start()
-    }
-
-    /**
-     * Delete an imported or downloaded driver. A mode still set to it goes back to its default, so a
-     * session never starts on a driver that is gone; a release download is forgotten, so the menu
-     * offers it again.
-     */
-    private fun deleteDriver(id: String, linux: Boolean) {
-        if (linux) {
-            LinuxVulkanDriverManager(this).removeDriver(id)
-            for (mode in listOf(SessionService.MODE_STEAM, SessionService.MODE_DESKTOP)) {
-                if (SessionPrefs.linuxDriver(this, mode) == id) SessionPrefs.setLinuxDriver(this, mode, "")
-            }
-        } else {
-            val td = TurnipDriver(this)
-            if (id in TurnipDriver.BUNDLED) td.hideBundled(id) else td.remove(id)
-            if (SessionPrefs.androidDriver(this) == id) SessionPrefs.setAndroidDriver(this, TurnipDriver.AUTO)
-        }
-        TurnipReleases.forget(this, id)
-        android.widget.Toast.makeText(this, "Deleted ${id}", android.widget.Toast.LENGTH_SHORT).show()
-        refreshDrivers()
-    }
-
-    /** The download entries and the refresh line, from what the last check found. */
-    private fun refreshReleaseRows() {
-        val check = TurnipReleases.cached(this)
-        val lm = LinuxVulkanDriverManager(this)
-        val td = TurnipDriver(this)
-        fun rows(linux: Boolean) = check?.assets.orEmpty()
-            .filter { it.linux == linux }
-            .filter { a -> TurnipReleases.installedId(this, a) { id -> if (linux) lm.isInstalled(id) else td.isInstalled(id) } == null }
-            .map { a ->
-                val mb = "%.1f MB".format(a.size / 1_048_576.0)
-                com.droiddeck.launcher.ui.DownloadRow(a.name, "${a.source} ${a.tag}", "${a.label} · $mb", releaseProgress[a.name])
-            }
-        linuxDownloads = rows(linux = true)
-        androidDownloads = rows(linux = false)
-        if (!releaseChecking) releaseStatus = when (check) {
-            null -> "Not checked yet - tap refresh to look for new drivers"
-            else -> "Latest: " + check.latest.joinToString(" · ") { "${it.first} ${it.second}" } +
-                (if (check.failed.isEmpty()) "" else " · ${check.failed.joinToString()} unreachable") +
-                " · checked ${ago(check.checkedAt)}"
-        }
-    }
-
-    private fun ago(t: Long): String {
-        val m = ((System.currentTimeMillis() - t) / 60_000).coerceAtLeast(0)
-        return when {
-            m < 1 -> "just now"
-            m < 60 -> "$m min ago"
-            m < 48 * 60 -> "${m / 60} h ago"
-            else -> "${m / (24 * 60)} days ago"
-        }
-    }
-
-    /** Only when the user taps refresh: nothing goes online on its own. */
-    private fun checkLatestTurnip() {
-        if (releaseChecking) return
-        releaseChecking = true
-        releaseStatus = "Checking Banners-Turnip and WinNative…"
-        Thread({
-            val problem = try { TurnipReleases.refresh(this); null } catch (e: Exception) {
-                Log.w(TAG, "latest Turnip check", e); e.message ?: "check failed"
-            }
-            ui.post {
-                releaseChecking = false
-                refreshReleaseRows()
-                if (problem != null) releaseStatus = "Couldn't check: $problem"
-            }
-        }, "turnip-release-check").start()
-    }
-
-    /** Download one release driver and import it through the same importer a picked zip uses. */
-    private fun downloadReleaseDriver(assetName: String) {
-        val asset = TurnipReleases.cached(this)?.assets?.firstOrNull { it.name == assetName } ?: return
-        if (releaseProgress.containsKey(assetName)) return
-        releaseProgress[assetName] = 0
-        refreshReleaseRows()
-        Thread({
-            var file: java.io.File? = null
-            val problem = try {
-                file = TurnipReleases.download(this, asset) { pct ->
-                    ui.post { releaseProgress[assetName] = pct; refreshReleaseRows() }
-                }
-                val uri = Uri.fromFile(file)
-                val id = if (asset.linux) LinuxVulkanDriverManager(this).installDriver(uri, asset.name)
-                         else TurnipDriver(this).installFromZip(uri, asset.name)
-                TurnipReleases.recordDownload(this, asset, id)
-                null
-            } catch (e: IllegalArgumentException) {
-                e.message
-            } catch (e: Exception) {
-                Log.w(TAG, "release driver download", e)
-                "Download failed: ${e.message}"
-            } finally {
-                file?.let { com.droiddeck.launcher.core.FileUtils.delete(it) }
-            }
-            ui.post {
-                releaseProgress.remove(assetName)
-                android.widget.Toast.makeText(
-                    this, problem ?: "Installed ${asset.name.removeSuffix(".zip")} - pick it in the menu",
-                    android.widget.Toast.LENGTH_LONG,
-                ).show()
-                refreshDrivers()
-            }
-        }, "download-turnip").start()
-    }
-
-    private fun displayNameOf(uri: Uri): String? = if (uri.scheme == "file") uri.lastPathSegment else try {
-        contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)
-            ?.use { c -> if (c.moveToFirst()) c.getString(0) else null }
-    } catch (e: Exception) {
-        null
-    }
-
     /** The two masks as the dialog shows them; an empty stored list shows as every core ticked. */
     private fun refreshCores() {
         clientOverride = SessionPrefs.clientCpusOverride(this)
@@ -1264,11 +933,8 @@ class MainActivity : ComponentActivity() {
         refreshPhantomStatus()
     }
 
-    private fun refreshProtons() {
-        protonRows = ProtonExtras.tools.map { ProtonRow(it.id, it.name, ProtonExtras.installed(this, it), ProtonExtras.queued(this, it)) }
-    }
-
     private fun refresh() {
+        if (!busy && LinuxRuntimeInstaller.isInstalling()) followInstall { LinuxRuntimeInstaller.attach(it) }
         desktopInstalled = DesktopCatalog.desktopInstalled(this)
         offlineAccount = OfflineMode.account(this)
         offline = OfflineMode.enabled(this)
@@ -1354,17 +1020,28 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun install(release: LinuxRuntimeInstaller.Release) {
+        // The service keeps the process alive if the user switches away; this screen joins the
+        // same install (or starts it, if it gets there first) to show the progress.
+        com.droiddeck.launcher.runtime.RuntimeInstallService.start(this, release)
+        followInstall { listener -> LinuxRuntimeInstaller.install(this, release, listener) }
+    }
+
+    /**
+     * Shows an install's progress until it ends. [run] either starts one or joins the one already
+     * running (null: nothing was), which is how a launcher rebuilt mid-install picks it back up.
+     */
+    private fun followInstall(run: (LinuxRuntimeInstaller.ProgressListener) -> Boolean?) {
         busy = true
         failed = false
         stage = "Starting…"
         percent = -1
         Thread({
-            val ok = LinuxRuntimeInstaller.install(this, release) { s, p ->
+            val ok = run(LinuxRuntimeInstaller.ProgressListener { s, p ->
                 ui.post { stage = s; percent = p }
-            }
+            })
             ui.post {
                 busy = false
-                failed = !ok
+                if (ok != null) failed = !ok
                 refresh()
             }
         }, "install").start()
