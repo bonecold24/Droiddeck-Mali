@@ -4,6 +4,7 @@ import android.content.Context;
 import android.util.Log;
 
 
+import com.droiddeck.launcher.core.ArchivePaths;
 import com.droiddeck.launcher.core.Downloader;
 import com.droiddeck.launcher.core.FileUtils;
 
@@ -284,12 +285,10 @@ public final class LinuxRuntimeInstaller {
                 new BufferedInputStream(new FileInputStream(archive), 1 << 16));
              TarArchiveInputStream tar = new TarArchiveInputStream(in)) {
             TarArchiveEntry entry;
-            String base = destination.getCanonicalPath() + File.separator;
             while ((entry = tar.getNextTarEntry()) != null) {
-                File file = new File(destination, entry.getName());
                 // Refuse anything that would land outside the runtime directory.
-                if (!(file.getCanonicalPath() + (entry.isDirectory() ? File.separator : "")).startsWith(base)
-                        && !file.getCanonicalPath().equals(destination.getCanonicalPath())) {
+                File file = ArchivePaths.inside(destination, entry.getName());
+                if (file == null) {
                     Log.w(TAG, "skipping entry outside the rootfs: " + entry.getName());
                     continue;
                 }
@@ -306,7 +305,13 @@ public final class LinuxRuntimeInstaller {
                 } else if (entry.isLink()) {
                     // A hard link to an earlier entry. Link where the filesystem allows it and
                     // fall back to a copy, which costs space but always works.
-                    File target = new File(destination, entry.getLinkName());
+                    // The target is checked too: a link to "../../shared_prefs/x" would pull a
+                    // file from outside the rootfs into it.
+                    File target = ArchivePaths.inside(destination, entry.getLinkName());
+                    if (target == null) {
+                        Log.w(TAG, "skipping hard link outside the rootfs: " + entry.getLinkName());
+                        continue;
+                    }
                     file.delete();
                     try {
                         Files.createLink(file.toPath(), target.toPath());
