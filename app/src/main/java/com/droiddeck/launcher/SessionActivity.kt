@@ -360,8 +360,6 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
                     if (SessionState.suspended) SessionPausedOverlay(
                         title = pausedTitle(),
                         onResume = { SessionService.resume(this@SessionActivity) },
-                        // As the drawer's Stop does; stopping resumes the paused processes first.
-                        onStop = { SessionService.stop(this@SessionActivity); finish() },
                     )
                 }
             }

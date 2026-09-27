@@ -324,17 +324,13 @@ private fun StageRow(label: String, state: StageMark, detail: String, percent: I
     }
 }
 
-/**
- * A session paused in the background (the Manual background behaviour): what is paused, that it
- * picks up where it left off, and the two ways on - Resume first, for the pad.
- */
+/** A session paused in the background, ready to pick up where it left off. */
 @Composable
-fun SessionPausedOverlay(title: String = "Steam is paused", onResume: () -> Unit, onStop: (() -> Unit)? = null) {
+fun SessionPausedOverlay(title: String = "Steam is paused", onResume: () -> Unit) {
     val colors = MaterialTheme.colorScheme
     val pal = LocalPalette.current
     val interactionSource = remember { MutableInteractionSource() }
     val resumeFocus = remember { FocusRequester() }
-    var confirmStop by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) {
         androidx.compose.runtime.withFrameNanos { }
         runCatching { resumeFocus.requestFocus() }
@@ -355,41 +351,12 @@ fun SessionPausedOverlay(title: String = "Steam is paused", onResume: () -> Unit
                 Icon(Icons.Filled.Pause, contentDescription = null, tint = colors.onBackground, modifier = Modifier.size(30.dp))
             }
             Text(title, fontSize = 28.sp, fontWeight = FontWeight.Bold, color = colors.onBackground, textAlign = TextAlign.Center)
-            Text(
-                "It stopped while DroidDeck was in the background and picks up where it left off.",
-                fontSize = 15.sp, lineHeight = 21.sp, color = colors.onSurfaceVariant, textAlign = TextAlign.Center,
+            PrimaryButton(
+                "Resume",
+                modifier = Modifier.padding(top = 14.dp).focusRequester(resumeFocus).controllerConfirm(onClick = onResume),
+                onClick = onResume,
             )
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.padding(top = 14.dp)) {
-                PrimaryButton("Resume", modifier = Modifier.focusRequester(resumeFocus).controllerConfirm(onClick = onResume), onClick = onResume)
-                if (onStop != null) SecondaryButton("Stop session") { confirmStop = true }
-            }
         }
-    }
-    if (confirmStop && onStop != null) {
-        val cancelFocus = remember { FocusRequester() }
-        val cancel = { confirmStop = false }
-        val stop = { confirmStop = false; onStop() }
-        LaunchedEffect(Unit) {
-            androidx.compose.runtime.withFrameNanos { }
-            runCatching { cancelFocus.requestFocus() }
-        }
-        // Opens on Cancel, as the menu's does: a stray A press never ends the session.
-        AlertDialog(
-            onDismissRequest = cancel,
-            modifier = Modifier.controllerBack(onBack = cancel),
-            title = { Text("Stop session?") },
-            text = { Text("Everything running in this session closes.") },
-            confirmButton = {
-                TextButton(
-                    onClick = stop,
-                    modifier = Modifier.controllerConfirm(onClick = stop),
-                    colors = ButtonDefaults.textButtonColors(contentColor = colors.error),
-                ) { Text("Stop") }
-            },
-            dismissButton = {
-                TextButton(onClick = cancel, modifier = Modifier.focusRequester(cancelFocus).controllerConfirm(onClick = cancel)) { Text("Cancel") }
-            },
-        )
     }
 }
 
@@ -573,13 +540,6 @@ fun SessionDrawer(open: Boolean, page: Int, controllerActive: Boolean, onPageCha
                         host.open = null; onPageChange((page + 1) % DRAWER_PAGES)
                     }
                 }
-                // The icons alone never said which page this is (a short sheet says it in the tab row's place).
-                if (!short) Text(
-                    "${drawerPageTitles[page]} · ${page + 1} of $DRAWER_PAGES", fontSize = 13.sp, fontWeight = FontWeight.SemiBold,
-                    color = colors.onSurfaceVariant, textAlign = TextAlign.Center,
-                    modifier = Modifier.fillMaxWidth().padding(top = 2.dp, bottom = 4.dp),
-                )
-
                 Column(
                     modifier = Modifier.weight(1f).fillMaxWidth().verticalScroll(pageScroll[page]),
                 ) { CompositionLocalProvider(LocalChipMinWidth provides 120.dp) {
