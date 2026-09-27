@@ -81,6 +81,8 @@ object DesktopCatalog {
     fun install(context: Context, entry: Entry, listener: LinuxRuntimeInstaller.ProgressListener?): String? {
         val root = LinuxRuntime.rootDir(context)
         if (!root.isDirectory) return "The Linux runtime is not installed"
+        // Every catalog row carries a sha256; one without is refused rather than trusted.
+        if (entry.sha256.isEmpty()) return "The catalog has no checksum for ${entry.name}"
         val download = File(context.cacheDir, "pkg-${entry.id}.download")
         try {
             listener?.onProgress("Downloading ${entry.name}", 0)
@@ -88,11 +90,9 @@ object DesktopCatalog {
                 listener?.onProgress("Downloading ${entry.name}", if (f < 0) -1 else Math.round(f * 100f))
             }
             if (!ok) return "Download failed"
-            if (entry.sha256.isNotEmpty()) {
-                listener?.onProgress("Verifying", -1)
-                val actual = LinuxRuntimeInstaller.sha256(download)
-                if (!entry.sha256.equals(actual, ignoreCase = true)) return "Checksum mismatch - nothing was changed"
-            }
+            listener?.onProgress("Verifying", -1)
+            val actual = LinuxRuntimeInstaller.sha256(download)
+            if (!entry.sha256.equals(actual, ignoreCase = true)) return "Checksum mismatch - nothing was changed"
             listener?.onProgress("Installing ${entry.name}", -1)
             when (entry.kind) {
                 "appimage" -> {

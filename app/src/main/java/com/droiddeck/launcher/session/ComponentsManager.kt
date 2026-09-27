@@ -629,6 +629,8 @@ object ComponentsManager {
                 val a = assets.getJSONObject(i)
                 val name = a.optString("name")
                 if (!name.endsWith(".wcp")) continue
+                // Only packages GitHub has a sha256 for are offered: the download is checked against it.
+                if (!a.optString("digest").matches(Regex("(?i)sha256:[0-9a-f]{64}"))) continue
                 items.put(JSONObject().put("file", name).put("comp", comp).put("release", tag)
                     .put("url", a.optString("browser_download_url")).put("size", a.optLong("size")).put("digest", a.optString("digest")))
             }
@@ -650,13 +652,12 @@ object ComponentsManager {
     /** Downloads a catalog item into storage, verifying the release's sha256 and the package type. */
     fun download(context: Context, item: CatalogItem, progress: (Int) -> Unit): Package {
         require(item.url.startsWith("https://github.com/$NIGHTLIES/releases/download/")) { "Downloads come only from the Nightlies releases" }
+        require(item.digest.matches(Regex("(?i)sha256:[0-9a-f]{64}"))) { "This package list predates checksums - refresh it and try again" }
         val dest = File(packagesDir(context), safeName(item.file))
         val part = File(dest.parentFile, dest.name + ".part")
         part.delete()
         check(Downloader.downloadFile(item.url, part, false) { f -> progress(if (f < 0) -1 else (f * 100).toInt().coerceIn(0, 100)) }) { "Download failed" }
-        if (item.digest.startsWith("sha256:")) {
-            if (!sha256(part).equals(item.digest.substringAfter(':'), true)) { part.delete(); error("Checksum mismatch") }
-        }
+        if (!sha256(part).equals(item.digest.substringAfter(':'), true)) { part.delete(); error("Checksum mismatch") }
         val info = runCatching { packageInfo(part) }.getOrElse { part.delete(); throw it }
         synchronized(lock) { part.renameTo(dest) }
         return info.copy(file = dest.name)
