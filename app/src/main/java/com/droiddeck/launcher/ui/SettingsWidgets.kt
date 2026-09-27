@@ -151,7 +151,7 @@ internal fun TabStrip(
                         .border(2.dp, if (!hot) Color.Transparent else if (on) colors.onBackground else pal.signal, tabShape)
                         .hoverable(src).clickable(interactionSource = src, indication = null, role = Role.Tab, onClick = pick)
                         .controllerConfirm(onClick = pick)
-                        .padding(horizontal = 16.dp, vertical = 9.dp),
+                        .padding(horizontal = 16.dp, vertical = 12.dp),
                 )
             }
         }
@@ -303,6 +303,7 @@ fun ValueChip(text: String, open: Boolean, enabled: Boolean = true, modifier: Mo
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween,
         modifier = modifier
             .widthIn(min = LocalChipMinWidth.current)
+            .heightIn(min = 44.dp)
             .clip(RoundedCornerShape(10.dp))
             .background(colors.surfaceVariant)
             .border(1.dp, edge, RoundedCornerShape(10.dp))

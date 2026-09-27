@@ -349,10 +349,10 @@ fun SessionDrawer(open: Boolean, page: Int, controllerActive: Boolean, onPageCha
                             }
                             SettingsGroup("Keyboard") {
                                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth().padding(8.dp)) {
-                                    DrawerOutlineButton("Hardware", modifier = Modifier.weight(1f).height(42.dp).then(focus.track(page, "hardware"))) {
+                                    DrawerOutlineButton("Hardware", modifier = Modifier.weight(1f).height(48.dp).then(focus.track(page, "hardware"))) {
                                         host.open = null; a.onHardwareKeyboard()
                                     }
-                                    DrawerOutlineButton("Android", modifier = Modifier.weight(1f).height(42.dp).then(focus.track(page, "android"))) {
+                                    DrawerOutlineButton("Android", modifier = Modifier.weight(1f).height(48.dp).then(focus.track(page, "android"))) {
                                         host.open = null; a.onKeyboard()
                                     }
                                 }

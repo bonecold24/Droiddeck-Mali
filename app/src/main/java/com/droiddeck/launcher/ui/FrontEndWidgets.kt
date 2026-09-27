@@ -111,7 +111,7 @@ internal fun BackLink(label: String, compact: Boolean = false, onClick: () -> Un
     val shape = RoundedCornerShape(22.dp)
     Row(
         verticalAlignment = Alignment.CenterVertically,
-        modifier = Modifier.paneItem("back:$label").heightIn(min = if (compact) 36.dp else 44.dp)
+        modifier = Modifier.paneItem("back:$label").heightIn(min = if (compact) 44.dp else 48.dp)
             .clip(shape)
             .background(if (hot) pal.signal.copy(alpha = 0.14f) else Color.White.copy(alpha = 0.04f))
             .border(2.dp, if (hot) pal.signal else Color.Transparent, shape)
@@ -166,6 +166,8 @@ internal fun PrimaryButton(
     Row(
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp),
         modifier = modifier.then(track)
+            // 48dp to touch on a handheld; compact rows keep 44.
+            .heightIn(min = if (compact) 44.dp else 48.dp)
             .then(if (frontFocus != null) Modifier.focusRequester(frontFocus.primary).onFocusChanged { if (it.isFocused) frontFocus.last = FrontFocus.PRIMARY } else Modifier)
             .graphicsLayer { scaleX = scale; scaleY = scale; shadowElevation = if (enabled) lift.dp.toPx() else 0f; shape = Shape12; clip = false; ambientShadowColor = pal.signal; spotShadowColor = pal.signal }
             .clip(Shape12)
@@ -202,7 +204,8 @@ internal fun SecondaryButton(text: String, enabled: Boolean = true, compact: Boo
     val edge by animateColorAsState(if (hot) pal.signal else pal.line2, Motion.tw(250), label = "secEdge")
     val fill by animateColorAsState(if (hot) pal.signal.copy(alpha = 0.14f) else Color.White.copy(alpha = 0.03f), Motion.tw(250), label = "secFill")
     Box(
-        modifier = modifier.paneItem("btn:$text").downToFirstTile().graphicsLayer { scaleX = scale; scaleY = scale }.clip(Shape12).background(fill).border(1.dp, edge, Shape12)
+        contentAlignment = Alignment.Center,
+        modifier = modifier.paneItem("btn:$text").downToFirstTile().heightIn(min = if (compact) 44.dp else 48.dp).graphicsLayer { scaleX = scale; scaleY = scale }.clip(Shape12).background(fill).border(1.dp, edge, Shape12)
             .alpha(if (enabled) 1f else 0.5f)
             .hoverable(src).clickable(interactionSource = src, indication = LocalIndication.current, enabled = enabled, onClick = onClick)
             .controllerConfirm(enabled = enabled, onClick = onClick)
@@ -211,7 +214,7 @@ internal fun SecondaryButton(text: String, enabled: Boolean = true, compact: Boo
 }
 
 @Composable
-internal fun Cog(size: androidx.compose.ui.unit.Dp = 42.dp, onClick: () -> Unit) {
+internal fun Cog(size: androidx.compose.ui.unit.Dp = 48.dp, onClick: () -> Unit) {
     val colors = MaterialTheme.colorScheme
     val src = remember { MutableInteractionSource() }
     val hot = rememberHot(src)
