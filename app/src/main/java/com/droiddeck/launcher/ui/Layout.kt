@@ -18,6 +18,3 @@ val LocalNarrowPane = compositionLocalOf { false }
 @Composable
 internal fun isNarrowScreen(): Boolean = LocalConfiguration.current.screenWidthDp < 600
 
-/** Too short a screen for a hero banner: a landscape phone, a 4:3 or a near-square handheld. */
-@Composable
-internal fun isShortScreen(): Boolean = LocalConfiguration.current.screenHeightDp < 440

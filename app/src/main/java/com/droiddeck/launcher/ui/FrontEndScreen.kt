@@ -260,9 +260,9 @@ internal object Motion {
 private val Shape10 = RoundedCornerShape(10.dp)
 private val Shape12 = RoundedCornerShape(12.dp)
 
-private fun hueOf(name: String) = (name.hashCode().toUInt() % 360u).toFloat()
+internal fun hueOf(name: String) = (name.hashCode().toUInt() % 360u).toFloat()
 private fun tint(h: Float, s: Float = 0.7f, v: Float = 0.58f) = Color.hsv(h, s, v)
-private fun artBrush(h: Float) = Brush.linearGradient(listOf(tint(h), tint((h + 32f) % 360f, 0.65f, 0.30f), tint((h + 64f) % 360f, 0.6f, 0.14f)))
+internal fun artBrush(h: Float) = Brush.linearGradient(listOf(tint(h), tint((h + 32f) % 360f, 0.65f, 0.30f), tint((h + 64f) % 360f, 0.6f, 0.14f)))
 
 @Composable
 internal fun Rise(i: Int, modifier: Modifier = Modifier, content: @Composable () -> Unit) {
@@ -815,6 +815,11 @@ private fun Content(
         }
         return
     }
+    // Steam is a full-bleed wall of the library with Play over it.
+    if (selected == "steam") {
+        SteamHome(s, a, modifier)
+        return
+    }
     // The Games tab lays out its own list and detail.
     if (selected == "games" || selected.startsWith("app:")) {
         GamesPage(s, a, selected, onSelect, modifier)
@@ -839,57 +844,6 @@ private fun Content(
                         )
                     })
                 }
-            }
-            selected == "steam" -> {
-                // Most recently played first; Steam's own LastPlayed, games never played keep their order.
-                val games = remember(s.steamGames) { s.steamGames.sortedByDescending { it.lastPlayed } }
-                val recent = games.firstOrNull { it.lastPlayed > 0L }
-                val heroHeight = if (LocalConfiguration.current.screenHeightDp < 480) 150.dp else 180.dp
-                val short = isShortScreen()
-                // A small screen keeps Launch by the game; Open Steam moves to the header and Desktop
-                // UI and Steam's settings behind its ⋯.
-                val condensed = narrow || short
-                val host = rememberMenuHost()
-                Rise(0) {
-                    PageHeader("Steam") {
-                        RuntimeChip(s)
-                        if (condensed && recent != null) {
-                            Spacer(Modifier.weight(1f))
-                            SecondaryButton("Open Steam", enabled = !s.busy, compact = true, onClick = a.onPlay)
-                            SteamMoreMenu(s, a, host)
-                        }
-                    }
-                }
-                if (recent != null) Rise(2) {
-                    if (short) ContinueStrip(recent, s) { a.onSteamGame(recent) }
-                    else GameHero(recent, Modifier.fillMaxWidth().heightIn(min = heroHeight)) {
-                        Text("CONTINUE", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 1.5.sp, color = LocalPalette.current.signal)
-                        Text(recent.name, fontSize = if (narrow) 24.sp else 28.sp, fontWeight = FontWeight.Bold, color = colors.onBackground, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        Text(
-                            listOfNotNull(lastPlayedText(recent.lastPlayed), libraryLabel(recent.library)).joinToString(" · "),
-                            fontSize = 13.sp, color = colors.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis,
-                        )
-                        Spacer(Modifier.height(8.dp))
-                        Actions {
-                            PrimaryButton("Launch", enabled = s.ready && !s.busy, main = true) { a.onSteamGame(recent) }
-                            if (!condensed) {
-                                SecondaryButton("Open Steam", enabled = !s.busy, onClick = a.onPlay)
-                                SecondaryButton("Desktop UI", enabled = !s.busy, onClick = a.onPlayDesktopUi)
-                                Cog(a.onSteamSettings)
-                            }
-                        }
-                    }
-                } else Rise(2) {
-                    Actions {
-                        // Enabled without a runtime: the session's loading screen installs it first.
-                        PrimaryButton("Play", enabled = !s.busy, main = true, onClick = a.onPlay)
-                        SecondaryButton("Steam Desktop UI", enabled = !s.busy, onClick = a.onPlayDesktopUi)
-                        Cog(a.onSteamSettings)
-                    }
-                }
-                Rise(4) { SectionTitle("Installed", "${games.size} game${if (games.size == 1) "" else "s"}") }
-                if (games.isEmpty()) Rise(5) { Note("No games installed.") }
-                else Rise(5, Modifier.fillMaxWidth()) { ArtGrid(games.map { g -> Tile(g.name, null, g.art, "steam:${g.appId}", null) { onSelect("app:${g.appId}") } }) }
             }
             selected == "desktop" -> {
                 val installed = s.emulators.filter { it.installed }
@@ -1676,74 +1630,11 @@ private fun PageHeader(title: String, trailing: @Composable RowScope.() -> Unit 
 
 /** Whether Steam can start, said where Play is rather than only in Setup. */
 @Composable
-private fun RuntimeChip(s: FrontEndState) = when {
+internal fun RuntimeChip(s: FrontEndState) = when {
     s.busy -> Chip(if (s.percent >= 0) "${s.stage} · ${s.percent}%" else s.stage, ok = false)
     !s.ready -> Chip("Runtime installs on first Play", ok = false)
     s.available != null && s.available != s.installed -> Chip("Runtime update available", ok = false)
     else -> Chip("● Runtime ready", ok = true)
-}
-
-/** The hero cut to one line for a short screen: the art, the game and Launch. */
-@Composable
-private fun ContinueStrip(g: Library.SteamGame, s: FrontEndState, onLaunch: () -> Unit) {
-    val colors = MaterialTheme.colorScheme
-    val pal = LocalPalette.current
-    Box(modifier = Modifier.fillMaxWidth().heightIn(min = 72.dp).clip(Shape14).background(artBrush(hueOf(g.name)))) {
-        val image = g.hero ?: g.art
-        if (image != null) AsyncImage(
-            model = image, contentDescription = null, contentScale = ContentScale.Crop,
-            modifier = Modifier.matchParentSize().then(if (g.hero == null) Modifier.blur(24.dp) else Modifier),
-        )
-        Spacer(
-            Modifier.matchParentSize().background(
-                Brush.horizontalGradient(listOf(colors.background.copy(alpha = 0.9f), colors.background.copy(alpha = 0.55f))),
-            ),
-        )
-        Row(
-            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp),
-            modifier = Modifier.fillMaxWidth().padding(start = 10.dp, end = 12.dp, top = 9.dp, bottom = 9.dp),
-        ) {
-            Box(Modifier.width(36.dp).aspectRatio(2f / 3f).clip(RoundedCornerShape(6.dp)).background(artBrush(hueOf(g.name)))) {
-                if (g.art != null) AsyncImage(model = g.art, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.matchParentSize())
-            }
-            Column(modifier = Modifier.weight(1f)) {
-                val span = lastPlayedText(g.lastPlayed)?.removePrefix("Last played ")
-                Text(
-                    listOfNotNull("CONTINUE", span?.uppercase()).joinToString(" · "),
-                    fontSize = 12.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 1.2.sp, color = pal.signal,
-                    maxLines = 1, overflow = TextOverflow.Ellipsis,
-                )
-                Text(g.name, fontSize = 17.sp, fontWeight = FontWeight.SemiBold, color = colors.onBackground, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            }
-            PrimaryButton("Launch", enabled = s.ready && !s.busy, main = true, compact = true, onClick = onLaunch)
-        }
-    }
-}
-
-/** Desktop UI and Steam's settings, behind one button where the header has no room for both. */
-@Composable
-private fun SteamMoreMenu(s: FrontEndState, a: FrontEndActions, host: MenuHost) {
-    val colors = MaterialTheme.colorScheme
-    val pal = LocalPalette.current
-    val src = remember { MutableInteractionSource() }
-    val hot = rememberHot(src)
-    val open = host.open == "steam-more"
-    val toggle: () -> Unit = { host.open = if (host.open == "steam-more") null else "steam-more" }
-    Box {
-        Box(
-            contentAlignment = Alignment.Center,
-            modifier = Modifier.paneItem("steam-more").size(40.dp).clip(Shape12)
-                .background(if (hot || open) pal.signal.copy(alpha = 0.14f) else Color.White.copy(alpha = 0.03f))
-                .border(if (hot) 2.dp else 1.dp, if (hot || open) pal.signal else pal.line2, Shape12)
-                .hoverable(src).clickable(interactionSource = src, indication = LocalIndication.current, role = Role.Button, onClick = toggle)
-                .controllerConfirm(onClick = toggle)
-                .semantics { contentDescription = "More Steam options" },
-        ) { Icon(Icons.Filled.MoreHoriz, contentDescription = null, tint = colors.onBackground, modifier = Modifier.size(20.dp)) }
-        AnchoredMenu(open, onDismiss = { if (host.open == "steam-more") host.open = null }, title = "Steam") { first ->
-            MenuItem("Steam desktop UI", checked = false, enabled = !s.busy, focusRequester = first) { host.open = null; a.onPlayDesktopUi() }
-            MenuItem("Steam session settings", checked = false) { host.open = null; a.onSteamSettings() }
-        }
-    }
 }
 
 /** "Last played 3 days ago" from Steam's unix seconds; null for a game never played. */
@@ -1880,7 +1771,7 @@ internal fun SecondaryButton(text: String, enabled: Boolean = true, compact: Boo
 }
 
 @Composable
-private fun Cog(onClick: () -> Unit) {
+internal fun Cog(size: androidx.compose.ui.unit.Dp = 42.dp, onClick: () -> Unit) {
     val colors = MaterialTheme.colorScheme
     val src = remember { MutableInteractionSource() }
     val hot = rememberHot(src)
@@ -1889,9 +1780,9 @@ private fun Cog(onClick: () -> Unit) {
     val edge by animateColorAsState(if (hot) pal.signal else pal.line2, Motion.tw(250), label = "cogEdge")
     Box(
         contentAlignment = Alignment.Center,
-        modifier = Modifier.paneItem("cog").downToFirstTile().size(42.dp).clip(Shape12).background(Color.White.copy(alpha = 0.03f)).border(1.dp, edge, Shape12)
+        modifier = Modifier.paneItem("cog").downToFirstTile().size(size).clip(if (size > 48.dp) Shape14 else Shape12).background(Color.White.copy(alpha = 0.03f)).border(1.dp, edge, if (size > 48.dp) Shape14 else Shape12)
             .hoverable(src).clickable(interactionSource = src, indication = LocalIndication.current, onClick = onClick),
-    ) { Icon(Icons.Filled.Settings, "Settings", tint = if (hot) pal.signal else colors.onBackground, modifier = Modifier.size(18.dp).rotate(rot)) }
+    ) { Icon(Icons.Filled.Settings, "Settings", tint = if (hot) pal.signal else colors.onBackground, modifier = Modifier.size(if (size > 48.dp) 20.dp else 18.dp).rotate(rot)) }
 }
 
 @Composable
