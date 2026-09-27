@@ -741,6 +741,30 @@ class SessionService : Service() {
      * behind, still holding the Wayland socket and the audio server the next session needs. They
      * are our uid, so they are ours to kill.
      */
+    /**
+     * Every process of ours still running a program out of the Linux runtime once proot is gone.
+     * proot's --kill-on-exit and the tree sweep only reach what proot still traces; a tracee it
+     * lost - an Xwayland that aborted from one thread and then looped on a syscall proot's own
+     * seccomp filter, with no tracer left, answers ENOSYS - survives both, reparented to init,
+     * and wrote 9 GB of one line into the session log before anything killed it.
+     */
+    private fun killGuestLeftovers() {
+        val me = android.os.Process.myPid()
+        val rootfs = try { File(filesDir, "linuxfs").canonicalPath } catch (e: Exception) { return } + "/"
+        val procs = File("/proc").listFiles { f -> f.name.all { it.isDigit() } } ?: return
+        var killed = 0
+        for (proc in procs) {
+            val pid = proc.name.toIntOrNull() ?: continue
+            if (pid == me) continue
+            // Another uid's exe is not ours to read; a process already gone has none.
+            val exe = try { File(proc, "exe").canonicalPath } catch (e: Exception) { continue }
+            if (!exe.startsWith(rootfs)) continue
+            android.os.Process.killProcess(pid)
+            killed++
+        }
+        if (killed > 0) Log.w(TAG, "killed $killed guest process(es) proot no longer tracked")
+    }
+
     private fun killStragglers() {
         val me = android.os.Process.myPid()
         val procs = File("/proc").listFiles { f -> f.name.all { it.isDigit() } } ?: return
@@ -917,6 +941,7 @@ class SessionService : Service() {
                 Thread({
                     auxiliary.forEach { (pid, started) -> teardown(pid, started) }
                     if (prootPid > 1) teardown(prootPid)
+                    killGuestLeftovers()
                     finishSessionStop(status)
                 }, "session-teardown").start()
             } else {
