@@ -126,6 +126,10 @@
             android:name=".session.SessionService"
             android:exported="false"
             android:stopWithTask="false" />
+        <!-- Holds the process in the foreground while the Linux runtime downloads and unpacks. -->
+        <service
+            android:name=".runtime.RuntimeInstallService"
+            android:exported="false" />
         <!-- Hands a zipped session folder to the share sheet; nothing else is exposed. -->
         <provider
             android:name="androidx.core.content.FileProvider"

@@ -1354,8 +1354,12 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private fun install(release: LinuxRuntimeInstaller.Release) =
+    private fun install(release: LinuxRuntimeInstaller.Release) {
+        // The service keeps the process alive if the user switches away; this screen joins the
+        // same install (or starts it, if it gets there first) to show the progress.
+        com.droiddeck.launcher.runtime.RuntimeInstallService.start(this, release)
         followInstall { listener -> LinuxRuntimeInstaller.install(this, release, listener) }
+    }
 
     /**
      * Shows an install's progress until it ends. [run] either starts one or joins the one already
