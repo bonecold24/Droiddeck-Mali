@@ -289,7 +289,9 @@ object Library {
             "-C", "Dolphin.General.HotkeysRequireFocus=False", "-C", "Dolphin.Input.BackgroundInput=True",
             "-e", guestPath,
         )
-        "cemu" -> listOf("-g", guestPath)
+        // Full screen (LaunchSettings.cpp -f); the settings seed keeps the Getting Started
+        // dialog away (bannerlator-pad-defaults).
+        "cemu" -> listOf("-f", "-g", guestPath)
         // Full screen (CLI.cpp --fullscreen); the guide button leaves it for melonDS's menus and
         // comes back (HK_FullscreenToggle, bannerlator-pad-defaults).
         "melonds" -> listOf("-f", guestPath)
