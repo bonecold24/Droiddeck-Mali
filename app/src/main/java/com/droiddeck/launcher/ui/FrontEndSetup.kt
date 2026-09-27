@@ -209,8 +209,8 @@ internal fun SetupPanel(
                             ) { SecondaryButton(runtime, enabled = !s.busy, compact = true, onClick = a.onRuntime) }
                             CheckRow(
                                 if (limitBlocks) CheckState.WARN else CheckState.OK,
-                                if (limitBlocks) "Android may close Steam" else "Android process limit",
-                                if (limitBlocks) "“Restrict child processes” is on - it takes a minute to turn off" else PhantomProcessLimit.title(s.phantomProcessStatus),
+                                "Child-process limit",
+                                if (limitBlocks) "On · Android may close Steam. Turning it off takes a minute" else PhantomProcessLimit.title(s.phantomProcessStatus),
                             ) {
                                 if (limitBlocks) PrimaryButton(if (showLimitDetails) "Hide" else "Fix it", compact = true) { showLimitDetails = !showLimitDetails }
                                 else if (s.phantomProcessStatus != PhantomProcessStatus.NOT_APPLICABLE) {
@@ -337,7 +337,7 @@ private fun ToolGrid(s: FrontEndState, a: FrontEndActions) {
     val columns = if (LocalNarrowPane.current) 2 else 4
     val tools = listOf(
         ToolSpec(Icons.Outlined.Folder, "Files", "Browse and manage files", a.onFiles),
-        ToolSpec(Icons.Outlined.Extension, "Compatibility tools", "Install ARM64 Proton builds", a.onProtons),
+        ToolSpec(Icons.Outlined.Extension, "Proton versions", "Install ARM64 Proton builds", a.onProtons),
         ToolSpec(Icons.Outlined.Speed, "Performance", "CPU core assignment", a.onPerformance),
         ToolSpec(Icons.Outlined.VideogameAsset, "ROMs folder", s.romsDir ?: "Choose where emulator games are stored", a.onRoms),
     )
@@ -398,7 +398,7 @@ internal fun LaunchSettings(s: FrontEndState, a: FrontEndActions, host: MenuHost
     val columns = if (LocalNarrowPane.current) 2 else 3
     val controller = a.controller
     val cards = buildList<@Composable (Modifier) -> Unit> {
-        add { m -> SettingCard("Compatibility", "Proton & components", "card:components", m) { a.onComponents(true) } }
+        add { m -> SettingCard("Components", "FEX, DXVK, VKD3D", "card:components", m) { a.onComponents(true) } }
         add { m ->
             Box(m) {
                 SettingCard("Frame generation", s.frameGenLabel, "card:fg", Modifier.fillMaxSize()) {

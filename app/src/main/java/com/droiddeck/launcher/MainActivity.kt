@@ -365,7 +365,7 @@ class MainActivity : ComponentActivity() {
                                 val result = runCatching {
                                     kotlinx.coroutines.runBlocking { WirelessAdbFix.pair(this@MainActivity, host, port, code) }
                                 }
-                                val error = result.exceptionOrNull()?.let { it.localizedMessage ?: "Wireless ADB pairing failed" }
+                                val error = result.exceptionOrNull()?.let { it.localizedMessage ?: "Wireless debugging pairing failed" }
                                 ui.post { complete(error) }
                             }, "wireless-adb-pair").start()
                         },
@@ -378,7 +378,7 @@ class MainActivity : ComponentActivity() {
                         onWirelessAdbApply = { host, port, enabled, complete ->
                             Thread({
                                 val result = runCatching { WirelessAdbFix.setChildProcessLimit(this@MainActivity, host, port, enabled) }
-                                val error = result.exceptionOrNull()?.let { it.localizedMessage ?: "Wireless ADB command failed" }
+                                val error = result.exceptionOrNull()?.let { it.localizedMessage ?: "Wireless debugging command failed" }
                                 ui.post {
                                     if (error == null) refreshPhantomStatus()
                                     complete(error)
@@ -388,7 +388,7 @@ class MainActivity : ComponentActivity() {
                         onSetPhantomProcessLimit = { enabled, complete ->
                             Thread({
                                 val result = runCatching { WirelessAdbFix.setUsingSavedPairing(this@MainActivity, enabled) }
-                                val error = result.exceptionOrNull()?.let { it.localizedMessage ?: "Wireless ADB is unavailable" }
+                                val error = result.exceptionOrNull()?.let { it.localizedMessage ?: "Wireless debugging is unavailable" }
                                 ui.post {
                                     if (error == null) refreshPhantomStatus()
                                     complete(error)

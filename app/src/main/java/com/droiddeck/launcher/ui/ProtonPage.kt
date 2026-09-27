@@ -33,7 +33,7 @@ fun ProtonPage(
     val colors = MaterialTheme.colorScheme
     SettingsPage(
         host,
-        title = "Compatibility tools",
+        title = "Proton versions",
         eyebrow = "Setup",
         lede = "Download and install an ARM64 Proton build now, then select it per game in Steam > Properties > Compatibility.",
         onBack = onBack,
