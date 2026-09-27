@@ -313,6 +313,13 @@ object SessionPrefs {
         prefs(context).edit().putString("steamChannel", id).apply()
     }
 
+    /** Whether opening DroidDeck starts a Steam session instead of showing the front end. */
+    fun runSteamAtStartup(context: Context): Boolean = prefs(context).getBoolean("runSteamAtStartup", false)
+
+    fun setRunSteamAtStartup(context: Context, on: Boolean) {
+        prefs(context).edit().putBoolean("runSteamAtStartup", on).apply()
+    }
+
     /**
      * The folders of the user's own Windows games (one game per subfolder), any number of them
      * from anywhere on the device. The single folder an earlier build kept is carried in.
