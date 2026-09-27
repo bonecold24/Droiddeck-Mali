@@ -290,7 +290,7 @@ rm -f "${apk}.aligned" "${apk}.idsig"
 
 signature_output=$("${build_tools}/apksigner" verify --min-sdk-version 21 --verbose --print-certs "${apk}")
 printf '%s\n' "${signature_output}"
-if ! unzip -l "${apk}" | grep -qE 'META-INF/.*\.(SF|RSA|DSA)$'; then
+if ! unzip -l "${apk}" | grep -E 'META-INF/.*\.(SF|RSA|DSA)$' >/dev/null; then
     echo "APK signature check failed: JAR signature files are missing." >&2
     exit 1
 fi
