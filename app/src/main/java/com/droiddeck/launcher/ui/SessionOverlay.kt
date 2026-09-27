@@ -1,5 +1,18 @@
 package com.droiddeck.launcher.ui
 
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.runtime.produceState
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.Role
+import com.droiddeck.launcher.frontend.Library
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.offset
@@ -191,7 +204,6 @@ fun LoadingOverlay(
     title: String = "Starting Steam", steam: Boolean = true, onCancel: (() -> Unit)? = null,
 ) {
     val colors = MaterialTheme.colorScheme
-    val pal = LocalPalette.current
     val stages = remember(steam) { loadStages(steam) }
     var reached by remember { mutableStateOf(0) }
     LaunchedEffect(step, steam) {
@@ -199,128 +211,100 @@ fun LoadingOverlay(
         if (at > reached) reached = at
     }
     val active = reached.coerceAtMost(stages.lastIndex)
-    val stageRows: @Composable () -> Unit = {
-        stages.forEachIndexed { i, stage ->
-            StageRow(
-                label = stage.label,
-                state = when { i < active -> StageMark.DONE; i == active -> StageMark.ACTIVE; else -> StageMark.PENDING },
-                detail = if (percent >= 0 || readableStep(step)) step.replaceFirstChar { it.uppercase() } else stage.detail,
-                percent = percent,
-            )
-        }
+    val detail = if (percent >= 0 || readableStep(step)) step.replaceFirstChar { it.uppercase() } else stages[active].detail
+    val context = LocalContext.current
+    // The Steam tab's wall behind it, dimmed and slowed: starting Steam reads as the same place settling in.
+    val games by produceState(emptyList<Library.SteamGame>()) {
+        value = withContext(Dispatchers.IO) { runCatching { Library.steamGames(context).sortedByDescending { it.lastPlayed } }.getOrDefault(emptyList()) }
     }
-    androidx.compose.foundation.layout.BoxWithConstraints(
+    Box(
         modifier = Modifier
             .fillMaxSize()
             .background(colors.background)
             .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) {},
     ) {
-    // A 4:3, square or short screen has no room for the side-by-side layout: one column, the spinner
-    // beside the title, and the tip and Cancel along the bottom where they stay in view.
-    if (maxWidth < 600.dp || maxHeight < 400.dp) Column(modifier = Modifier.fillMaxSize().padding(horizontal = 24.dp, vertical = 20.dp)) {
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-            Box(contentAlignment = Alignment.Center, modifier = Modifier.size(48.dp)) {
-                if (!ended) CircularProgressIndicator(color = pal.signal, trackColor = pal.line, strokeWidth = 2.dp, modifier = Modifier.fillMaxSize())
-                Image(painterResource(R.drawable.logo), contentDescription = null, modifier = Modifier.size(32.dp))
-            }
-            Text(
-                if (ended) "The session ended" else title, fontSize = 22.sp, fontWeight = FontWeight.Bold, color = colors.onBackground,
-                maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f),
-            )
-            if (!ended && elapsed.isNotEmpty()) Text(elapsed.substringBefore(' '), fontSize = 14.sp, color = colors.onSurfaceVariant)
-        }
-        Column(modifier = Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()).padding(top = 12.dp)) {
-            if (ended) Text(step, color = colors.onSurfaceVariant, fontSize = 14.sp)
-            else stageRows()
-        }
-        if (!ended && (hint.isNotEmpty() || onCancel != null)) {
-            Box(Modifier.fillMaxWidth().height(1.dp).background(pal.line))
-            Row(
-                verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp),
-                modifier = Modifier.fillMaxWidth().padding(top = 10.dp),
-            ) {
-                Text(hint, fontSize = 13.sp, lineHeight = 18.sp, color = colors.onSurfaceVariant, maxLines = 3, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
-                if (onCancel != null) SecondaryButton("Cancel", compact = true, onClick = onCancel)
-            }
-        }
-    } else Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxSize()) {
-        Box(contentAlignment = Alignment.Center, modifier = Modifier.weight(0.4f).fillMaxHeight()) {
-            if (!ended) CircularProgressIndicator(
-                color = pal.signal, trackColor = pal.line, strokeWidth = 2.dp, modifier = Modifier.size(150.dp),
-            )
-            Image(painterResource(R.drawable.logo), contentDescription = null, modifier = Modifier.size(84.dp))
-        }
-        // Centred when it fits, scrolling when a long failure message does not.
-        Box(contentAlignment = Alignment.CenterStart, modifier = Modifier.weight(0.6f).fillMaxHeight()) {
-            Column(
-                modifier = Modifier.verticalScroll(rememberScrollState())
-                    .padding(start = 8.dp, end = 48.dp, top = 28.dp, bottom = 28.dp),
-            ) {
-                Text(
-                    if (ended) "The session ended" else title,
-                    color = colors.onBackground, fontSize = 28.sp, fontWeight = FontWeight.Bold,
+        CapsuleWall(games, driftMs = 65_000, modifier = Modifier.alpha(0.3f))
+        Box(
+            Modifier.fillMaxSize().drawBehind {
+                drawRect(
+                    Brush.radialGradient(
+                        0f to colors.background.copy(alpha = 0.94f),
+                        0.6f to colors.background.copy(alpha = 0.72f),
+                        1f to colors.background.copy(alpha = 0.55f),
+                        center = Offset(size.width / 2f, size.height * 0.46f), radius = maxOf(size.width, size.height) * 0.55f,
+                    ),
                 )
-                if (ended) {
-                    Text(step, color = colors.onSurfaceVariant, fontSize = 14.sp, modifier = Modifier.padding(top = 10.dp))
-                } else {
-                    if (elapsed.isNotEmpty()) Text(elapsed, color = colors.onSurfaceVariant, fontSize = 13.sp, modifier = Modifier.padding(top = 2.dp))
-                    Spacer(Modifier.height(16.dp))
-                    stageRows()
-                    if (hint.isNotEmpty()) Text(
-                        hint, color = colors.onSurfaceVariant, fontSize = 14.sp,
-                        modifier = Modifier.padding(top = 16.dp).widthIn(max = 480.dp)
-                            .clip(RoundedCornerShape(12.dp)).border(1.dp, pal.line2, RoundedCornerShape(12.dp))
-                            .padding(horizontal = 14.dp, vertical = 10.dp),
-                    )
-                    if (onCancel != null) Box(Modifier.padding(top = 16.dp)) { SecondaryButton("Cancel", onClick = onCancel) }
-                }
-            }
+            },
+        )
+        Box(Modifier.fillMaxSize().background(Brush.verticalGradient(0.7f to Color.Transparent, 1f to colors.background.copy(alpha = 0.95f))))
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            modifier = Modifier.align(Alignment.Center).verticalScroll(rememberScrollState()).padding(horizontal = 32.dp, vertical = 24.dp),
+        ) {
+            LogoThrobber(Modifier.width(if (ended) 88.dp else 110.dp), running = !ended)
+            Spacer(Modifier.height(30.dp))
+            Text(
+                if (ended) "The session ended" else title, fontSize = 20.sp, fontWeight = FontWeight.SemiBold,
+                color = colors.onBackground, textAlign = TextAlign.Center, maxLines = 2, overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                if (ended) step else detail, fontSize = 14.sp, lineHeight = 20.sp, color = colors.onSurfaceVariant, textAlign = TextAlign.Center,
+                maxLines = if (ended) 12 else 2, overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.padding(top = 6.dp).widthIn(max = 520.dp),
+            )
+            if (!ended) LoadSegments(stages.size, active, percent, Modifier.padding(top = 18.dp))
         }
-    }
+        if (!ended && hint.isNotEmpty()) Text(
+            hint, fontSize = 13.sp, lineHeight = 18.sp, color = colors.onSurfaceVariant.copy(alpha = 0.8f), textAlign = TextAlign.Center,
+            maxLines = 3, overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.align(Alignment.BottomCenter).padding(start = 120.dp, end = 120.dp, bottom = 28.dp),
+        )
+        if (!ended && onCancel != null) CancelHint(onCancel, Modifier.align(Alignment.BottomEnd).padding(end = 16.dp, bottom = 16.dp))
     }
 }
 
-private enum class StageMark { DONE, ACTIVE, PENDING }
-
+/** One segment per stage: done ones filled, the current one filling (or running, with no percent). */
 @Composable
-private fun StageRow(label: String, state: StageMark, detail: String, percent: Int) {
-    val colors = MaterialTheme.colorScheme
+private fun LoadSegments(count: Int, active: Int, percent: Int, modifier: Modifier = Modifier) {
     val pal = LocalPalette.current
-    val shape = RoundedCornerShape(14.dp)
-    Column(
-        modifier = Modifier.widthIn(max = 520.dp).fillMaxWidth()
-            .then(
-                if (state == StageMark.ACTIVE) Modifier.padding(vertical = 4.dp).clip(shape).background(colors.surface)
-                    .border(1.dp, pal.line, shape).padding(horizontal = 12.dp, vertical = 10.dp)
-                else Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-            ),
+    val track = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.12f)
+    val run = rememberInfiniteTransition(label = "segment")
+        .animateFloat(-0.4f, 1f, infiniteRepeatable(tween(1300, easing = FastOutSlowInEasing)), label = "run")
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        modifier = modifier.semantics { contentDescription = "Step ${active + 1} of $count" },
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            when (state) {
-                StageMark.DONE -> Box(contentAlignment = Alignment.Center, modifier = Modifier.size(24.dp).clip(CircleShape).background(pal.good.copy(alpha = 0.16f))) {
-                    Icon(Icons.Filled.Check, contentDescription = "Done", tint = pal.good, modifier = Modifier.size(15.dp))
-                }
-                StageMark.ACTIVE -> Box(contentAlignment = Alignment.Center, modifier = Modifier.size(24.dp).border(2.dp, pal.signal, CircleShape)) {
-                    Box(Modifier.size(9.dp).clip(CircleShape).background(pal.signal))
-                }
-                StageMark.PENDING -> Box(Modifier.size(24.dp).border(2.dp, pal.line2, CircleShape))
-            }
-            Text(
-                label, fontSize = 16.sp, modifier = Modifier.weight(1f),
-                fontWeight = if (state == StageMark.ACTIVE) FontWeight.SemiBold else FontWeight.Normal,
-                color = if (state == StageMark.PENDING) colors.onSurfaceVariant else colors.onBackground,
+        repeat(count) { i ->
+            Box(
+                Modifier.width(44.dp).height(3.dp).clip(RoundedCornerShape(2.dp))
+                    .background(if (i < active) pal.signal else track)
+                    .drawBehind {
+                        if (i != active) return@drawBehind
+                        if (percent >= 0) drawRect(pal.signal, size = Size(size.width * percent.coerceIn(0, 100) / 100f, size.height))
+                        else drawRect(pal.signal, topLeft = Offset(size.width * run.value, 0f), size = Size(size.width * 0.4f, size.height))
+                    },
             )
-            if (state == StageMark.ACTIVE && percent >= 0) Text("$percent%", fontSize = 14.sp, color = colors.onSurfaceVariant)
         }
-        if (state == StageMark.ACTIVE) {
-            Text(
-                detail, fontSize = 13.sp, color = colors.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.padding(start = 36.dp, top = 6.dp),
-            )
-            val bar = Modifier.padding(start = 36.dp, top = 8.dp).fillMaxWidth().height(4.dp)
-            if (percent >= 0) LinearProgressIndicator(progress = { percent / 100f }, modifier = bar, color = pal.signal, trackColor = pal.line)
-            else LinearProgressIndicator(modifier = bar, color = pal.signal, trackColor = pal.line)
+    }
+}
+
+/** Cancel as the pad's B, in the corner; a tap works too. */
+@Composable
+private fun CancelHint(onCancel: () -> Unit, modifier: Modifier = Modifier) {
+    val colors = MaterialTheme.colorScheme
+    val src = remember { MutableInteractionSource() }
+    val hot = src.collectIsHoveredAsState().value || src.collectIsFocusedAsState().value
+    Row(
+        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp),
+        modifier = modifier.heightIn(min = 44.dp).clip(RoundedCornerShape(22.dp))
+            .background(if (hot) colors.onBackground.copy(alpha = 0.08f) else Color.Transparent)
+            .hoverable(src).clickable(interactionSource = src, indication = LocalIndication.current, role = Role.Button, onClick = onCancel)
+            .padding(horizontal = 12.dp),
+    ) {
+        Box(contentAlignment = Alignment.Center, modifier = Modifier.size(20.dp).clip(CircleShape).background(colors.onBackground)) {
+            Text("B", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = colors.background)
         }
+        Text("Cancel", fontSize = 13.sp, color = colors.onSurfaceVariant)
     }
 }
 

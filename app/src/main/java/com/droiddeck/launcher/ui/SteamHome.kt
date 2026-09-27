@@ -116,19 +116,23 @@ internal fun SteamHome(s: FrontEndState, a: FrontEndActions, modifier: Modifier)
  * library draws the same wall in blank capsules, slower.
  */
 @Composable
-private fun CapsuleWall(games: List<Library.SteamGame>) {
+internal fun CapsuleWall(
+    games: List<Library.SteamGame>,
+    driftMs: Int = if (games.isEmpty()) 75_000 else 40_000,
+    modifier: Modifier = Modifier,
+) {
     val capW = 112.dp
     val capH = 168.dp
     val gap = 14.dp
     val transition = rememberInfiniteTransition(label = "wall")
     val drift = transition.animateFloat(
         0f, 1f,
-        infiniteRepeatable(tween(if (games.isEmpty()) 75_000 else 40_000, easing = LinearEasing)),
+        infiniteRepeatable(tween(driftMs, easing = LinearEasing)),
         label = "drift",
     )
     // Animations off in the system settings: a still wall.
     val still = Motion.scale == 0f
-    BoxWithConstraints(Modifier.fillMaxSize()) {
+    BoxWithConstraints(modifier.fillMaxSize()) {
         val wallW = maxWidth * 1.3f
         val wallH = maxHeight * 2.4f
         val columns = ((wallW + gap) / (capW + gap)).toInt() + 1

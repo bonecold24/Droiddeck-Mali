@@ -944,6 +944,14 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
             if (drawerOpen && !drawerControllerActive) sessionOverlay.requestFocus()
             drawerControllerActive = true
         }
+        // While the session starts, B is the loading screen's Cancel, as its corner says.
+        if (fromController && event.keyCode == KeyEvent.KEYCODE_BUTTON_B && ::loading.isInitialized && loading.visible && !loading.ended && !drawerOpen) {
+            if (event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0) {
+                SessionService.stop(this)
+                finish()
+            }
+            return true
+        }
         if (drawerOpen) {
             if (fromController && (event.keyCode == KeyEvent.KEYCODE_BUTTON_L1 || event.keyCode == KeyEvent.KEYCODE_BUTTON_R1)) {
                 if (event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0) {
