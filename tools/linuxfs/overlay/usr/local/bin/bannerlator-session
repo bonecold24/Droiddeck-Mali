@@ -19,7 +19,10 @@ if [ -n "${BL_LOG:-}" ] && [ -z "${BL_INSIDE:-}" ]; then
   if [ "$(stat -c %s "$BL_LOG" 2>/dev/null || echo 0)" -gt 8388608 ]; then
     mv -f "$BL_LOG" "$BL_LOG.1"
   fi
-  exec >>"$BL_LOG" 2>&1
+  # A guest looping on an error writes gigabytes in minutes (an Xwayland proot had lost track of
+  # managed 9 GB of one line in 19 min): the log keeps its first BL_LOG_CAP bytes and the rest is
+  # drained, not refused - a writer that filled it must not die of SIGPIPE.
+  exec > >({ head -c "${BL_LOG_CAP:-268435456}" >>"$BL_LOG"; cat >/dev/null; }) 2>&1
   echo "== bannerlator-session $(date) mode=$mode $*"
   echo "== uid=$(id -u) size=${BL_WIDTH:-?}x${BL_HEIGHT:-?} fps=${BL_FPS:-0} icd=${VK_ICD_FILENAMES:-none}"
   echo "== gamescope: $(gamescope --version 2>&1 | head -1) at $(command -v gamescope)"
