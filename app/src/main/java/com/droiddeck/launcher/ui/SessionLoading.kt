@@ -4,6 +4,9 @@ import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.runtime.produceState
+import androidx.compose.runtime.remember
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
@@ -125,6 +128,11 @@ private fun readableStep(step: String): Boolean {
 fun LoadingOverlay(
     step: String, percent: Int, elapsed: String, hint: String, ended: Boolean,
     title: String = "Starting Steam", steam: Boolean = true, onCancel: (() -> Unit)? = null,
+    /** An ended session's exit status and log path, shown small under the advice. */
+    endedDetail: String? = null,
+    onRetry: (() -> Unit)? = null,
+    onShareLogs: (() -> Unit)? = null,
+    onClose: (() -> Unit)? = null,
 ) {
     val colors = MaterialTheme.colorScheme
     val stages = remember(steam) { loadStages(steam) }
@@ -176,6 +184,12 @@ fun LoadingOverlay(
                 modifier = Modifier.padding(top = 6.dp).widthIn(max = 520.dp),
             )
             if (!ended) LoadSegments(stages.size, active, percent, Modifier.padding(top = 18.dp))
+            if (ended && endedDetail != null) Text(
+                endedDetail, fontSize = 12.sp, fontFamily = FontFamily.Monospace, color = colors.onSurfaceVariant.copy(alpha = 0.8f),
+                textAlign = TextAlign.Center, maxLines = 3, overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.padding(top = 12.dp).widthIn(max = 520.dp),
+            )
+            if (ended) EndedActions(onRetry, onShareLogs, onClose)
         }
         if (!ended && hint.isNotEmpty()) Text(
             hint, fontSize = 13.sp, lineHeight = 18.sp, color = colors.onSurfaceVariant.copy(alpha = 0.8f), textAlign = TextAlign.Center,
@@ -183,6 +197,23 @@ fun LoadingOverlay(
             modifier = Modifier.align(Alignment.BottomCenter).padding(start = 120.dp, end = 120.dp, bottom = 28.dp),
         )
         if (!ended && onCancel != null) CancelHint(onCancel, Modifier.align(Alignment.BottomEnd).padding(end = 16.dp, bottom = 16.dp))
+    }
+}
+
+/** What to do about an ended session: nothing leaves on a timer, and the pad starts on Try again. */
+@Composable
+private fun EndedActions(onRetry: (() -> Unit)?, onShareLogs: (() -> Unit)?, onClose: (() -> Unit)?) {
+    val first = remember { FocusRequester() }
+    LaunchedEffect(Unit) {
+        androidx.compose.runtime.withFrameNanos { }
+        runCatching { first.requestFocus() }
+    }
+    Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.padding(top = 22.dp)) {
+        var firstUsed = false
+        fun claim(): Modifier = if (firstUsed) Modifier else { firstUsed = true; Modifier.focusRequester(first) }
+        if (onRetry != null) PrimaryButton("Try again", modifier = claim(), onClick = onRetry)
+        if (onShareLogs != null) SecondaryButton("Share logs", modifier = claim(), onClick = onShareLogs)
+        if (onClose != null) SecondaryButton("Back", modifier = claim(), onClick = onClose)
     }
 }
 
