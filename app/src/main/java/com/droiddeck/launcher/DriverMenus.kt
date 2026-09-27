@@ -75,7 +75,7 @@ internal class DriverMenus(private val activity: Activity, private val ui: Handl
      * library - then say what happened. A refusal's message is the user-facing reason.
      */
     fun importDriver(uri: Uri, linux: Boolean) {
-        val name = displayNameOf(uri)
+        val name = activity.displayNameOf(uri)
         Thread({
             val problem = try {
                 if (linux) LinuxVulkanDriverManager(activity).installDriver(uri, name)
