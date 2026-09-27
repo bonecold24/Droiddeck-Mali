@@ -222,7 +222,7 @@ class FrontEndActions(
     val onFrameGenPick: (engine: String, multiplier: Int) -> Unit,
     val onProtons: () -> Unit,
     /** The Components page: FEX / DXVK / VKD3D-Proton per Proton. */
-    val onComponents: () -> Unit,
+    val onComponents: (focusContent: Boolean) -> Unit,
     val onPerformance: () -> Unit,
     val onRoms: () -> Unit,
     val onFiles: () -> Unit,
@@ -431,20 +431,20 @@ private fun FrontEndScreenBody(s: FrontEndState, a: FrontEndActions, page: (@Com
     }
     // Bumped each time a rail item is picked, so a controller moves on into the new page.
     var railPicks by remember { mutableStateOf(0) }
-    val showRailPage: (String) -> Unit = { key ->
+    val showRailPage: (String, Boolean) -> Unit = { key, focusContent ->
         // Components is a full page like Protons or Performance, opened over the current rail
         // selection rather than replacing it.
-        if (key == "components") a.onComponents()
+        if (key == "components") a.onComponents(focusContent)
         else {
             if (s.pageKey != null) a.onPageBack()
             selected = key
         }
     }
     val onRailFocus: (String) -> Unit = { key ->
-        if (key != railSelection) showRailPage(key)
+        if (key != railSelection) showRailPage(key, false)
     }
     val onRailSelect: (String) -> Unit = { key ->
-        showRailPage(key)
+        showRailPage(key, true)
         railPicks++
     }
     val inputModeManager = LocalInputModeManager.current
@@ -1474,7 +1474,7 @@ private fun LaunchSettings(s: FrontEndState, a: FrontEndActions, host: MenuHost)
     val columns = if (LocalNarrowPane.current) 2 else 3
     val controller = a.controller
     val cards = buildList<@Composable (Modifier) -> Unit> {
-        add { m -> SettingCard("Compatibility", "Proton & components", "card:components", m, a.onComponents) }
+        add { m -> SettingCard("Compatibility", "Proton & components", "card:components", m) { a.onComponents(true) } }
         add { m ->
             Box(m) {
                 SettingCard("Frame generation", s.frameGenLabel, "card:fg", Modifier.fillMaxSize()) {

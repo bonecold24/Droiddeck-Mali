@@ -101,6 +101,7 @@ fun ComponentsPage(
     onRefresh: () -> Unit,
     onImport: () -> Unit,
     onBack: () -> Unit,
+    requestInitialFocus: Boolean = true,
 ) {
     val colors = MaterialTheme.colorScheme
     val pal = LocalPalette.current
@@ -207,7 +208,9 @@ fun ComponentsPage(
                 val storedNames = snapshot.packages.map { it.file }.toSet()
                 val available = catalog.filter { it.comp == comp && ComponentsManager.safeName(it.file) !in storedNames }
                 val first = remember { FocusRequester() }
-                LaunchedEffect(p.id, comp) { runCatching { first.requestFocus() } }
+                LaunchedEffect(p.id, comp, requestInitialFocus) {
+                    if (requestInitialFocus) runCatching { first.requestFocus() }
+                }
 
                 val installed: @Composable () -> Unit = {
                     SettingsGroup("Installed · ${rows.size}") {

@@ -101,6 +101,7 @@ class MainActivity : ComponentActivity() {
     private var showProtons by mutableStateOf(false)
     // Components page: FEX / DXVK / VKD3D-Proton per Proton (ComponentsManager).
     private var showComponents by mutableStateOf(false)
+    private var focusComponentsContent by mutableStateOf(true)
     private var compSnapshot by mutableStateOf<ComponentsManager.Snapshot?>(null)
     private var compCatalog by mutableStateOf<List<ComponentsManager.CatalogItem>>(emptyList())
     private var compCatalogAt by mutableStateOf(0L)
@@ -348,7 +349,7 @@ class MainActivity : ComponentActivity() {
                             frameGenLabel = FrameGen.label(this)
                         },
                         onProtons = { openProtons() },
-                        onComponents = { openComponents() },
+                        onComponents = { focusContent -> openComponents(focusContent) },
                         onPerformance = { refreshCores(); showProtons = false; showComponents = false; showMapping = false; showPerformance = true },
                         onRoms = { showRoms = true },
                         onFiles = { startActivity(Intent(this, com.droiddeck.launcher.files.FileManagerActivity::class.java)) },
@@ -669,7 +670,8 @@ class MainActivity : ComponentActivity() {
         )
     }
 
-    private fun openComponents() {
+    private fun openComponents(focusContent: Boolean = true) {
+        focusComponentsContent = focusContent
         settingsMode = null
         showPerformance = false
         showProtons = false
@@ -755,6 +757,7 @@ class MainActivity : ComponentActivity() {
             checking = compChecking,
             busy = compBusy,
             downloads = compDownloads,
+            requestInitialFocus = focusComponentsContent,
             onProton = { compProton = it },
             onComp = { compComp = it },
             onSwap = { file -> compProton?.let { pid -> componentAction("Swapping") { ComponentsManager.swap(this, pid, file) } } },
