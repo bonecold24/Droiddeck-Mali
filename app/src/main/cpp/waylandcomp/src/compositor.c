@@ -500,7 +500,7 @@ static void cursor_publish_hidden(void) {
 }
 
 static void cursor_publish_pixels(const uint8_t *src, int w, int h, size_t stride, int hx, int hy) {
-    if (w <= 0 || h <= 0 || w * h > CURSOR_MAX_PX) return;
+    if (w <= 0 || h <= 0 || (int64_t)w * h > CURSOR_MAX_PX) return;
     pthread_mutex_lock(&g_cursor_lock);
     for (int y = 0; y < h; y++)
         memcpy(&g_cursor_px[y * w], src + (size_t)y * stride, (size_t)w * 4);
@@ -513,10 +513,13 @@ static void cursor_publish_pixels(const uint8_t *src, int w, int h, size_t strid
 
 static void cursor_publish_shm(struct wl_shm_buffer *shm, int hx, int hy) {
     int32_t w = wl_shm_buffer_get_width(shm), h = wl_shm_buffer_get_height(shm);
-    if (w <= 0 || h <= 0 || w * h > CURSOR_MAX_PX) return;
+    int32_t stride = wl_shm_buffer_get_stride(shm);
+    if (w <= 0 || h <= 0 || (int64_t)w * h > CURSOR_MAX_PX) return;
+    /* libwayland only promises stride >= width; each row copied here is width * 4 bytes, so a
+     * shorter stride would read past the end of the client's pool. */
+    if ((int64_t)stride < (int64_t)w * 4) return;
     wl_shm_buffer_begin_access(shm);
-    cursor_publish_pixels((const uint8_t *)wl_shm_buffer_get_data(shm), w, h,
-                          (size_t)wl_shm_buffer_get_stride(shm), hx, hy);
+    cursor_publish_pixels((const uint8_t *)wl_shm_buffer_get_data(shm), w, h, (size_t)stride, hx, hy);
     wl_shm_buffer_end_access(shm);
 }
 
@@ -1018,7 +1021,8 @@ static void surface_commit(struct wl_client *c, struct wl_resource *r) {
                 cursor_publish_hidden();  /* wlroots clears its cursor surface to hide the pointer */
             } else if (shm) {
                 cursor_publish_shm(shm, g_cursor_hx, g_cursor_hy);
-            } else if (db && db->n_planes >= 1 && db->width * db->height <= CURSOR_MAX_PX) {
+            } else if (db && db->n_planes >= 1 && db->width > 0 && db->height > 0 &&
+                       (int64_t)db->width * db->height <= CURSOR_MAX_PX) {
                 if (!db->img && !db->import_failed) {
                     db->img = vkp_image_from_dmabuf(db->fd[0], db->format, db->modifier, db->width, db->height,
                                                     db->stride[0], db->offset[0]);
