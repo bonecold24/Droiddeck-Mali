@@ -208,6 +208,7 @@ class MainActivity : ComponentActivity() {
     private var customResolution by mutableStateOf<Pair<Int, Int>?>(null)
     private var fexPreset by mutableStateOf("")
     private var steamChannel by mutableStateOf("publicbeta")
+    private var runSteamAtStartup by mutableStateOf(false)
     private var theme by mutableStateOf("graphite")
     private var shapeMode by mutableStateOf(SessionPrefs.SHAPE_AUTO)
     private var hdrOn by mutableStateOf(false)
@@ -313,7 +314,7 @@ class MainActivity : ComponentActivity() {
                         launcherFullscreen = launcherFullscreen,
                     ),
                     FrontEndActions(
-                        onPlay = { startSession(Intent(this, SessionActivity::class.java), steamSession = true) },
+                        onPlay = { startSteamSession() },
                         // Steam's desktop client as a window on the desktop: under gamescope the
                         // client puts itself into Big Picture whatever it is started with.
                         onPlayDesktopUi = {
@@ -479,6 +480,8 @@ class MainActivity : ComponentActivity() {
             }
         }
 
+        if (savedInstanceState == null) ui.post { startSteamAtStartupIfEnabled() }
+
         // The session's logs land in Downloads so a failed run can be handed over as a folder
         // rather than dug out of app-private storage. targetSdk 28 means the old permission still
         // grants exactly that.
@@ -499,6 +502,20 @@ class MainActivity : ComponentActivity() {
             SessionArtifacts.finishAbandoned(this)
             SessionArtifacts.scrubOlder(this)
         }, "finish-abandoned").start()
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        startSteamAtStartupIfEnabled()
+    }
+
+    private fun startSteamAtStartupIfEnabled() {
+        if (SessionPrefs.runSteamAtStartup(this) && !isFinishing && !isDestroyed) startSteamSession()
+    }
+
+    private fun startSteamSession() {
+        startSession(Intent(this, SessionActivity::class.java), steamSession = true)
     }
 
     override fun onWindowFocusChanged(hasFocus: Boolean) {
@@ -889,6 +906,7 @@ class MainActivity : ComponentActivity() {
                 storageOptions = storageOptions,
                 fexPreset = if (mode == SessionService.MODE_STEAM) fexPreset else null,
                 steamChannel = if (mode == SessionService.MODE_STEAM) steamChannel else null,
+                runSteamAtStartup = mode == SessionService.MODE_STEAM && runSteamAtStartup,
                 addedGamesDirs = if (mode == SessionService.MODE_STEAM) addedGamesDirs else null,
                 addedGames = if (mode == SessionService.MODE_STEAM) addedGames else emptyList(),
                 addedGamesArt = addedGamesArt,
@@ -939,6 +957,10 @@ class MainActivity : ComponentActivity() {
                 },
                 onFexPreset = { id -> SessionPrefs.setFexPreset(this, id); fexPreset = id },
                 onSteamChannel = { id -> SessionPrefs.setSteamChannel(this, id); steamChannel = id },
+                onRunSteamAtStartup = { on ->
+                    SessionPrefs.setRunSteamAtStartup(this, on)
+                    runSteamAtStartup = on
+                },
                 onPickAddedGamesDir = { pickAddedGamesDir.launch(InAppFilePicker.buildDirIntent(this, "Choose a folder of your own games", addedGamesDirs.lastOrNull())) },
                 onAddedGamesArt = { on -> SessionPrefs.setAddedGamesArt(this, on); addedGamesArt = on; if (on) refreshAddedGames() },
                 onForgetAddedGamesDir = { dir -> SessionPrefs.setAddedGamesDirs(this, addedGamesDirs - dir); addedGamesDirs = SessionPrefs.addedGamesDirs(this); refreshAddedGames(); refresh() },
@@ -1017,6 +1039,7 @@ class MainActivity : ComponentActivity() {
         customResolution = SessionPrefs.customResolution(this, mode)
         fexPreset = SessionPrefs.fexPreset(this)
         steamChannel = SessionPrefs.steamChannel(this)
+        runSteamAtStartup = SessionPrefs.runSteamAtStartup(this)
         addedGamesDirs = SessionPrefs.addedGamesDirs(this)
         refreshAddedGames()
         shapeMode = SessionPrefs.shapeMode(this)
