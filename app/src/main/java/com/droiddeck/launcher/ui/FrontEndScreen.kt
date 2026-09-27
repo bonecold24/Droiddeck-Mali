@@ -90,17 +90,17 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.ChevronLeft
 import androidx.compose.material.icons.filled.MoreHoriz
 import androidx.compose.material.icons.filled.PriorityHigh
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.outlined.Apps
 import androidx.compose.material.icons.outlined.Extension
 import androidx.compose.material.icons.outlined.Folder
 import androidx.compose.material.icons.outlined.Speed
 import androidx.compose.material.icons.outlined.VideogameAsset
-import androidx.compose.material.icons.outlined.Bolt
-import androidx.compose.material.icons.outlined.Memory
 import androidx.compose.material.icons.outlined.DesktopWindows
 import androidx.compose.material.icons.outlined.Layers
 import androidx.compose.material.icons.outlined.SportsEsports
 import androidx.compose.material.icons.outlined.Tune
+import androidx.compose.material.icons.outlined.VideoLibrary
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -404,26 +404,26 @@ private fun FrontEndScreenBody(s: FrontEndState, a: FrontEndActions, page: (@Com
         }
     }
     BackHandler(enabled = !processSettingsPageVisible && s.pageKey != null && page != null) { a.onPageBack() }
-    // Back (and B) from a game or an emulator steps out one level, as its "‹" link does, instead
-    // of leaving the app: a game -> its emulator (or Steam), an emulator -> Desktop.
+    // Back (and B) from a ROM or an emulator steps out one level, as its "‹" link does, instead
+    // of leaving the app: a ROM -> its emulator, an emulator -> Desktop.
     BackHandler(
         enabled = !processSettingsPageVisible && (s.pageKey == null || page == null) &&
-            (selected.startsWith("app:") || selected.startsWith("emu:") || selected.startsWith("rom:")),
+            (selected.startsWith("emu:") || selected.startsWith("rom:")),
     ) {
-        selected = when {
-            selected.startsWith("app:") -> "steam"
-            selected.startsWith("emu:") -> "desktop"
-            else -> "emu:" + selected.removePrefix("rom:").substringBefore(':')
-        }
+        selected = if (selected.startsWith("emu:")) "desktop" else "emu:" + selected.removePrefix("rom:").substringBefore(':')
     }
     LaunchedEffect(s.isHomeApp) { if (!s.isHomeApp && selected == "android-apps") selected = "steam" }
+    // The last game uninstalled takes the Games tab with it.
+    LaunchedEffect(s.steamGames.isEmpty()) {
+        if (s.steamGames.isEmpty() && (selected == "games" || selected.startsWith("app:"))) selected = "steam"
+    }
     remember { Motion.scale = Settings.Global.getFloat(ctx.contentResolver, Settings.Global.ANIMATOR_DURATION_SCALE, 1f); true }
 
     val railSelection = when {
         s.pageKey == "performance" || s.pageKey == "protons" || s.pageKey == "controller-mapping" -> "setup"
         s.pageKey?.startsWith("settings:steam") == true -> "steam"
         s.pageKey?.startsWith("settings:") == true -> "desktop"
-        selected.startsWith("app:") -> "steam"
+        selected.startsWith("app:") -> "games"
         selected.startsWith("emu:") || selected.startsWith("rom:") -> "desktop"
         else -> s.pageKey ?: selected
     }
@@ -558,7 +558,7 @@ private fun FrontEndScreenBody(s: FrontEndState, a: FrontEndActions, page: (@Com
     }
     val hasBackTarget = (s.pageKey != null && page != null) ||
         ((s.pageKey == null || page == null) &&
-            (selected.startsWith("app:") || selected.startsWith("emu:") || selected.startsWith("rom:")))
+            (selected.startsWith("emu:") || selected.startsWith("rom:")))
     // At the top of a section, Back goes to the rail - the launcher itself is never backed out of.
     BackHandler(enabled = !processSettingsPageVisible && !hasBackTarget) {
         if (inputModeManager.inputMode != InputMode.Keyboard) inputModeManager.requestInputMode(InputMode.Keyboard)
@@ -627,6 +627,8 @@ private fun SideRail(
         ) {
             if (s.isHomeApp) RailItem("Apps", Icons.Outlined.Apps, "android-apps", selected == "android-apps", compact, iconOnly) { onSelect("android-apps") }
             RailItem("Steam", Icons.Outlined.SportsEsports, "steam", selected == "steam", compact, iconOnly) { onSelect("steam") }
+            // Games appears once there is one: an empty list is no place to land.
+            if (s.steamGames.isNotEmpty()) RailItem("Games", Icons.Outlined.VideoLibrary, "games", selected == "games", compact, iconOnly) { onSelect("games") }
             RailItem("Desktop", Icons.Outlined.DesktopWindows, "desktop", selected == "desktop", compact, iconOnly) { onSelect("desktop") }
             RailItem("Components", Icons.Outlined.Layers, "components", selected == "components", compact, iconOnly) { onSelect("components") }
             RailItem("Setup", Icons.Outlined.Tune, "setup", selected == "setup", compact, iconOnly, badge = setupNeedsAttention) { onSelect("setup") }
@@ -748,12 +750,14 @@ private fun Pane(
         val backdropArt: File? = when {
             s.pageKey != null && page != null -> null
             selected.startsWith("app:") -> s.steamGames.firstOrNull { "app:${it.appId}" == selected }?.art
+            selected == "games" -> s.steamGames.maxByOrNull { it.lastPlayed }?.art
             selected.startsWith("rom:") -> romFor(s, selected)?.second?.art
             else -> null
         }
         Backdrop(backdropArt)
         AnimatedContent(
-            targetState = if (page != null && s.pageKey != null) s.pageKey else selected,
+            // Picking another game changes the detail beside the list, not the whole page.
+            targetState = if (page != null && s.pageKey != null) s.pageKey else if (selected.startsWith("app:")) "games" else selected,
             transitionSpec = {
                 (fadeIn(Motion.tw(300, 80)) + slideInVertically(Motion.tw(420, 80)) { it / 24 })
                     .togetherWith(fadeOut(Motion.tw(170)) + slideOutVertically(Motion.tw(170)) { -it / 40 })
@@ -762,7 +766,7 @@ private fun Pane(
             label = "pane",
         ) { key ->
             if (page != null && key == s.pageKey) page()
-            else Content(s, key, a, Modifier.fillMaxSize(), onSelect, onAndroidAppClick, onOpenDeveloperOptions, onRequestWirelessAdb)
+            else Content(s, if (key == "games") selected else key, a, Modifier.fillMaxSize(), onSelect, onAndroidAppClick, onOpenDeveloperOptions, onRequestWirelessAdb)
         }
       }
     }
@@ -809,6 +813,11 @@ private fun Content(
         Column(modifier = modifier.padding(horizontal = padH, vertical = padV)) {
             SetupPanel(s, a, onOpenDeveloperOptions, onRequestWirelessAdb)
         }
+        return
+    }
+    // The Games tab lays out its own list and detail.
+    if (selected == "games" || selected.startsWith("app:")) {
+        GamesPage(s, a, selected, onSelect, modifier)
         return
     }
     // Every other page scrolls as one - header, hero and grid - so a short screen reaches the grid
@@ -881,42 +890,6 @@ private fun Content(
                 Rise(4) { SectionTitle("Installed", "${games.size} game${if (games.size == 1) "" else "s"}") }
                 if (games.isEmpty()) Rise(5) { Note("No games installed.") }
                 else Rise(5, Modifier.fillMaxWidth()) { ArtGrid(games.map { g -> Tile(g.name, null, g.art, "steam:${g.appId}", null) { onSelect("app:${g.appId}") } }) }
-            }
-            selected.startsWith("app:") -> {
-                val g = s.steamGames.firstOrNull { "app:${it.appId}" == selected }
-                if (g == null) Note("That game is no longer installed.") else {
-                    val host = rememberMenuHost()
-                    val short = LocalConfiguration.current.screenHeightDp < 480
-                    Column(modifier = Modifier.fillMaxWidth()) {
-                        Rise(0) { BackLink("Steam") { onSelect("steam") } }
-                        Spacer(Modifier.height(10.dp))
-                        Rise(1) {
-                            Row(verticalAlignment = Alignment.Bottom) {
-                                GameHero(g, Modifier.weight(1f).heightIn(min = if (short) 170.dp else 210.dp)) {
-                                    Text(
-                                        listOfNotNull(libraryLabel(g.library), lastPlayedText(g.lastPlayed)).joinToString(" · ").uppercase(),
-                                        fontSize = 12.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 1.2.sp, color = LocalPalette.current.signal,
-                                        maxLines = 1, overflow = TextOverflow.Ellipsis,
-                                    )
-                                    Text(
-                                        g.name, fontSize = if (narrow) 26.sp else 32.sp, lineHeight = if (narrow) 30.sp else 36.sp,
-                                        fontWeight = FontWeight.Bold, color = colors.onBackground, maxLines = 2, overflow = TextOverflow.Ellipsis,
-                                    )
-                                    Spacer(Modifier.height(8.dp))
-                                    Actions {
-                                        PrimaryButton("Launch", enabled = s.ready && !s.busy, main = true) { a.onSteamGame(g) }
-                                        Cog(a.onSteamSettings)
-                                        ActionChip(if (s.ready) "● Ready to play" else "Runtime missing", ok = s.ready)
-                                    }
-                                }
-                                // The hero already shows the art; a narrow page keeps its width for the title.
-                                if (!narrow) Poster(g.art, g.name, Modifier.width(if (short) 96.dp else 128.dp))
-                            }
-                        }
-                        Rise(2) { SectionTitle("Launch settings", "used by every game") }
-                        Rise(3) { LaunchSettings(s, a, host) }
-                    }
-                }
             }
             selected == "desktop" -> {
                 val installed = s.emulators.filter { it.installed }
@@ -1518,28 +1491,25 @@ private fun FrameGenMenu(s: FrontEndState, a: FrontEndActions, host: MenuHost) {
 }
 
 /**
- * What shapes a launch, on the game's own page rather than three screens away in Setup. They are
- * the app-wide settings - each card opens the same page or menu Setup does.
+ * What shapes a launch, beside the game rather than three screens away in Setup. They are the
+ * app-wide settings - each card opens the same page or menu Setup does.
  */
 @Composable
 private fun LaunchSettings(s: FrontEndState, a: FrontEndActions, host: MenuHost) {
-    // Four across on a wide page, two by two on a narrow one; each row's cards share one height.
-    val columns = if (LocalNarrowPane.current) 2 else 4
+    // Three across, two on a narrow page; each row's cards share one height.
+    val columns = if (LocalNarrowPane.current) 2 else 3
     val controller = a.controller
     val cards = buildList<@Composable (Modifier) -> Unit> {
-        add { m -> SettingCard(Icons.Outlined.Layers, "Compatibility", "Proton & components", "FEX · DXVK · VKD3D-Proton", "card:components", m, a.onComponents) }
+        add { m -> SettingCard("Compatibility", "Proton & components", "card:components", m, a.onComponents) }
         add { m ->
             Box(m) {
-                SettingCard(
-                    Icons.Outlined.Bolt, "Frame generation", s.frameGenLabel,
-                    if (s.lsfgReady) "Win-FG or LSFG, 2–4×" else "Win-FG 2–4×; LSFG needs Lossless Scaling",
-                    "card:fg", Modifier.fillMaxSize(),
-                ) { host.open = if (host.open == "fg") null else "fg" }
+                SettingCard("Frame generation", s.frameGenLabel, "card:fg", Modifier.fillMaxSize()) {
+                    host.open = if (host.open == "fg") null else "fg"
+                }
                 FrameGenMenu(s, a, host)
             }
         }
-        add { m -> SettingCard(Icons.Outlined.Memory, "Performance", "CPU cores", "Which cores games run on", "card:perf", m, a.onPerformance) }
-        if (controller != null) add { m -> SettingCard(Icons.Outlined.SportsEsports, "Controls", "Button mapping", "Remap the pad for games", "card:controls", m, controller.onMapping) }
+        if (controller != null) add { m -> SettingCard("Controls", "Button mapping", "card:controls", m, controller.onMapping) }
     }
     Column(verticalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp)) {
         for (row in cards.chunked(columns)) {
@@ -1552,7 +1522,7 @@ private fun LaunchSettings(s: FrontEndState, a: FrontEndActions, host: MenuHost)
 }
 
 @Composable
-private fun SettingCard(icon: ImageVector, label: String, value: String, detail: String, id: String, modifier: Modifier, onClick: () -> Unit) {
+private fun SettingCard(label: String, value: String, id: String, modifier: Modifier, onClick: () -> Unit) {
     val colors = MaterialTheme.colorScheme
     val pal = LocalPalette.current
     val src = remember { MutableInteractionSource() }
@@ -1571,12 +1541,121 @@ private fun SettingCard(icon: ImageVector, label: String, value: String, detail:
             .controllerConfirm(onClick = onClick)
             .padding(horizontal = 14.dp, vertical = 12.dp),
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Icon(icon, contentDescription = null, tint = if (hot) pal.signal else colors.onSurfaceVariant, modifier = Modifier.size(18.dp))
-            Text(label, fontSize = 13.sp, color = colors.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
-        }
+        Text(label, fontSize = 13.sp, color = if (hot) pal.signal else colors.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
         Text(value, fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = colors.onBackground, maxLines = 1, overflow = TextOverflow.Ellipsis)
-        Text(detail, fontSize = 12.sp, color = colors.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis)
+    }
+}
+
+/**
+ * The Games tab: installed Steam games down the left, most recently played first, and the one
+ * picked beside them - its banner, Launch and the launch settings. One game skips the list.
+ */
+@Composable
+private fun GamesPage(s: FrontEndState, a: FrontEndActions, selected: String, onSelect: (String) -> Unit, modifier: Modifier) {
+    val games = remember(s.steamGames) { s.steamGames.sortedByDescending { it.lastPlayed } }
+    val current = games.firstOrNull { "app:${it.appId}" == selected } ?: games.firstOrNull() ?: return
+    val host = rememberMenuHost()
+    val narrow = LocalNarrowPane.current
+    if (games.size == 1) {
+        Column(modifier = modifier.verticalScroll(rememberScrollState()).padding(horizontal = if (narrow) 16.dp else 22.dp, vertical = if (narrow) 12.dp else 18.dp)) {
+            Rise(0) {
+                Row(verticalAlignment = Alignment.Bottom) {
+                    GameHero(current, Modifier.weight(1f).heightIn(min = if (narrow) 190.dp else 250.dp)) {
+                        GameHeroCopy(current, if (narrow) 28.sp else 38.sp)
+                        PrimaryButton("Launch", enabled = s.ready && !s.busy, main = true, icon = Icons.Filled.PlayArrow) { a.onSteamGame(current) }
+                    }
+                    if (!narrow) Poster(current.art, current.name, Modifier.width(168.dp))
+                }
+            }
+            Rise(1) { SectionTitle("Launch settings", null) }
+            Rise(2) { LaunchSettings(s, a, host) }
+        }
+        return
+    }
+    val pal = LocalPalette.current
+    Row(modifier = modifier) {
+        GameList(games, current, onSelect = { onSelect("app:${it.appId}") }, onLaunch = { a.onSteamGame(it) },
+            modifier = Modifier.width(if (narrow) 168.dp else 250.dp).fillMaxHeight())
+        Box(Modifier.width(1.dp).fillMaxHeight().background(pal.line))
+        Column(
+            modifier = Modifier.weight(1f).fillMaxHeight().verticalScroll(rememberScrollState())
+                .padding(horizontal = if (narrow) 14.dp else 20.dp, vertical = 16.dp),
+        ) {
+            GameHero(current, Modifier.fillMaxWidth().heightIn(min = if (narrow) 170.dp else 200.dp)) {
+                GameHeroCopy(current, if (narrow) 24.sp else 32.sp)
+                PrimaryButton("Launch", enabled = s.ready && !s.busy, main = true, icon = Icons.Filled.PlayArrow) { a.onSteamGame(current) }
+            }
+            SectionTitle("Launch settings", null)
+            LaunchSettings(s, a, host)
+        }
+    }
+}
+
+/** When it was last played (or where it is, if never) over its name, then room for Launch. */
+@Composable
+private fun ColumnScope.GameHeroCopy(g: Library.SteamGame, titleSize: androidx.compose.ui.unit.TextUnit) {
+    Text(
+        (lastPlayedText(g.lastPlayed) ?: libraryLabel(g.library)).uppercase(),
+        fontSize = 12.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 1.2.sp, color = LocalPalette.current.signal,
+        maxLines = 1, overflow = TextOverflow.Ellipsis,
+    )
+    Text(
+        g.name, fontSize = titleSize, lineHeight = titleSize * 1.15f, fontWeight = FontWeight.Bold,
+        color = MaterialTheme.colorScheme.onBackground, maxLines = 2, overflow = TextOverflow.Ellipsis,
+    )
+    Spacer(Modifier.height(8.dp))
+}
+
+@Composable
+private fun GameList(
+    games: List<Library.SteamGame>, current: Library.SteamGame,
+    onSelect: (Library.SteamGame) -> Unit, onLaunch: (Library.SteamGame) -> Unit, modifier: Modifier,
+) {
+    val colors = MaterialTheme.colorScheme
+    // Laid out whole, as the art grid is: the pad's focus search only finds rows that exist.
+    Column(
+        verticalArrangement = Arrangement.spacedBy(2.dp),
+        modifier = modifier.verticalScroll(rememberScrollState()).padding(start = 12.dp, end = 10.dp, top = 16.dp, bottom = 16.dp),
+    ) {
+        Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(start = 6.dp, bottom = 10.dp)) {
+            Text("Games", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = colors.onBackground, maxLines = 1)
+            Text(games.size.toString(), fontSize = 13.sp, color = colors.onSurfaceVariant, modifier = Modifier.padding(bottom = 3.dp))
+        }
+        for (g in games) key(g.appId) {
+            GameRow(g, g.appId == current.appId, onSelect = { onSelect(g) }, onLaunch = { onLaunch(g) })
+        }
+    }
+}
+
+/** One game in the list. Moving onto it with the pad shows it; A launches it, a tap only shows it. */
+@Composable
+private fun GameRow(g: Library.SteamGame, selected: Boolean, onSelect: () -> Unit, onLaunch: () -> Unit) {
+    val colors = MaterialTheme.colorScheme
+    val pal = LocalPalette.current
+    val src = remember { MutableInteractionSource() }
+    val focused by src.collectIsFocusedAsState()
+    val hovered by src.collectIsHoveredAsState()
+    LaunchedEffect(focused) { if (focused && !selected) onSelect() }
+    Row(
+        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp),
+        modifier = Modifier.fillMaxWidth().paneItem("game:${g.appId}")
+            .clip(Shape12)
+            .background(if (selected) pal.signal.copy(alpha = 0.14f) else if (hovered) Color.White.copy(alpha = 0.05f) else Color.Transparent)
+            .border(2.dp, if (selected || focused) pal.signal else Color.Transparent, Shape12)
+            .hoverable(src).clickable(interactionSource = src, indication = LocalIndication.current, onClick = onSelect)
+            .controllerConfirm(onClick = onLaunch)
+            .padding(horizontal = 10.dp, vertical = 6.dp),
+    ) {
+        Box(Modifier.width(30.dp).height(45.dp).clip(RoundedCornerShape(5.dp)).background(artBrush(hueOf(g.name)))) {
+            if (g.art != null) AsyncImage(model = g.art, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.matchParentSize())
+        }
+        Column(modifier = Modifier.weight(1f)) {
+            Text(g.name, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = colors.onBackground, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(
+                lastPlayedText(g.lastPlayed)?.removePrefix("Last played ")?.replaceFirstChar { it.uppercase() } ?: "Never played",
+                fontSize = 12.sp, color = colors.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis,
+            )
+        }
     }
 }
 
@@ -1734,6 +1813,9 @@ internal fun PrimaryButton(
     main: Boolean = false,
     compact: Boolean = false,
     modifier: Modifier = Modifier,
+    /** The Steam tab's own Play: bigger than any other button on a page. */
+    large: Boolean = false,
+    icon: ImageVector? = null,
     onClick: () -> Unit,
 ) {
     val colors = MaterialTheme.colorScheme
@@ -1762,9 +1844,19 @@ internal fun PrimaryButton(
             // controller is on it, as the other controls are.
             .border(2.dp, if (hot) pal.signal else Color.Transparent, Shape12)
             .hoverable(src).clickable(interactionSource = src, indication = LocalIndication.current, enabled = enabled, onClick = onClick)
-            .padding(horizontal = if (compact) 10.dp else 18.dp, vertical = if (compact) 7.dp else 11.dp),
+            .padding(
+                start = if (large) 20.dp else if (compact) 10.dp else if (icon != null) 14.dp else 18.dp,
+                end = if (large) 26.dp else if (compact) 10.dp else 18.dp,
+                top = if (large) 16.dp else if (compact) 7.dp else 11.dp,
+                bottom = if (large) 16.dp else if (compact) 7.dp else 11.dp,
+            ),
     ) {
-        Text(text, fontSize = if (compact) 12.sp else 15.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 0.5.sp, color = if (enabled) colors.onPrimary else colors.onSurfaceVariant, maxLines = 1)
+        val fg = if (enabled) colors.onPrimary else colors.onSurfaceVariant
+        if (icon != null) Icon(icon, contentDescription = null, tint = fg, modifier = Modifier.size(if (large) 20.dp else 17.dp))
+        Text(
+            text, fontSize = if (large) 17.sp else if (compact) 12.sp else 15.sp,
+            fontWeight = if (large) FontWeight.Bold else FontWeight.SemiBold, letterSpacing = 0.5.sp, color = fg, maxLines = 1,
+        )
     }
 }
 
