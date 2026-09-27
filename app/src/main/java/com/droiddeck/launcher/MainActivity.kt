@@ -40,7 +40,6 @@ import com.droiddeck.launcher.ui.ComponentsPage
 import com.droiddeck.launcher.session.SessionLogShare
 import com.droiddeck.launcher.session.SessionPrefs
 import com.droiddeck.launcher.ui.ProtonPage
-import com.droiddeck.launcher.ui.ProtonRow
 import com.droiddeck.launcher.core.CpuCores
 import com.droiddeck.launcher.core.PhantomProcessLimit
 import com.droiddeck.launcher.core.PhantomProcessStatus
@@ -78,6 +77,9 @@ import com.droiddeck.launcher.input.SecondScreenDisplays
 class MainActivity : ComponentActivity() {
     private val ui = Handler(Looper.getMainLooper())
     private val drivers = DriverMenus(this, ui)
+    private val components = ComponentsMenu(this, ui)
+    private val decky = DeckyMenu(this, ui)
+    private val protons = ProtonMenu(this, ui)
 
     // The screen's state. Compose redraws whatever reads these when they change.
     private var installed by mutableStateOf<String?>(null)
@@ -98,21 +100,6 @@ class MainActivity : ComponentActivity() {
     // Components page: FEX / DXVK / VKD3D-Proton per Proton (ComponentsManager).
     private var showComponents by mutableStateOf(false)
     private var focusComponentsContent by mutableStateOf(true)
-    private var compSnapshot by mutableStateOf<ComponentsManager.Snapshot?>(null)
-    private var compCatalog by mutableStateOf<List<ComponentsManager.CatalogItem>>(emptyList())
-    private var compCatalogAt by mutableStateOf(0L)
-    private var compProton by mutableStateOf<String?>(null)
-    private var compComp by mutableStateOf("dxvk")
-    private var compChecking by mutableStateOf(false)
-    private var compBusy by mutableStateOf<String?>(null)
-    private var compDownloads by mutableStateOf<Map<String, Int>>(emptyMap())
-    private var deckyInstalled by mutableStateOf<String?>(null)
-    private var deckyReleases by mutableStateOf<List<DeckyManager.Release>>(emptyList())
-    private var deckyChecking by mutableStateOf(false)
-    private var deckyStage by mutableStateOf<String?>(null)
-    private var deckyPercent by mutableIntStateOf(-1)
-    private var deckySupervisor by mutableStateOf(false)
-    private var deckyReleaseRequest = 0
     private var showMapping by mutableStateOf(false)
     private var controllerSettings by mutableStateOf<ControllerPrefs.Settings?>(null)
     private var catalog by mutableStateOf<List<DesktopCatalog.Entry>?>(null)
@@ -124,10 +111,6 @@ class MainActivity : ComponentActivity() {
     private var desktopInstalled by mutableStateOf(false)
     private var offlineAccount by mutableStateOf<String?>(null)
     private var offline by mutableStateOf(false)
-    private var protonRows by mutableStateOf<List<ProtonRow>>(emptyList())
-    private var protonBusyId by mutableStateOf<String?>(null)
-    private var protonStage by mutableStateOf<String?>(null)
-    private var protonPercent by mutableIntStateOf(-1)
     private var showPerformance by mutableStateOf(false)
     private var clientOverride by mutableStateOf(false)
     private var clientCores by mutableStateOf<Set<Int>>(emptySet())
@@ -232,7 +215,7 @@ class MainActivity : ComponentActivity() {
     override fun startActivity(intent: Intent?) {
         if (intent?.component?.className == SessionActivity::class.java.name) {
             when {
-                protonBusyId != null || ProtonExtras.installInProgress -> {
+                protons.protonBusyId != null || ProtonExtras.installInProgress -> {
                     android.widget.Toast.makeText(this, "Wait for the compatibility tool install to finish", android.widget.Toast.LENGTH_SHORT).show()
                     return
                 }
@@ -526,7 +509,7 @@ class MainActivity : ComponentActivity() {
             if (event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0) {
                 val all = ComponentsManager.COMPONENTS
                 val step = if (event.keyCode == KeyEvent.KEYCODE_BUTTON_R1) 1 else all.size - 1
-                compComp = all[(all.indexOf(compComp).coerceAtLeast(0) + step) % all.size]
+                components.compComp = all[(all.indexOf(components.compComp).coerceAtLeast(0) + step) % all.size]
             }
             return true
         }
@@ -542,7 +525,7 @@ class MainActivity : ComponentActivity() {
             val applied = runCatching { ComponentsManager.applyQueued(this) }.getOrDefault(emptyList())
             if (applied.isNotEmpty()) ui.post {
                 android.widget.Toast.makeText(this, "Applied: " + applied.joinToString(", "), android.widget.Toast.LENGTH_LONG).show()
-                if (showComponents) refreshComponents()
+                if (showComponents) components.refreshComponents()
             }
         }, "components-queue").start()
         oscMode = SessionPrefs.oscMode(this)
@@ -550,9 +533,9 @@ class MainActivity : ComponentActivity() {
         refreshHomeAppState()
         refreshSecondScreenDisplays()
         refresh()
-        deckyInstalled = DeckyManager.installed(this)
+        decky.deckyInstalled = DeckyManager.installed(this)
         DeckyManager.syncCefMarker(this)
-        deckySupervisor = DeckyManager.supervisorEnabled(this)
+        decky.deckySupervisor = DeckyManager.supervisorEnabled(this)
         // Added games' art (a store lookup for what the folders lack) starts here, not only when
         // the cog opens.
         refreshAddedGames()
@@ -621,38 +604,7 @@ class MainActivity : ComponentActivity() {
         showComponents = false
         showMapping = false
         showProtons = true
-        refreshProtons()
-    }
-
-    private fun refreshDecky() {
-        val request = ++deckyReleaseRequest
-        deckyChecking = true
-        Thread({
-            val channels = runCatching { DeckyManager.releaseChannels(this) }
-                .getOrElse { DeckyManager.ReleaseChannels(emptyList(), emptyList()) }
-            ui.post {
-                if (request == deckyReleaseRequest) {
-                    // Use the newest compatible stable build, or the newest compatible
-                    // prerelease when the fork has not published a stable ARM64 asset.
-                    deckyReleases = channels.stable.ifEmpty { channels.prerelease }
-                    deckyChecking = false
-                }
-            }
-        }, "decky-releases").start()
-    }
-
-    private fun installDecky(release: DeckyManager.Release) {
-        if (deckyStage != null || SessionState.running) return
-        deckyStage = "Starting…"; deckyPercent = -1
-        Thread({
-            val problem = runCatching {
-                DeckyManager.install(this, release) { label, value -> ui.post { deckyStage = label; deckyPercent = value } }
-            }.getOrElse { error -> "Decky install failed: ${error.message ?: error.javaClass.simpleName}" }
-            ui.post {
-                deckyStage = null; deckyPercent = -1; deckyInstalled = DeckyManager.installed(this)
-                if (problem != null) android.widget.Toast.makeText(this, problem, android.widget.Toast.LENGTH_LONG).show()
-            }
-        }, "install-decky").start()
+        protons.refreshProtons()
     }
 
     private fun refreshController() {
@@ -677,69 +629,12 @@ class MainActivity : ComponentActivity() {
         showProtons = false
         showMapping = false
         showComponents = true
-        refreshComponents(snapshotFirst = true)
-    }
-
-    /** Reads the Protons (and on first open saves their originals) off the UI thread; the Nightlies list comes from its cache. */
-    private fun refreshComponents(snapshotFirst: Boolean = false) {
-        Thread({
-            if (snapshotFirst) runCatching { ComponentsManager.snapshotAll(this) }
-            runCatching { ComponentsManager.applyQueued(this) }
-            val snap = runCatching { ComponentsManager.snapshot(this) }.onFailure { Log.w(TAG, "components", it) }.getOrNull()
-            val cat = runCatching { ComponentsManager.catalog(this, false) }.getOrNull()
-            ui.post {
-                compSnapshot = snap ?: ComponentsManager.Snapshot(emptyList(), emptyList())
-                if (cat != null && cat.fetchedAt > 0) { compCatalog = cat.items; compCatalogAt = cat.fetchedAt }
-                if (compProton == null || snap?.protons?.none { it.proton.id == compProton } == true) compProton = snap?.protons?.firstOrNull()?.proton?.id
-            }
-        }, "components").start()
-    }
-
-    private fun componentAction(label: String, work: () -> String) {
-        if (compBusy != null) return
-        compBusy = label
-        Thread({
-            val message = runCatching(work).getOrElse { e -> "$label failed: ${e.message ?: e.javaClass.simpleName}" }
-            ui.post {
-                compBusy = null
-                android.widget.Toast.makeText(this, message, android.widget.Toast.LENGTH_LONG).show()
-                refreshComponents()
-            }
-        }, "components-action").start()
-    }
-
-    private fun refreshComponentCatalog() {
-        if (compChecking) return
-        compChecking = true
-        Thread({
-            val cat = runCatching { ComponentsManager.catalog(this, true) }.getOrNull()
-            ui.post {
-                compChecking = false
-                if (cat == null || cat.items.isEmpty()) android.widget.Toast.makeText(this, "The Nightlies could not be reached", android.widget.Toast.LENGTH_LONG).show()
-                else { compCatalog = cat.items; compCatalogAt = cat.fetchedAt }
-            }
-        }, "components-catalog").start()
-    }
-
-    private fun downloadComponent(item: ComponentsManager.CatalogItem) {
-        if (compDownloads.containsKey(item.file)) return
-        compDownloads = compDownloads + (item.file to -1)
-        Thread({
-            val message = runCatching {
-                val pkg = ComponentsManager.download(this, item) { pc -> ui.post { if (compDownloads.containsKey(item.file)) compDownloads = compDownloads + (item.file to pc) } }
-                "Stored ${pkg.version}"
-            }.getOrElse { e -> "Download failed: ${e.message ?: e.javaClass.simpleName}" }
-            ui.post {
-                compDownloads = compDownloads - item.file
-                android.widget.Toast.makeText(this, message, android.widget.Toast.LENGTH_SHORT).show()
-                refreshComponents()
-            }
-        }, "components-download").start()
+        components.refreshComponents(snapshotFirst = true)
     }
 
     private fun importComponent(uri: Uri) {
         val name = displayNameOf(uri) ?: "imported.wcp"
-        componentAction("Importing") {
+        components.componentAction("Importing") {
             val tmp = File(cacheDir, "component-import.wcp")
             contentResolver.openInputStream(uri)?.use { input -> tmp.outputStream().use { input.copyTo(it) } } ?: error("cannot read the file")
             try { "Imported ${ComponentsManager.importPackage(this, tmp, name).version}" } finally { tmp.delete() }
@@ -749,24 +644,24 @@ class MainActivity : ComponentActivity() {
     @Composable
     private fun ComponentsHost() {
         ComponentsPage(
-            snapshot = compSnapshot,
-            catalog = compCatalog,
-            catalogAt = compCatalogAt,
-            protonId = compProton,
-            comp = compComp,
-            checking = compChecking,
-            busy = compBusy,
-            downloads = compDownloads,
+            snapshot = components.compSnapshot,
+            catalog = components.compCatalog,
+            catalogAt = components.compCatalogAt,
+            protonId = components.compProton,
+            comp = components.compComp,
+            checking = components.compChecking,
+            busy = components.compBusy,
+            downloads = components.compDownloads,
             requestInitialFocus = focusComponentsContent,
-            onProton = { compProton = it },
-            onComp = { compComp = it },
-            onSwap = { file -> compProton?.let { pid -> componentAction("Swapping") { ComponentsManager.swap(this, pid, file) } } },
-            onRestore = { version -> compProton?.let { pid -> componentAction("Restoring") { ComponentsManager.restore(this, pid, compComp, version) } } },
-            onCancelQueued = { compProton?.let { pid -> componentAction("Cancelling") { ComponentsManager.cancelQueued(this, pid, compComp); "The waiting swap was cancelled." } } },
-            onDeletePackage = { file -> componentAction("Deleting") { ComponentsManager.deletePackage(this, file) } },
-            onDeleteOriginal = { version -> compProton?.let { pid -> componentAction("Deleting") { ComponentsManager.deleteOriginal(this, pid, compComp, version) } } },
-            onDownload = { downloadComponent(it) },
-            onRefresh = { refreshComponentCatalog() },
+            onProton = { components.compProton = it },
+            onComp = { components.compComp = it },
+            onSwap = { file -> components.compProton?.let { pid -> components.componentAction("Swapping") { ComponentsManager.swap(this, pid, file) } } },
+            onRestore = { version -> components.compProton?.let { pid -> components.componentAction("Restoring") { ComponentsManager.restore(this, pid, components.compComp, version) } } },
+            onCancelQueued = { components.compProton?.let { pid -> components.componentAction("Cancelling") { ComponentsManager.cancelQueued(this, pid, components.compComp); "The waiting swap was cancelled." } } },
+            onDeletePackage = { file -> components.componentAction("Deleting") { ComponentsManager.deletePackage(this, file) } },
+            onDeleteOriginal = { version -> components.compProton?.let { pid -> components.componentAction("Deleting") { ComponentsManager.deleteOriginal(this, pid, components.compComp, version) } } },
+            onDownload = { components.downloadComponent(it) },
+            onRefresh = { components.refreshComponentCatalog() },
             onImport = { pickComponent.launch(InAppFilePicker.buildIntent(this, WCP_EXT, "Choose a component package (-linux .wcp)")) },
             onBack = { showComponents = false },
         )
@@ -775,54 +670,17 @@ class MainActivity : ComponentActivity() {
     @Composable
     private fun ProtonHost() {
         ProtonPage(
-            rows = protonRows,
-            busyId = protonBusyId,
-            stage = protonStage,
-            percent = protonPercent,
+            rows = protons.protonRows,
+            busyId = protons.protonBusyId,
+            stage = protons.protonStage,
+            percent = protons.protonPercent,
             runtimeReady = ready,
             sessionRunning = SessionState.running,
-            onInstall = { id -> installProton(id) },
-            onCancel = { id -> ProtonExtras.tools.firstOrNull { it.id == id }?.let { ProtonExtras.unqueue(this, it) }; refreshProtons() },
-            onRemove = { id -> removeProton(id) },
+            onInstall = { id -> protons.installProton(id) },
+            onCancel = { id -> ProtonExtras.tools.firstOrNull { it.id == id }?.let { ProtonExtras.unqueue(this, it) }; protons.refreshProtons() },
+            onRemove = { id -> protons.removeProton(id) },
             onBack = { showProtons = false },
         )
-    }
-
-    private fun installProton(id: String) {
-        val tool = ProtonExtras.tools.firstOrNull { it.id == id } ?: return
-        if (protonBusyId != null || SessionState.running) return
-        ProtonExtras.unqueue(this, tool)
-        protonBusyId = id
-        protonStage = "Starting…"
-        protonPercent = -1
-        Thread({
-            val problem = ProtonExtras.install(this, tool) { label, value ->
-                ui.post { protonStage = label; protonPercent = value }
-            }
-            ui.post {
-                protonBusyId = null
-                protonStage = null
-                protonPercent = -1
-                refreshProtons()
-                if (problem != null) android.widget.Toast.makeText(this, problem, android.widget.Toast.LENGTH_LONG).show()
-            }
-        }, "install-proton-$id").start()
-    }
-
-    private fun removeProton(id: String) {
-        val tool = ProtonExtras.tools.firstOrNull { it.id == id } ?: return
-        if (protonBusyId != null || SessionState.running) return
-        protonBusyId = id
-        protonStage = "Removing ${tool.name}…"
-        protonPercent = -1
-        Thread({
-            ProtonExtras.remove(this, tool)
-            ui.post {
-                protonBusyId = null
-                protonStage = null
-                refreshProtons()
-            }
-        }, "remove-proton-$id").start()
     }
 
     private fun refreshPackages() {
@@ -895,10 +753,10 @@ class MainActivity : ComponentActivity() {
                 addedGamesArt = addedGamesArt,
                 linuxDownloads = drivers.linuxDownloads, androidDownloads = drivers.androidDownloads, releaseStatus = drivers.releaseStatus,
                 releaseChecking = drivers.releaseChecking, canRestoreBundled = drivers.canRestoreBundled,
-                deckyInstalled = if (mode == SessionService.MODE_STEAM) deckyInstalled else null,
-                deckyLatestRelease = if (mode == SessionService.MODE_STEAM) deckyReleases.firstOrNull() else null,
-                deckyChecking = deckyChecking, deckyStage = deckyStage, deckyPercent = deckyPercent,
-                deckyEnabled = deckySupervisor, deckySessionRunning = SessionState.running,
+                deckyInstalled = if (mode == SessionService.MODE_STEAM) decky.deckyInstalled else null,
+                deckyLatestRelease = if (mode == SessionService.MODE_STEAM) decky.deckyReleases.firstOrNull() else null,
+                deckyChecking = decky.deckyChecking, deckyStage = decky.deckyStage, deckyPercent = decky.deckyPercent,
+                deckyEnabled = decky.deckySupervisor, deckySessionRunning = SessionState.running,
             ),
             ModeSettingsActions(
                 onResolution = { cap -> SessionPrefs.setResolutionCap(this, mode, cap); resolutionCap = cap },
@@ -952,13 +810,13 @@ class MainActivity : ComponentActivity() {
                     pendingAddedGame = folder
                     pickAddedGameExe.launch(InAppFilePicker.buildIntent(this, listOf("exe"), "Choose the game's .exe", folder))
                 },
-                onDeckyInstall = { release -> installDecky(release) },
-                onDeckyCheck = { refreshDecky() },
-                onDeckyEnabled = { enabled -> DeckyManager.setSupervisorEnabled(this, enabled); deckySupervisor = enabled },
+                onDeckyInstall = { release -> decky.installDecky(release) },
+                onDeckyCheck = { decky.refreshDecky() },
+                onDeckyEnabled = { enabled -> DeckyManager.setSupervisorEnabled(this, enabled); decky.deckySupervisor = enabled },
                 onDeckyUninstall = {
                     DeckyManager.uninstall(this, wipeData = false)
-                    deckyInstalled = null
-                    deckySupervisor = false
+                    decky.deckyInstalled = null
+                    decky.deckySupervisor = false
                 },
                 onDismiss = { settingsMode = null },
             ),
@@ -1040,9 +898,9 @@ class MainActivity : ComponentActivity() {
         gameStorage = SessionPrefs.gameStorage(this)
         storageOptions = GameStorage.options(this).map { it.label to it.path }
         if (mode == SessionService.MODE_STEAM) {
-            deckyInstalled = DeckyManager.installed(this)
-            deckySupervisor = DeckyManager.supervisorEnabled(this)
-            refreshDecky()
+            decky.deckyInstalled = DeckyManager.installed(this)
+            decky.deckySupervisor = DeckyManager.supervisorEnabled(this)
+            decky.refreshDecky()
         }
         settingsMode = mode
     }
@@ -1073,10 +931,6 @@ class MainActivity : ComponentActivity() {
         noXalia = SessionPrefs.noXalia(this)
         prootNoSeccomp = SessionPrefs.prootNoSeccomp(this)
         refreshPhantomStatus()
-    }
-
-    private fun refreshProtons() {
-        protonRows = ProtonExtras.tools.map { ProtonRow(it.id, it.name, ProtonExtras.installed(this, it), ProtonExtras.queued(this, it)) }
     }
 
     private fun refresh() {
