@@ -141,12 +141,13 @@ internal fun SideRail(
             verticalArrangement = Arrangement.spacedBy(4.dp),
             modifier = Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()),
         ) {
-            if (s.isHomeApp) RailItem("Apps", Icons.Outlined.Apps, "android-apps", selected == "android-apps", compact, iconOnly, onFocus = { onFocusSelect("android-apps") }) { onSelect("android-apps") }
             RailItem("Steam", Icons.Outlined.SportsEsports, "steam", selected == "steam", compact, iconOnly, onFocus = { onFocusSelect("steam") }) { onSelect("steam") }
-            // Games appears once there is one: an empty list is no place to land.
-            if (s.steamGames.isNotEmpty()) RailItem("Games", Icons.Outlined.VideoLibrary, "games", selected == "games", compact, iconOnly, onFocus = { onFocusSelect("games") }) { onSelect("games") }
+            // Always there, so the items below it never move; an empty library says how to fill it.
+            RailItem("Games", Icons.Outlined.VideoLibrary, "games", selected == "games", compact, iconOnly, onFocus = { onFocusSelect("games") }) { onSelect("games") }
             RailItem("Desktop", Icons.Outlined.DesktopWindows, "desktop", selected == "desktop", compact, iconOnly, onFocus = { onFocusSelect("desktop") }) { onSelect("desktop") }
             RailItem("Components", Icons.Outlined.Layers, "components", selected == "components", compact, iconOnly, onFocus = { onFocusSelect("components") }) { onSelect("components") }
+            // Home mode's extra section goes last, so it shifts nothing above it.
+            if (s.isHomeApp) RailItem("Apps", Icons.Outlined.Apps, "android-apps", selected == "android-apps", compact, iconOnly, onFocus = { onFocusSelect("android-apps") }) { onSelect("android-apps") }
             RailItem("Setup", Icons.Outlined.Tune, "setup", selected == "setup", compact, iconOnly, badge = setupNeedsAttention, onFocus = { onFocusSelect("setup") }) { onSelect("setup") }
         }
         AnimatedVisibility(s.busy, enter = expandVertically() + fadeIn(), exit = shrinkVertically() + fadeOut()) {

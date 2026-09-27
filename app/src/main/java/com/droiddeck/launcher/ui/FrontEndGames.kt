@@ -62,9 +62,19 @@ import com.droiddeck.launcher.frontend.Library
 @Composable
 internal fun GamesPage(s: FrontEndState, a: FrontEndActions, selected: String, onSelect: (String) -> Unit, modifier: Modifier) {
     val games = remember(s.steamGames) { s.steamGames.sortedByDescending { it.lastPlayed } }
-    val current = games.firstOrNull { "app:${it.appId}" == selected } ?: games.firstOrNull() ?: return
-    val host = rememberMenuHost()
     val narrow = LocalNarrowPane.current
+    val current = games.firstOrNull { "app:${it.appId}" == selected } ?: games.firstOrNull()
+    if (current == null) {
+        Column(modifier = modifier.padding(horizontal = if (narrow) 16.dp else 22.dp, vertical = if (narrow) 12.dp else 18.dp)) {
+            Rise(0) { PageHeader("Games") }
+            Rise(1) { Note("Games you install in Steam show up here. Open Steam, install one, and it appears after the session.") }
+            Rise(2) {
+                Actions { PrimaryButton("Play Steam", enabled = !s.busy, main = true, icon = Icons.Filled.PlayArrow, modifier = Modifier.padding(top = 12.dp), onClick = a.onPlay) }
+            }
+        }
+        return
+    }
+    val host = rememberMenuHost()
     if (games.size == 1) {
         Column(modifier = modifier.verticalScroll(rememberScrollState()).padding(horizontal = if (narrow) 16.dp else 22.dp, vertical = if (narrow) 12.dp else 18.dp)) {
             Rise(0) {
