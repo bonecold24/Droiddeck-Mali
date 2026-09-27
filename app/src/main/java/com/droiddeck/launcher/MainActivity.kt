@@ -9,7 +9,6 @@ import java.io.File
 import android.content.pm.PackageManager
 import android.hardware.display.DisplayManager
 import android.net.Uri
-import android.provider.OpenableColumns
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -26,10 +25,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import com.droiddeck.launcher.gpu.FrameGen
-import com.droiddeck.launcher.gpu.LinuxVulkanDriver
-import com.droiddeck.launcher.gpu.LinuxVulkanDriverManager
 import com.droiddeck.launcher.gpu.TurnipDriver
-import com.droiddeck.launcher.gpu.TurnipReleases
 import com.droiddeck.launcher.gpu.LsfgNative
 import com.droiddeck.launcher.runtime.LinuxRuntime
 import com.droiddeck.launcher.runtime.DesktopCatalog
@@ -54,7 +50,6 @@ import com.droiddeck.launcher.ui.PerformancePage
 import com.droiddeck.launcher.ui.ModeSettingsPage
 import com.droiddeck.launcher.ui.ModeSettings
 import com.droiddeck.launcher.ui.ModeSettingsActions
-import com.droiddeck.launcher.ui.DriverRow
 import com.droiddeck.launcher.ui.ConfirmDialog
 import com.droiddeck.launcher.ui.ControllerActions
 import com.droiddeck.launcher.ui.ControllerMappingPage
@@ -82,6 +77,7 @@ import com.droiddeck.launcher.input.SecondScreenDisplays
  */
 class MainActivity : ComponentActivity() {
     private val ui = Handler(Looper.getMainLooper())
+    private val drivers = DriverMenus(this, ui)
 
     // The screen's state. Compose redraws whatever reads these when they change.
     private var installed by mutableStateOf<String?>(null)
@@ -148,19 +144,6 @@ class MainActivity : ComponentActivity() {
     private var forceFullscreen by mutableStateOf(true)
     private var launcherFullscreen by mutableStateOf(true)
     private var mic by mutableStateOf(false)
-    private var linuxRows by mutableStateOf<List<DriverRow>>(emptyList())
-    /** The latest Banners-Turnip release as each driver menu offers it (see [refreshReleaseRows]). */
-    private var linuxDownloads by mutableStateOf<List<com.droiddeck.launcher.ui.DownloadRow>>(emptyList())
-    private var androidDownloads by mutableStateOf<List<com.droiddeck.launcher.ui.DownloadRow>>(emptyList())
-    private var releaseStatus by mutableStateOf("Not checked yet - tap refresh to look for new drivers")
-    private var releaseChecking by mutableStateOf(false)
-    private var canRestoreBundled by mutableStateOf(false)
-    /** Asset name -> download percent, while it downloads. */
-    private val releaseProgress = HashMap<String, Int>()
-    private var linuxSteam by mutableStateOf("")
-    private var linuxDesktop by mutableStateOf("")
-    private var androidRows by mutableStateOf<List<DriverRow>>(emptyList())
-    private var androidSelected by mutableStateOf("")
 
     // The app's own picker (files/), once per kind of pick: the two driver lists validate
     // differently, and the reason a zip is refused names the list it belongs in.
@@ -168,10 +151,10 @@ class MainActivity : ComponentActivity() {
         if (r.resultCode == RESULT_OK) InAppFilePicker.pickedUri(r.data)?.let { importComponent(it) }
     }
     private val pickLinuxDriver = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { r ->
-        if (r.resultCode == RESULT_OK) InAppFilePicker.pickedUri(r.data)?.let { importDriver(it, linux = true) }
+        if (r.resultCode == RESULT_OK) InAppFilePicker.pickedUri(r.data)?.let { drivers.importDriver(it, linux = true) }
     }
     private val pickAndroidDriver = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { r ->
-        if (r.resultCode == RESULT_OK) InAppFilePicker.pickedUri(r.data)?.let { importDriver(it, linux = false) }
+        if (r.resultCode == RESULT_OK) InAppFilePicker.pickedUri(r.data)?.let { drivers.importDriver(it, linux = false) }
     }
     private val pickAddedGamesDir = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { r ->
         if (r.resultCode == RESULT_OK) InAppFilePicker.pickedPath(r.data)?.let { path ->
@@ -890,9 +873,9 @@ class MainActivity : ComponentActivity() {
             ModeSettings(
                 mode = mode, resolutionCap = resolutionCap, customResolution = customResolution, shapeMode = shapeMode,
                 hdr = hdrOn, hdrReason = hdrReason,
-                linuxRows = linuxRows,
-                linuxSelected = if (mode == SessionService.MODE_STEAM) linuxSteam else linuxDesktop,
-                androidRows = androidRows, androidSelected = androidSelected,
+                linuxRows = drivers.linuxRows,
+                linuxSelected = if (mode == SessionService.MODE_STEAM) drivers.linuxSteam else drivers.linuxDesktop,
+                androidRows = drivers.androidRows, androidSelected = drivers.androidSelected,
                 touchMode = touchMode,
                 suspendPolicy = suspendPolicy,
                 oscMode = if (mode == SessionService.MODE_STEAM) oscMode else null,
@@ -910,8 +893,8 @@ class MainActivity : ComponentActivity() {
                 addedGamesDirs = if (mode == SessionService.MODE_STEAM) addedGamesDirs else null,
                 addedGames = if (mode == SessionService.MODE_STEAM) addedGames else emptyList(),
                 addedGamesArt = addedGamesArt,
-                linuxDownloads = linuxDownloads, androidDownloads = androidDownloads, releaseStatus = releaseStatus,
-                releaseChecking = releaseChecking, canRestoreBundled = canRestoreBundled,
+                linuxDownloads = drivers.linuxDownloads, androidDownloads = drivers.androidDownloads, releaseStatus = drivers.releaseStatus,
+                releaseChecking = drivers.releaseChecking, canRestoreBundled = drivers.canRestoreBundled,
                 deckyInstalled = if (mode == SessionService.MODE_STEAM) deckyInstalled else null,
                 deckyLatestRelease = if (mode == SessionService.MODE_STEAM) deckyReleases.firstOrNull() else null,
                 deckyChecking = deckyChecking, deckyStage = deckyStage, deckyPercent = deckyPercent,
@@ -922,15 +905,15 @@ class MainActivity : ComponentActivity() {
                 onCustomResolution = { size -> SessionPrefs.setCustomResolution(this, mode, size); customResolution = size },
                 onShape = { shape -> SessionPrefs.setShapeMode(this, shape); shapeMode = shape },
                 onHdr = { on -> SessionPrefs.setHdr(this, mode, on); hdrOn = on },
-                onSelectLinux = { id -> SessionPrefs.setLinuxDriver(this, mode, id); refreshDrivers() },
+                onSelectLinux = { id -> SessionPrefs.setLinuxDriver(this, mode, id); drivers.refreshDrivers() },
                 onImportLinux = { pickLinuxDriver.launch(InAppFilePicker.buildIntent(this, ZIP_EXT, "Choose a Linux runtime driver (-Linux zip)")) },
-                onRemoveLinux = { id -> deleteDriver(id, linux = true) },
-                onRefreshReleases = { checkLatestTurnip() },
-                onDownloadDriver = { name -> downloadReleaseDriver(name) },
-                onRestoreBundled = { TurnipDriver(this).restoreBundled(); refreshDrivers() },
-                onSelectAndroid = { id -> SessionPrefs.setAndroidDriver(this, id); refreshDrivers() },
+                onRemoveLinux = { id -> drivers.deleteDriver(id, linux = true) },
+                onRefreshReleases = { drivers.checkLatestTurnip() },
+                onDownloadDriver = { name -> drivers.downloadReleaseDriver(name) },
+                onRestoreBundled = { TurnipDriver(this).restoreBundled(); drivers.refreshDrivers() },
+                onSelectAndroid = { id -> SessionPrefs.setAndroidDriver(this, id); drivers.refreshDrivers() },
                 onImportAndroid = { pickAndroidDriver.launch(InAppFilePicker.buildIntent(this, ZIP_EXT, "Choose a display driver (AdrenoTools zip)")) },
-                onRemoveAndroid = { id -> deleteDriver(id, linux = false) },
+                onRemoveAndroid = { id -> drivers.deleteDriver(id, linux = false) },
                 onTouch = { t -> SessionPrefs.setTouchMode(this, t); touchMode = t },
                 onSuspendPolicy = { policy -> SessionPrefs.setSuspendPolicy(this, mode, policy); suspendPolicy = policy },
                 onOsc = { o -> SessionPrefs.setOscMode(this, o); oscMode = o },
@@ -1034,7 +1017,7 @@ class MainActivity : ComponentActivity() {
         showProtons = false
         showComponents = false
         showMapping = false
-        refreshDrivers()
+        drivers.refreshDrivers()
         resolutionCap = SessionPrefs.resolutionCap(this, mode)
         customResolution = SessionPrefs.customResolution(this, mode)
         fexPreset = SessionPrefs.fexPreset(this)
@@ -1075,178 +1058,6 @@ class MainActivity : ComponentActivity() {
         }
         SessionPrefs.setGameStorage(this, path, label)
         gameStorage = path
-    }
-
-    private fun refreshDrivers() {
-        val lm = LinuxVulkanDriverManager(this)
-        fun origin(id: String) = if (TurnipReleases.isDownloaded(this, id)) DriverRow.DOWNLOADED else DriverRow.IMPORTED
-        linuxRows = LinuxVulkanDriver.optionValues(this).map { id ->
-            if (id.isEmpty()) DriverRow("", "Runtime default", "the Turnip built into the runtime", false)
-            else DriverRow(
-                id, lm.getDriverName(id),
-                listOfNotNull(
-                    lm.getDriverVersion(id).takeIf { it.isNotEmpty() },
-                    lm.getMinGlibc(id).takeIf { it.isNotEmpty() }?.let { "glibc $it+" },
-                ).joinToString(" · "),
-                true, origin(id),
-            )
-        }
-        linuxSteam = SessionPrefs.linuxDriver(this, SessionService.MODE_STEAM)
-        linuxDesktop = SessionPrefs.linuxDriver(this, SessionService.MODE_DESKTOP)
-        val td = TurnipDriver(this)
-        val auto = td.autoId()
-        androidRows = buildList {
-            add(DriverRow(
-                TurnipDriver.AUTO, "Auto - picked by GPU",
-                if (auto == "system") "system Vulkan: no bundled build for this GPU" else "${td.displayName(auto)} (bundled)",
-                false,
-            ))
-            for (id in td.visibleBundled()) add(DriverRow(id, td.displayName(id), td.driverVersion(id), true, DriverRow.BUNDLED))
-            for (id in td.enumerateImported()) add(DriverRow(id, td.displayName(id), td.driverVersion(id), true, origin(id)))
-        }
-        canRestoreBundled = td.hiddenBundled().isNotEmpty()
-        androidSelected = SessionPrefs.androidDriver(this)
-        refreshReleaseRows()
-    }
-
-    /**
-     * Import off the main thread - a driver zip is a few MB and the glibc check reads the whole
-     * library - then say what happened. A refusal's message is the user-facing reason.
-     */
-    private fun importDriver(uri: Uri, linux: Boolean) {
-        val name = displayNameOf(uri)
-        Thread({
-            val problem = try {
-                if (linux) LinuxVulkanDriverManager(this).installDriver(uri, name)
-                else TurnipDriver(this).installFromZip(uri, name)
-                null
-            } catch (e: IllegalArgumentException) {
-                e.message
-            } catch (e: Exception) {
-                Log.w(TAG, "driver import", e)
-                "Import failed: ${e.message}"
-            }
-            ui.post {
-                android.widget.Toast.makeText(
-                    this, problem ?: "Imported ${name ?: "driver"}",
-                    if (problem != null) android.widget.Toast.LENGTH_LONG else android.widget.Toast.LENGTH_SHORT,
-                ).show()
-                refreshDrivers()
-            }
-        }, "import-driver").start()
-    }
-
-    /**
-     * Delete an imported or downloaded driver. A mode still set to it goes back to its default, so a
-     * session never starts on a driver that is gone; a release download is forgotten, so the menu
-     * offers it again.
-     */
-    private fun deleteDriver(id: String, linux: Boolean) {
-        if (linux) {
-            LinuxVulkanDriverManager(this).removeDriver(id)
-            for (mode in listOf(SessionService.MODE_STEAM, SessionService.MODE_DESKTOP)) {
-                if (SessionPrefs.linuxDriver(this, mode) == id) SessionPrefs.setLinuxDriver(this, mode, "")
-            }
-        } else {
-            val td = TurnipDriver(this)
-            if (id in TurnipDriver.BUNDLED) td.hideBundled(id) else td.remove(id)
-            if (SessionPrefs.androidDriver(this) == id) SessionPrefs.setAndroidDriver(this, TurnipDriver.AUTO)
-        }
-        TurnipReleases.forget(this, id)
-        android.widget.Toast.makeText(this, "Deleted ${id}", android.widget.Toast.LENGTH_SHORT).show()
-        refreshDrivers()
-    }
-
-    /** The download entries and the refresh line, from what the last check found. */
-    private fun refreshReleaseRows() {
-        val check = TurnipReleases.cached(this)
-        val lm = LinuxVulkanDriverManager(this)
-        val td = TurnipDriver(this)
-        fun rows(linux: Boolean) = check?.assets.orEmpty()
-            .filter { it.linux == linux }
-            .filter { a -> TurnipReleases.installedId(this, a) { id -> if (linux) lm.isInstalled(id) else td.isInstalled(id) } == null }
-            .map { a ->
-                val mb = "%.1f MB".format(a.size / 1_048_576.0)
-                com.droiddeck.launcher.ui.DownloadRow(a.name, "${a.source} ${a.tag}", "${a.label} · $mb", releaseProgress[a.name])
-            }
-        linuxDownloads = rows(linux = true)
-        androidDownloads = rows(linux = false)
-        if (!releaseChecking) releaseStatus = when (check) {
-            null -> "Not checked yet - tap refresh to look for new drivers"
-            else -> "Latest: " + check.latest.joinToString(" · ") { "${it.first} ${it.second}" } +
-                (if (check.failed.isEmpty()) "" else " · ${check.failed.joinToString()} unreachable") +
-                " · checked ${ago(check.checkedAt)}"
-        }
-    }
-
-    private fun ago(t: Long): String {
-        val m = ((System.currentTimeMillis() - t) / 60_000).coerceAtLeast(0)
-        return when {
-            m < 1 -> "just now"
-            m < 60 -> "$m min ago"
-            m < 48 * 60 -> "${m / 60} h ago"
-            else -> "${m / (24 * 60)} days ago"
-        }
-    }
-
-    /** Only when the user taps refresh: nothing goes online on its own. */
-    private fun checkLatestTurnip() {
-        if (releaseChecking) return
-        releaseChecking = true
-        releaseStatus = "Checking Banners-Turnip and WinNative…"
-        Thread({
-            val problem = try { TurnipReleases.refresh(this); null } catch (e: Exception) {
-                Log.w(TAG, "latest Turnip check", e); e.message ?: "check failed"
-            }
-            ui.post {
-                releaseChecking = false
-                refreshReleaseRows()
-                if (problem != null) releaseStatus = "Couldn't check: $problem"
-            }
-        }, "turnip-release-check").start()
-    }
-
-    /** Download one release driver and import it through the same importer a picked zip uses. */
-    private fun downloadReleaseDriver(assetName: String) {
-        val asset = TurnipReleases.cached(this)?.assets?.firstOrNull { it.name == assetName } ?: return
-        if (releaseProgress.containsKey(assetName)) return
-        releaseProgress[assetName] = 0
-        refreshReleaseRows()
-        Thread({
-            var file: java.io.File? = null
-            val problem = try {
-                file = TurnipReleases.download(this, asset) { pct ->
-                    ui.post { releaseProgress[assetName] = pct; refreshReleaseRows() }
-                }
-                val uri = Uri.fromFile(file)
-                val id = if (asset.linux) LinuxVulkanDriverManager(this).installDriver(uri, asset.name)
-                         else TurnipDriver(this).installFromZip(uri, asset.name)
-                TurnipReleases.recordDownload(this, asset, id)
-                null
-            } catch (e: IllegalArgumentException) {
-                e.message
-            } catch (e: Exception) {
-                Log.w(TAG, "release driver download", e)
-                "Download failed: ${e.message}"
-            } finally {
-                file?.let { com.droiddeck.launcher.core.FileUtils.delete(it) }
-            }
-            ui.post {
-                releaseProgress.remove(assetName)
-                android.widget.Toast.makeText(
-                    this, problem ?: "Installed ${asset.name.removeSuffix(".zip")} - pick it in the menu",
-                    android.widget.Toast.LENGTH_LONG,
-                ).show()
-                refreshDrivers()
-            }
-        }, "download-turnip").start()
-    }
-
-    private fun displayNameOf(uri: Uri): String? = if (uri.scheme == "file") uri.lastPathSegment else try {
-        contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)
-            ?.use { c -> if (c.moveToFirst()) c.getString(0) else null }
-    } catch (e: Exception) {
-        null
     }
 
     /** The two masks as the dialog shows them; an empty stored list shows as every core ticked. */
