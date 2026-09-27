@@ -71,6 +71,7 @@ import com.droiddeck.launcher.core.PhantomProcessLimit
 import com.droiddeck.launcher.core.PhantomProcessStatus
 import com.droiddeck.launcher.session.SessionPrefs
 import kotlin.math.roundToInt
+import kotlinx.coroutines.withTimeoutOrNull
 
 class FrontEndState(
     val installed: String?,
@@ -283,6 +284,22 @@ internal fun Modifier.paneItem(id: String): Modifier {
 
 internal val LocalFrontFocus = staticCompositionLocalOf<FrontFocus?> { null }
 
+/** The pane's exit animation (170ms) and a frame's margin: a new page is in after this. */
+private const val PAGE_EXIT_MS = 200
+
+/**
+ * Asks [target] for focus once a frame until [done] (or a focus request lands), for at most half a
+ * second: a control can take focus only once it is laid out, and that is a frame or two, not a
+ * fixed number of milliseconds.
+ */
+internal suspend fun focusWithinFrames(done: () -> Boolean, target: () -> FocusRequester) {
+    repeat(30) {
+        androidx.compose.runtime.withFrameNanos { }
+        if (done()) return
+        if (runCatching { target().requestFocus() }.isSuccess && done()) return
+    }
+}
+
 @Composable
 fun FrontEndScreen(s: FrontEndState, a: FrontEndActions, page: (@Composable () -> Unit)? = null) {
     val frontFocus = remember { FrontFocus() }
@@ -372,32 +389,27 @@ private fun FrontEndScreenBody(s: FrontEndState, a: FrontEndActions, page: (@Com
         LaunchedEffect(processSettingsPageVisible) {
             if (processSettingsPageVisible) return@LaunchedEffect
             snapshotFlow { window.isWindowFocused }.first { it }
-            repeat(20) {
-                if (anyFocused) return@LaunchedEffect
-                if (inputModeManager.inputMode != InputMode.Keyboard) inputModeManager.requestInputMode(InputMode.Keyboard)
-                val target = if (frontFocus.primaryAttached > 0) frontFocus.primary else frontFocus.railFor(railSelection)
-                runCatching { target.requestFocus() }
-                kotlinx.coroutines.delay(100)
-            }
+            if (inputModeManager.inputMode != InputMode.Keyboard) inputModeManager.requestInputMode(InputMode.Keyboard)
+            focusWithinFrames({ anyFocused }) { if (frontFocus.primaryAttached > 0) frontFocus.primary else frontFocus.railFor(railSelection) }
         }
         // A tile or button that opens a page goes away with the page it was on, and focus with it;
         // the pad then had nothing to move from (a press landed back on the rail's first item). So
         // once the new page is in, a controller lands on its main button.
         LaunchedEffect(selected, s.pageKey, processSettingsPageVisible) {
             if (processSettingsPageVisible) return@LaunchedEffect
-            kotlinx.coroutines.delay(450)
-            if (!anyFocused && inputModeManager.inputMode == InputMode.Keyboard) runCatching {
-                if (frontFocus.primaryAttached > 0) frontFocus.primary.requestFocus()
-                else frontFocus.railFor(railSelection).requestFocus()
-            }
+            // Past the old page's exit (170ms), then the first frame the new page takes focus.
+            kotlinx.coroutines.delay(Motion.ms(PAGE_EXIT_MS).toLong())
+            if (anyFocused || inputModeManager.inputMode != InputMode.Keyboard) return@LaunchedEffect
+            focusWithinFrames({ anyFocused }) { if (frontFocus.primaryAttached > 0) frontFocus.primary else frontFocus.railFor(railSelection) }
         }
         // A rail item picked with a controller moves on into its page, once the page is in.
         LaunchedEffect(railPicks) {
             if (railPicks == 0 || processSettingsPageVisible) return@LaunchedEffect
-            kotlinx.coroutines.delay(450)
-            if (inputModeManager.inputMode == InputMode.Keyboard && frontFocus.primaryAttached > 0) runCatching {
-                frontFocus.paneEntry().requestFocus()
-            }
+            kotlinx.coroutines.delay(Motion.ms(PAGE_EXIT_MS).toLong())
+            if (inputModeManager.inputMode != InputMode.Keyboard) return@LaunchedEffect
+            // Waits for the new page's main button rather than a fixed guess at how long it takes.
+            withTimeoutOrNull(1_000) { snapshotFlow { frontFocus.primaryAttached > 0 }.first { it } } ?: return@LaunchedEffect
+            focusWithinFrames({ frontFocus.focusedRail == null && anyFocused }) { frontFocus.paneEntry() }
         }
         val paneFocus = Modifier
             .focusProperties { enter = { frontFocus.paneEntry() } }
