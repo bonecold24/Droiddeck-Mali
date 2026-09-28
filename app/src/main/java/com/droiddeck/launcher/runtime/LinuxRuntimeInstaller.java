@@ -210,6 +210,8 @@ public final class LinuxRuntimeInstaller {
             // runtime that isInstalled() would happily launch.
             File root = LinuxRuntime.rootDir(context);
             File staging = new File(root.getParentFile(), LinuxRuntime.DIR + ".new");
+            File old = new File(root.getParentFile(), LinuxRuntime.DIR + ".old");
+            recoverInterruptedSwap(root, staging, old);
             FileUtils.delete(staging);
             if (!staging.mkdirs()) return false;
             if (listener != null) listener.onProgress("Extracting", -1);
@@ -219,7 +221,6 @@ public final class LinuxRuntimeInstaller {
             }
             FileUtils.writeString(new File(staging, VERSION_FILE), release.version);
 
-            File old = new File(root.getParentFile(), LinuxRuntime.DIR + ".old");
             FileUtils.delete(old);
             if (root.isDirectory() && !root.renameTo(old)) {
                 FileUtils.delete(staging);
@@ -244,6 +245,10 @@ public final class LinuxRuntimeInstaller {
             }
 
             if (!staging.renameTo(root)) {
+                // The user's home is inside staging by now: take it back before the old rootfs
+                // returns, or the next install's cleanup of staging deletes it.
+                File keptTo = new File(staging, USER_DATA);
+                if (keptTo.isDirectory() && old.isDirectory()) keptTo.renameTo(new File(old, USER_DATA));
                 if (old.isDirectory()) old.renameTo(root);
                 return false;
             }
@@ -255,6 +260,28 @@ public final class LinuxRuntimeInstaller {
         } finally {
             archive.delete();
         }
+    }
+
+    /**
+     * Puts back what an update killed mid-swap left behind, before staging is cleared: the user's
+     * home may be sitting in staging and the previous rootfs in linuxfs.old.
+     */
+    private static void recoverInterruptedSwap(File root, File staging, File old) {
+        File target = root.isDirectory() ? root : old;
+        File stagedHome = new File(staging, USER_DATA);
+        File home = new File(target, USER_DATA);
+        if (target.isDirectory() && stagedHome.isDirectory() && (!home.exists() || isEmptyDir(home))) {
+            FileUtils.delete(home);
+            if (stagedHome.renameTo(home)) Log.w(TAG, "recovered " + USER_DATA + " from an interrupted update");
+        }
+        if (!root.isDirectory() && old.isDirectory() && old.renameTo(root)) {
+            Log.w(TAG, "restored the previous runtime after an interrupted update");
+        }
+    }
+
+    private static boolean isEmptyDir(File dir) {
+        String[] names = dir.list();
+        return dir.isDirectory() && names != null && names.length == 0;
     }
 
     /** Removes the runtime; returns false without touching it while an install is running. */
