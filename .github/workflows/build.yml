@@ -435,3 +435,43 @@ jobs:
       environment: signing-main
       variants: ${{ needs.build.outputs.variants }}
     secrets: inherit
+
+  # A post in the Discord's builds channel for each signed main build, with a link to its apks.
+  # DISCORD_BUILDS_WEBHOOK is the channel's webhook URL; without it the post is skipped.
+  announce:
+    needs: [build, sign]
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - name: Post to Discord
+        env:
+          WEBHOOK: ${{ secrets.DISCORD_BUILDS_WEBHOOK }}
+          GH_TOKEN: ${{ github.token }}
+          VARIANTS: ${{ needs.build.outputs.variants }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          if [ -z "$WEBHOOK" ]; then
+            echo "::notice::No DISCORD_BUILDS_WEBHOOK secret; nothing posted"
+            exit 0
+          fi
+          commit=$(gh api "repos/$GITHUB_REPOSITORY/commits/$GITHUB_SHA")
+          subject=$(jq -r '.commit.message | split("\n")[0]' <<<"$commit")
+          # A merge commit's subject is "Merge pull request #N from ..."; its body's first line is
+          # the PR's title, which says more.
+          title=$(jq -r '.commit.message | split("\n") | map(select(length > 0)) | .[1] // ""' <<<"$commit")
+          pr=$(sed -n 's/^Merge pull request #\([0-9]*\).*/\1/p' <<<"$subject")
+          if [ -n "$pr" ]; then
+            what="[#$pr]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/pull/$pr): ${title:-$subject}"
+          else
+            what="[\`${GITHUB_SHA::7}\`]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/commit/$GITHUB_SHA): $subject"
+          fi
+          variants=$(jq -r 'join(", ")' <<<"$VARIANTS")
+          content=$(printf '**New signed build** `main-%s`\n%s\nAPKs (%s): <%s#artifacts>' \
+            "${GITHUB_SHA::7}" "$what" "$variants" "$RUN_URL")
+          jq -n --arg content "$content" '{content: $content, allowed_mentions: {parse: []}}' |
+            curl -fsS -H 'Content-Type: application/json' -d @- "$WEBHOOK" -o /dev/null
+          echo "Posted: $content"
