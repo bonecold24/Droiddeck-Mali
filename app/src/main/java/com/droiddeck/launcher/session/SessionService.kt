@@ -1158,6 +1158,12 @@ class SessionService : Service() {
         }
 
         fun stop(context: Context) {
+            // Not running yet (still downloading or setting up): the start path checks this flag
+            // and cancels, and a service started here would have no session to stop.
+            if (!SessionState.running) {
+                SessionState.stopRequested = true
+                return
+            }
             context.startService(Intent(context, SessionService::class.java).setAction(ACTION_STOP))
         }
 
