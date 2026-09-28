@@ -29,7 +29,6 @@ fun PerformancePage(
     zinkLazy: Boolean,
     glThread: Boolean,
     noGlError: Boolean,
-    steamDeckMode: Boolean,
     noXalia: Boolean,
     prootNoSeccomp: Boolean,
     phantomWarning: String?,
@@ -38,7 +37,6 @@ fun PerformancePage(
     onZinkLazy: (Boolean) -> Unit,
     onGlThread: (Boolean) -> Unit,
     onNoGlError: (Boolean) -> Unit,
-    onSteamDeckMode: (Boolean) -> Unit,
     onNoXalia: (Boolean) -> Unit,
     onProotNoSeccomp: (Boolean) -> Unit,
     onClientCore: (Int, Boolean) -> Unit,
@@ -86,11 +84,6 @@ fun PerformancePage(
                 host, "noglerror", "Skip GL error checks",
                 "Disables per-call GL validation.",
                 noGlError, onChange = onNoGlError,
-            )
-            ToggleRow(
-                host, "deck", "Steam Deck mode",
-                "Runs the client with -droiddeck. SteamOS helpers and battery info are provided.",
-                steamDeckMode, onChange = onSteamDeckMode,
             )
         }
         SettingsGroup("Session fixes") {
