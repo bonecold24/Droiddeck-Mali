@@ -4,6 +4,8 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.view.MotionEvent
+import android.view.View
+import android.widget.FrameLayout
 import org.junit.Assert.*
 import org.junit.Before
 import org.junit.Test
@@ -24,6 +26,7 @@ class OnScreenControlsTest {
     @Before fun setUp() {
         context = RuntimeEnvironment.getApplication()
         context.getSharedPreferences("controller", Context.MODE_PRIVATE).edit().clear().commit()
+        ControllerPrefs.setLayout(context, 1200, 800, mapOf("ls" to (0.45f to 0.5f), "rs" to (0.55f to 0.5f)))
         view = OnScreenControls(context, null)
         view.layout(0, 0, 1200, 800)
     }
@@ -93,7 +96,7 @@ class OnScreenControlsTest {
         val x = value(left, "cx")
         val y = value(left, "cy")
         assertNotEquals(0, pixel(x, y))
-        assertFalse(touch(MotionEvent.ACTION_DOWN, 1 to (540f to 400f)))
+        assertFalse(touch(MotionEvent.ACTION_DOWN, 1 to (600f to 200f)))
         touch(MotionEvent.ACTION_DOWN, 1 to (x + 10f to y))
         assertEquals(x, value(left, "ax"), 0f)
         assertEquals(10f, value(left, "kx"), 0f)
@@ -110,7 +113,60 @@ class OnScreenControlsTest {
         assertEquals(-1, field(control("ls"), "pressedBy"))
         assertEquals(0f, value(control("ls"), "kx"), 0f)
         view.setButtonsOnly(true)
-        assertFalse(touch(MotionEvent.ACTION_DOWN, 1 to (540f to 400f)))
+        assertFalse(touch(MotionEvent.ACTION_DOWN, 1 to (600f to 200f)))
+    }
+
+    @Test fun adaptiveActivationIsLimitedToExpandedSavedCircle() {
+        val left = control("ls")
+        val x = value(left, "cx")
+        val y = value(left, "cy")
+        val reach = value(left, "radius") * 1.4f
+        assertFalse(touch(MotionEvent.ACTION_DOWN, 1 to (x to y - reach - 1f)))
+        assertTrue(touch(MotionEvent.ACTION_DOWN, 1 to (x to y - reach + 1f)))
+        assertEquals(y - reach + 1f, value(left, "ay"), 0.001f)
+        touch(MotionEvent.ACTION_UP, 1 to (x to y - reach + 1f))
+        assertFalse(touch(MotionEvent.ACTION_DOWN, 1 to (x - reach to y - reach)))
+        assertFalse(touch(MotionEvent.ACTION_DOWN, 1 to (600f to 200f)))
+    }
+
+    @Test fun touchesOutsideActivationAreasStayWithTrackpad() {
+        val received = mutableListOf<Int>()
+        val trackpad = View(context).apply {
+            setOnTouchListener { _, event -> received.add(event.actionMasked); true }
+        }
+        val root = FrameLayout(context).apply {
+            addView(trackpad, FrameLayout.LayoutParams(1200, 800))
+            addView(view, FrameLayout.LayoutParams(1200, 800))
+            measure(View.MeasureSpec.makeMeasureSpec(1200, View.MeasureSpec.EXACTLY), View.MeasureSpec.makeMeasureSpec(800, View.MeasureSpec.EXACTLY))
+            layout(0, 0, 1200, 800)
+        }
+        for ((action, position) in listOf(
+            MotionEvent.ACTION_DOWN to (600f to 200f),
+            MotionEvent.ACTION_MOVE to (540f to 400f),
+            MotionEvent.ACTION_UP to (540f to 400f),
+        )) {
+            val event = MotionEvent.obtain(1000L, time++, action, position.first, position.second, 0)
+            try { assertTrue(root.dispatchTouchEvent(event)) } finally { event.recycle() }
+        }
+        assertEquals(listOf(MotionEvent.ACTION_DOWN, MotionEvent.ACTION_MOVE, MotionEvent.ACTION_UP), received)
+        assertEquals(-1, field(control("ls"), "pressedBy"))
+    }
+
+    @Test fun adaptiveActivationLeavesFivePixelsAroundButtonHitTargets() {
+        for (id in listOf("a", "rb")) {
+            val button = control(id)
+            val radius = value(button, "radius")
+            val edge = value(button, "cy") - radius * if (id == "rb") 1.05f else 1.25f
+            val x = value(button, "cx")
+            val left = control("ls")
+            left.javaClass.getDeclaredField("cx").apply { isAccessible = true }.setFloat(left, x)
+            left.javaClass.getDeclaredField("cy").apply { isAccessible = true }.setFloat(left, edge - 10f)
+            assertFalse(touch(MotionEvent.ACTION_DOWN, 1 to (x to edge - 4f)))
+            assertEquals(-1, field(left, "pressedBy"))
+            assertTrue(touch(MotionEvent.ACTION_DOWN, 1 to (x to edge - 6f)))
+            assertEquals(1, field(left, "pressedBy"))
+            touch(MotionEvent.ACTION_UP, 1 to (x to edge - 6f))
+        }
     }
 
     private fun control(id: String): Any = (field(view, "controls") as List<*>).first { field(it!!, "id") == id }!!

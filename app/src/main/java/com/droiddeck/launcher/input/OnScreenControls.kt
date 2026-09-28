@@ -45,11 +45,11 @@ class OnScreenControls(context: Context, private val pad: PadBridge?, private va
         val halfW get() = if (wide) radius * SHOULDER_WIDTH else radius
         val halfH get() = if (wide) radius * SHOULDER_HEIGHT else radius
 
-        fun contains(x: Float, y: Float, r: Float): Boolean {
+        fun contains(x: Float, y: Float, r: Float, padding: Float = 0f): Boolean {
             val dx = x - cx
             val dy = y - cy
-            if (wide) return abs(dx) <= halfW + r * 0.25f && abs(dy) <= halfH + r * 0.25f
-            val hit = r * 1.25f
+            if (wide) return abs(dx) <= halfW + r * 0.25f + padding && abs(dy) <= halfH + r * 0.25f + padding
+            val hit = r * 1.25f + padding
             return dx * dx + dy * dy <= hit * hit
         }
 
@@ -516,8 +516,17 @@ class OnScreenControls(context: Context, private val pad: PadBridge?, private va
     private fun adaptiveStickAt(x: Float, y: Float): Control? {
         if (!settings.adaptiveSticks || editing || buttonsOnly) return null
         if (x < safe.left || x >= width - safe.right || y < safe.top || y >= height - safe.bottom) return null
-        val side = if (x < (safe.left + width - safe.right) / 2f) 0 else 1
-        return controls.firstOrNull { it.stick == side && isVisible(it) && it.pressedBy == -1 }
+        if (controls.any { it.stick < 0 && isVisible(it) && it.contains(x, y, it.radius, 5f) }) return null
+        return controls.filter {
+            val dx = x - it.cx
+            val dy = y - it.cy
+            val reach = it.radius * 1.4f
+            it.stick >= 0 && isVisible(it) && it.pressedBy == -1 && dx * dx + dy * dy <= reach * reach
+        }.minByOrNull {
+            val dx = x - it.cx
+            val dy = y - it.cy
+            dx * dx + dy * dy
+        }
     }
 
     private fun isVisible(control: Control): Boolean = when {
