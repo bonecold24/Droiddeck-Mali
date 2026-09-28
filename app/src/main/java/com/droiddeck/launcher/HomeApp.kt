@@ -97,13 +97,14 @@ object HomeApp {
         val intent = Intent(Intent.ACTION_MAIN)
             .addCategory(Intent.CATEGORY_LAUNCHER)
             .setComponent(ComponentName(app.packageName, app.className))
+        // Keep the target app's task separate from DroidDeck. Without this, Android puts the app on
+        // top of the caller's task: swiping it out of Recents then removes DroidDeck's task and
+        // ends the session, and on another display the entire task moves there.
+        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         if (displayId == null) {
             context.startActivity(intent)
             return
         }
-        // Keep the target app's task separate from DroidDeck. Without this, Android can put the
-        // app on top of the caller's task and move the entire task to the chosen display.
-        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         val options = ActivityOptions.makeBasic().setLaunchDisplayId(displayId)
         context.startActivity(intent, options.toBundle())
     }
