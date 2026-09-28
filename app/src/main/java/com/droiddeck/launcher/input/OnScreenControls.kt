@@ -520,7 +520,7 @@ class OnScreenControls(context: Context, private val pad: PadBridge?, private va
         return controls.filter {
             val dx = x - it.cx
             val dy = y - it.cy
-            val reach = it.radius * 1.4f
+            val reach = it.radius * 1.4f * sqrt(1.5f)
             it.stick >= 0 && isVisible(it) && it.pressedBy == -1 && dx * dx + dy * dy <= reach * reach
         }.minByOrNull {
             val dx = x - it.cx

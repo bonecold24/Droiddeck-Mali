@@ -1,5 +1,6 @@
 package com.droiddeck.launcher.input
 
+import kotlin.math.sqrt
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.Canvas
@@ -120,7 +121,7 @@ class OnScreenControlsTest {
         val left = control("ls")
         val x = value(left, "cx")
         val y = value(left, "cy")
-        val reach = value(left, "radius") * 1.4f
+        val reach = value(left, "radius") * 1.4f * sqrt(1.5f)
         assertFalse(touch(MotionEvent.ACTION_DOWN, 1 to (x to y - reach - 1f)))
         assertTrue(touch(MotionEvent.ACTION_DOWN, 1 to (x to y - reach + 1f)))
         assertEquals(y - reach + 1f, value(left, "ay"), 0.001f)
