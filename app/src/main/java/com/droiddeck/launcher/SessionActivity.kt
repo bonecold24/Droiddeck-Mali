@@ -264,13 +264,7 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
         handleHomeGuideIntent(intent)
 
         updateOnScreenControls()
-        WaylandCompositor.setFirstFrameListener {
-            SessionEvents.firstFrame()
-            runOnUiThread {
-                loading.visible = false
-                hud.start()
-            }
-        }
+        WaylandCompositor.setFirstFrameListener(firstFrameListener)
         SessionEvents.markReadyIfPossible()
         SessionState.endListener = endListener
         // A single Back opens the session menu; two quick presses/swipes send the Steam QAM chord.
@@ -1537,6 +1531,13 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
 
     /** Ours, so a finishing activity never unhooks the one that replaced it. */
     private val endListener: (Int) -> Unit = { status -> onSessionEnded(status) }
+    private val firstFrameListener = Runnable {
+        SessionEvents.firstFrame()
+        runOnUiThread {
+            loading.visible = false
+            hud.start()
+        }
+    }
 
     override fun onDestroy() {
         // Deliberately does NOT end the session: this activity can be destroyed while the user is
@@ -1549,7 +1550,7 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
         if (::hud.isInitialized) hud.stop()
         padBridge?.stop()
         if (SessionState.endListener === endListener) SessionState.endListener = null
-        WaylandCompositor.setFirstFrameListener(null)
+        WaylandCompositor.clearFirstFrameListener(firstFrameListener)
         super.onDestroy()
     }
 

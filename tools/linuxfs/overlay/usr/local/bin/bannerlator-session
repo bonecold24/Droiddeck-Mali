@@ -591,6 +591,8 @@ BUSCONF
         wait "$decky_supervisor" 2>/dev/null || true
         echo "== Decky: session supervisor stopped"
       fi
+      _bl_jobs=$(jobs -p)
+      [ -n "$_bl_jobs" ] && kill $_bl_jobs 2>/dev/null
       reap_orphans
     fi
     exit "$rc"

@@ -57,6 +57,7 @@ import java.util.Locale
  */
 class SessionService : Service() {
     private val components = java.util.concurrent.CopyOnWriteArrayList<SessionPart>()
+    private val stopLock = Any()
     private var wakeLock: PowerManager.WakeLock? = null
     private var wifiLock: WifiManager.WifiLock? = null
     private var sessionPid = -1
@@ -84,7 +85,7 @@ class SessionService : Service() {
         }
     }
     /** Counts sessions this service has started; a process exit from an earlier one is ignored. */
-    private var sessionGen = 0
+    @Volatile private var sessionGen = 0
 
     override fun onCreate() {
         super.onCreate()
@@ -392,6 +393,11 @@ class SessionService : Service() {
         networkLink.attach(this)
         networkLink.publish()
         components.add(networkLink)
+        if (gen != sessionGen || !SessionState.running) {
+            Log.i(TAG, "session stopped while it was starting; not launching it")
+            if (gen == sessionGen) components.clear()
+            return
+        }
         components.forEach { it.start() }
 
         val line = command.joinToString(" ") {
@@ -402,7 +408,7 @@ class SessionService : Service() {
         // by the teardown a second after the new one has started, and its exit used to arrive
         // here as "session ended: 137" and end the NEW session. An exit belongs to the session
         // that started it.
-        sessionPid = HostProcess.start(line, hostEnv.asArray(), root, { status ->
+        val pid = HostProcess.start(line, hostEnv.asArray(), root, { status ->
             if (gen != sessionGen) {
                 Log.i(TAG, "an earlier session's process ended ($status); the current one carries on")
                 return@start
@@ -410,12 +416,24 @@ class SessionService : Service() {
             Log.i(TAG, "session ended: $status")
             stopSession(status ?: -1)
         }, null)
-        Log.i(TAG, "session pid $sessionPid, log ${sessionLog.path}")
-        if (gen == sessionGen && SessionState.running && sessionPid > 1) {
-            SessionEvents.guestStarted(sessionPid)
-        } else if (gen == sessionGen && SessionState.running) {
-            SessionEvents.record("guest.start_failed", mapOf("pid" to sessionPid))
-            SessionEvents.fail("GUEST_START_FAILED", "The guest process could not be started", sessionPid)
+        Log.i(TAG, "session pid $pid, log ${sessionLog.path}")
+        if (gen != sessionGen || !SessionState.running) {
+            Log.i(TAG, "session stopped while its guest was starting; taking it down")
+            if (gen == sessionGen) {
+                launchWatcher?.stopWatching()
+                launchWatcher = null
+                components.reversed().forEach { runCatching { it.stop() } }
+                components.clear()
+            }
+            if (pid > 1) Thread({ teardown(pid) }, "session-teardown").start()
+            return
+        }
+        sessionPid = pid
+        if (pid > 1) {
+            SessionEvents.guestStarted(pid)
+        } else {
+            SessionEvents.record("guest.start_failed", mapOf("pid" to pid))
+            SessionEvents.fail("GUEST_START_FAILED", "The guest process could not be started", pid)
             stopSession(-1)
             return
         }
@@ -877,8 +895,12 @@ class SessionService : Service() {
         }
     }
 
-    private fun finishSessionStop(status: Int) {
+    private fun finishSessionStop(status: Int, stoppedGen: Int) {
         mainHandler.post {
+            if (stoppedGen != sessionGen || SessionState.running) {
+                Log.i(TAG, "session $stoppedGen finished stopping after a new one started")
+                return@post
+            }
             SessionState.suspended = false
             SessionState.guestPid = -1
             releaseLocks()
@@ -897,8 +919,11 @@ class SessionService : Service() {
     }
 
     private fun stopSession(status: Int) {
-        if (!SessionState.running) return
-        SessionState.running = false
+        synchronized(stopLock) {
+            if (!SessionState.running) return
+            SessionState.running = false
+        }
+        val stoppedGen = sessionGen
         SessionState.stopRequested = false
         SessionEvents.record("guest.exited", mapOf("status" to status))
         SessionEvents.transition(SessionPhase.STOPPING, "session.stopping", mapOf("status" to status))
@@ -942,10 +967,10 @@ class SessionService : Service() {
                     auxiliary.forEach { (pid, started) -> teardown(pid, started) }
                     if (prootPid > 1) teardown(prootPid)
                     killGuestLeftovers()
-                    finishSessionStop(status)
+                    finishSessionStop(status, stoppedGen)
                 }, "session-teardown").start()
             } else {
-                finishSessionStop(status)
+                finishSessionStop(status, stoppedGen)
             }
         }
         if (prootPid > 1) acquireLocks()
@@ -1127,6 +1152,10 @@ class SessionService : Service() {
         }
 
         fun stop(context: Context) {
+            if (!SessionState.running) {
+                SessionState.stopRequested = true
+                return
+            }
             context.startService(Intent(context, SessionService::class.java).setAction(ACTION_STOP))
         }
 
