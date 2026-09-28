@@ -245,8 +245,6 @@ public final class LinuxRuntimeInstaller {
             }
 
             if (!staging.renameTo(root)) {
-                // The user's home is inside staging by now: take it back before the old rootfs
-                // returns, or the next install's cleanup of staging deletes it.
                 File keptTo = new File(staging, USER_DATA);
                 if (keptTo.isDirectory() && old.isDirectory()) keptTo.renameTo(new File(old, USER_DATA));
                 if (old.isDirectory()) old.renameTo(root);
@@ -262,10 +260,6 @@ public final class LinuxRuntimeInstaller {
         }
     }
 
-    /**
-     * Puts back what an update killed mid-swap left behind, before staging is cleared: the user's
-     * home may be sitting in staging and the previous rootfs in linuxfs.old.
-     */
     private static void recoverInterruptedSwap(File root, File staging, File old) {
         File target = root.isDirectory() ? root : old;
         File stagedHome = new File(staging, USER_DATA);

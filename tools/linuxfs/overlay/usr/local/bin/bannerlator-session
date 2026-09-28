@@ -591,8 +591,6 @@ BUSCONF
         wait "$decky_supervisor" 2>/dev/null || true
         echo "== Decky: session supervisor stopped"
       fi
-      # This script's own loops and daemons (the fill-screen watcher never ends) would pass to
-      # gamescope's reaper when it exits and hold the compositor up on a black screen.
       _bl_jobs=$(jobs -p)
       [ -n "$_bl_jobs" ] && kill $_bl_jobs 2>/dev/null
       reap_orphans

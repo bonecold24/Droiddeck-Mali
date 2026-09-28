@@ -393,8 +393,6 @@ class SessionService : Service() {
         networkLink.attach(this)
         networkLink.publish()
         components.add(networkLink)
-        // Stopped from the loading screen while this was still setting up: the teardown has run
-        // and found nothing, so nothing may start behind it.
         if (gen != sessionGen || !SessionState.running) {
             Log.i(TAG, "session stopped while it was starting; not launching it")
             if (gen == sessionGen) components.clear()
@@ -420,7 +418,6 @@ class SessionService : Service() {
         }, null)
         Log.i(TAG, "session pid $pid, log ${sessionLog.path}")
         if (gen != sessionGen || !SessionState.running) {
-            // Stopped in the moment the guest was launched: the teardown already ran without it.
             Log.i(TAG, "session stopped while its guest was starting; taking it down")
             if (gen == sessionGen) {
                 launchWatcher?.stopWatching()
@@ -900,8 +897,6 @@ class SessionService : Service() {
 
     private fun finishSessionStop(status: Int, stoppedGen: Int) {
         mainHandler.post {
-            // Play was pressed again while this teardown ran: the locks, the activity and the
-            // service now belong to the new session.
             if (stoppedGen != sessionGen || SessionState.running) {
                 Log.i(TAG, "session $stoppedGen finished stopping after a new one started")
                 return@post
@@ -924,7 +919,6 @@ class SessionService : Service() {
     }
 
     private fun stopSession(status: Int) {
-        // Called from the main thread, the session-start thread and the guest's exit watcher.
         synchronized(stopLock) {
             if (!SessionState.running) return
             SessionState.running = false
@@ -1158,8 +1152,6 @@ class SessionService : Service() {
         }
 
         fun stop(context: Context) {
-            // Not running yet (still downloading or setting up): the start path checks this flag
-            // and cancels, and a service started here would have no session to stop.
             if (!SessionState.running) {
                 SessionState.stopRequested = true
                 return
