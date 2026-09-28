@@ -26,6 +26,12 @@ public final class WaylandCompositor {
      *  listener must marshal to the UI thread itself. */
     public static void setFirstFrameListener(Runnable r) { firstFrameListener = r; }
 
+    /** Clears the first-frame listener only if it is still {@code r}, so an activity going away
+     *  never drops the one its replacement registered. */
+    public static synchronized void clearFirstFrameListener(Runnable r) {
+        if (firstFrameListener == r) firstFrameListener = null;
+    }
+
     /** Invoked from native (banner_on_first_frame) on the first present. */
     @SuppressWarnings("unused")
     static void onFirstFramePresented() {
@@ -51,6 +57,11 @@ public final class WaylandCompositor {
     private static volatile GameListener gameListener;
 
     public static void setGameListener(GameListener l) { gameListener = l; }
+
+    /** Clears the game listener only if it is still {@code l}. */
+    public static synchronized void clearGameListener(GameListener l) {
+        if (gameListener == l) gameListener = null;
+    }
 
     /** Invoked from native (banner_on_game_surface). */
     @SuppressWarnings("unused")
