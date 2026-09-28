@@ -66,6 +66,7 @@ class ModeSettings(
     val fexPreset: String? = null,
     /** Steam only: games are stretched to fill the screen (null = not a Steam page). */
     val forceFullscreen: Boolean? = null,
+    val stretch16x9: Boolean? = null,
     /** Steam only: the client branch forced on the command line. */
     val steamChannel: String? = null,
     /** Steam only: start a Steam session when DroidDeck opens. */
@@ -122,6 +123,7 @@ class ModeSettingsActions(
     val onPickGameStorageFolder: () -> Unit = {},
     val onFexPreset: (String) -> Unit = {},
     val onForceFullscreen: (Boolean) -> Unit = {},
+    val onStretch16x9: (Boolean) -> Unit = {},
     val onSteamChannel: (String) -> Unit = {},
     val onRunSteamAtStartup: (Boolean) -> Unit = {},
     val onPickAddedGamesDir: () -> Unit = {},
@@ -381,6 +383,11 @@ fun ModeSettingsPage(s: ModeSettings, a: ModeSettingsActions) {
                 host, "fill", "Stretch games to fill the screen",
                 "Keeps games that resize their own window (FlatOut) full screen. Turn it off if a game shows up small in a corner (Quake 3). Applies next session.",
                 s.forceFullscreen, onChange = a.onForceFullscreen,
+            )
+            if (s.stretch16x9 != null) ToggleRow(
+                host, "stretch169", "Stretch 16:9 games to a narrower screen",
+                "On a screen squarer than 16:9 (a foldable's inner panel), games render at 16:9 and are stretched to fill it: no bars, slightly wider-looking. Applies next session.",
+                s.stretch16x9, onChange = a.onStretch16x9,
             )
         }
         if (steam && s.directAudio != null && s.mic != null) SettingsGroup("Audio") {
