@@ -436,21 +436,68 @@ jobs:
       variants: ${{ needs.build.outputs.variants }}
     secrets: inherit
 
-  # A post in the Discord's builds channel for each signed main build, with a link to its apks.
-  # DISCORD_BUILDS_WEBHOOK is the channel's webhook URL; without it the post is skipped.
+  # Each signed main build as a prerelease of the public Droid-Deck/DroidDeck-CI (main-<sha>, the
+  # last KEEP kept), where anyone can download it without a GitHub account, then a post in the
+  # Discord's builds channel linking to it. DROIDDECK_CI_TOKEN (contents: write on DroidDeck-CI)
+  # and DISCORD_BUILDS_WEBHOOK (the channel's webhook URL) are each optional: without the token
+  # the post links to this run's artifacts, without the webhook nothing is posted.
   announce:
     needs: [build, sign]
     if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04
-    timeout-minutes: 5
+    timeout-minutes: 10
     permissions:
       contents: read
+    env:
+      CI_REPO: Droid-Deck/DroidDeck-CI
+      KEEP: 10
     steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: droiddeck-signed-*
+          merge-multiple: true
+          path: signed
+
+      - name: Publish to DroidDeck-CI
+        id: publish
+        env:
+          GH_TOKEN: ${{ secrets.DROIDDECK_CI_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ -z "$GH_TOKEN" ]; then
+            echo "::warning::No DROIDDECK_CI_TOKEN secret; the post links to this run's artifacts instead"
+            exit 0
+          fi
+          tag=main-${GITHUB_SHA::7}
+          cat signed/SHA256SUMS-*.txt > signed/SHA256SUMS.txt
+          rm signed/SHA256SUMS-*.txt
+          notes="Signed build of $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/commit/$GITHUB_SHA - unreleased, for testing.
+          Each apk installs over a DroidDeck release and keeps its data. \`standard\` is the normal app; the others are the same app under another package name, installed beside it.
+
+          SHA-256:
+          \`\`\`
+          $(cat signed/SHA256SUMS.txt)
+          \`\`\`"
+          gh release delete "$tag" -R "$CI_REPO" --yes --cleanup-tag 2>/dev/null || true
+          gh release create "$tag" -R "$CI_REPO" --target main --prerelease \
+            --title "main ${GITHUB_SHA::7}" --notes "$notes" signed/*
+          # Only the newest KEEP main builds stay; PR releases (pr-N) are left alone.
+          gh release list -R "$CI_REPO" -L 200 --json tagName,createdAt \
+            --jq '[.[] | select(.tagName | startswith("main-"))] | sort_by(.createdAt) | reverse | .['"$KEEP"':][] | .tagName' |
+            while IFS= read -r old; do gh release delete "$old" -R "$CI_REPO" --yes --cleanup-tag; done
+          url="$GITHUB_SERVER_URL/$CI_REPO/releases/tag/$tag"
+          apk=$(cd signed && ls DroidDeck-*.apk | awk 'length(a) == 0 || length($0) < length(a) { a = $0 } END { print a }')
+          echo "release=$url" >> "$GITHUB_OUTPUT"
+          echo "apk=$GITHUB_SERVER_URL/$CI_REPO/releases/download/$tag/$apk" >> "$GITHUB_OUTPUT"
+          echo "Published $url"
+
       - name: Post to Discord
         env:
           WEBHOOK: ${{ secrets.DISCORD_BUILDS_WEBHOOK }}
           GH_TOKEN: ${{ github.token }}
           VARIANTS: ${{ needs.build.outputs.variants }}
+          RELEASE: ${{ steps.publish.outputs.release }}
+          APK: ${{ steps.publish.outputs.apk }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           set -euo pipefail
@@ -469,9 +516,12 @@ jobs:
           else
             what="[\`${GITHUB_SHA::7}\`]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/commit/$GITHUB_SHA): $subject"
           fi
-          variants=$(jq -r 'join(", ")' <<<"$VARIANTS")
-          content=$(printf '**New signed build** `main-%s`\n%s\nAPKs (%s): <%s#artifacts>' \
-            "${GITHUB_SHA::7}" "$what" "$variants" "$RUN_URL")
+          if [ -n "$RELEASE" ]; then
+            get=$(printf 'Download: [standard APK](<%s>) · [all variants](<%s>)' "$APK" "$RELEASE")
+          else
+            get=$(printf 'APKs (%s, GitHub sign-in needed): <%s#artifacts>' "$(jq -r 'join(", ")' <<<"$VARIANTS")" "$RUN_URL")
+          fi
+          content=$(printf '**New signed build** `main-%s`\n%s\n%s' "${GITHUB_SHA::7}" "$what" "$get")
           jq -n --arg content "$content" '{content: $content, allowed_mentions: {parse: []}}' |
             curl -fsS -H 'Content-Type: application/json' -d @- "$WEBHOOK" -o /dev/null
           echo "Posted: $content"
