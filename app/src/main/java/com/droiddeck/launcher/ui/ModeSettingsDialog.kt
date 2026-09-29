@@ -68,6 +68,8 @@ class ModeSettings(
     val forceFullscreen: Boolean? = null,
     /** Steam only: the client branch forced on the command line. */
     val steamChannel: String? = null,
+    /** Steam only: enable the SteamOS client interface and its performance controls. */
+    val steamDeckMode: Boolean = false,
     /** Steam only: start a Steam session when DroidDeck opens. */
     val runSteamAtStartup: Boolean = false,
     /** Steam only: the user's chosen Games folders; null outside Steam. */
@@ -123,6 +125,7 @@ class ModeSettingsActions(
     val onFexPreset: (String) -> Unit = {},
     val onForceFullscreen: (Boolean) -> Unit = {},
     val onSteamChannel: (String) -> Unit = {},
+    val onSteamDeckMode: (Boolean) -> Unit = {},
     val onRunSteamAtStartup: (Boolean) -> Unit = {},
     val onPickAddedGamesDir: () -> Unit = {},
     val onForgetAddedGamesDir: (path: String) -> Unit = {},
@@ -338,6 +341,11 @@ fun ModeSettingsPage(s: ModeSettings, a: ModeSettingsActions) {
             }
         }
         if (steam && s.steamChannel != null) SettingsGroup("Client") {
+            ToggleRow(
+                host, "steamdeck", "Steam Deck mode",
+                "Enables Steam's Deck interface and Quick Access performance overlay controls. Applies next session.",
+                s.steamDeckMode, onChange = a.onSteamDeckMode,
+            )
             ChoiceRow(
                 host, "channel", "Client branch", "The Steam client build the session forces. Applies at the next session start; the client may update itself once.",
                 listOf("publicbeta" to "Public beta", "steamdeck_publicbeta" to "Steam Deck public beta"), s.steamChannel,

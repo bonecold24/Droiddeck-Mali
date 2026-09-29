@@ -501,20 +501,19 @@ BUSCONF
     # desktop's launchers ask for; gamescope shows one window at a time and the game takes over.
     _bl_ui=(-gamepadui)
     [ "${BL_STEAM_UI:-}" = desktop ] && _bl_ui=()
-    # Deck mode (BL_STEAMDECK=1, the Performance page): -steamdeck is the flag that puts the Quick
-    # Access Menu, the performance overlay and the Deck settings pages on screen. Only -steamdeck,
-    # never -steamos3: that one makes the client manage itself as SteamOS does - it calls
-    # steamos-select-branch and opts the install into the steamdeck_stable client branch, writes
-    # that to package/beta, and from then on the branch on disk loses to the -clientbeta below on
-    # every launch; the updater finds "installed version 0", marks an update pending and exits 42
-    # to apply it, which never happens, so the client restarts for ever - under a running game,
-    # taking Steam Input with it each time. (Bannerlator 38996ea1, on device.) The SteamOS helpers
-    # the client calls in this mode are staged as no-op stubs under /usr/bin.
+    # Deck mode (BL_STEAMDECK=1, the Steam page's Client settings): -steamdeck is the flag that puts
+    # the Quick Access Menu and the Deck settings pages on screen; the QAM's performance overlay
+    # controls stay greyed out without -steamos3, as SteamOS and Armada launch it. -steamos3 makes
+    # the client manage itself as SteamOS does - it calls steamos-select-branch and writes
+    # steamdeck_stable to package/beta, and a branch on disk that loses to the -clientbeta below
+    # is an update that never installs: exit 42, a restart, for ever (Bannerlator 38996ea1). The
+    # loop below puts package/beta back before every start. The SteamOS helpers the client calls
+    # in this mode are staged as no-op stubs under /usr/bin.
     if [ "${BL_STEAMDECK:-0}" = 1 ] && [ "${BL_STEAM_UI:-}" != desktop ]; then
-      _bl_ui+=(-steamdeck)
+      _bl_ui+=(-steamdeck -steamos3)
       # The QAM's Scaling Filter lists NVIDIA Image Scaling only when told gamescope has it (it does).
       export STEAM_GAMESCOPE_NIS_SUPPORTED=1
-      echo "== steam: Deck mode on (-steamdeck)"
+      echo "== steam: Deck mode on (-steamdeck -steamos3)"
     fi
     # What a killed session leaves behind. Android ends sessions without warning (backgrounding, the
     # low-memory killer), and the client then finds .crash - opening its update UI on the spinner -

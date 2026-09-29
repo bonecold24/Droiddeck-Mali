@@ -805,6 +805,7 @@ class MainActivity : ComponentActivity() {
                 storageOptions = storageOptions,
                 fexPreset = if (mode == SessionService.MODE_STEAM) fexPreset else null,
                 steamChannel = if (mode == SessionService.MODE_STEAM) steamChannel else null,
+                steamDeckMode = mode == SessionService.MODE_STEAM && steamDeckMode,
                 runSteamAtStartup = mode == SessionService.MODE_STEAM && runSteamAtStartup,
                 addedGamesDirs = if (mode == SessionService.MODE_STEAM) addedGamesDirs else null,
                 addedGames = if (mode == SessionService.MODE_STEAM) addedGames else emptyList(),
@@ -856,6 +857,11 @@ class MainActivity : ComponentActivity() {
                 },
                 onFexPreset = { id -> SessionPrefs.setFexPreset(this, id); fexPreset = id },
                 onSteamChannel = { id -> SessionPrefs.setSteamChannel(this, id); steamChannel = id },
+                onSteamDeckMode = { on ->
+                    SessionPrefs.setSteamDeckMode(this, on)
+                    steamDeckMode = on
+                    steamChannel = SessionPrefs.steamChannel(this)
+                },
                 onRunSteamAtStartup = { on ->
                     SessionPrefs.setRunSteamAtStartup(this, on)
                     runSteamAtStartup = on
@@ -886,14 +892,13 @@ class MainActivity : ComponentActivity() {
         PerformancePage(
             cores = CpuCores.all.map { c -> CoreRow(c, "cpu$c" + (CpuCores.maxGhz(c)?.let { String.format(java.util.Locale.US, " · %.1f GHz", it) } ?: "")) },
             clientOverride = clientOverride, clientCores = clientCores, gameCores = gameCores,
-            tuSysmem = tuSysmem, zinkLazy = zinkLazy, glThread = glThread, noGlError = noGlError, steamDeckMode = steamDeckMode, noXalia = noXalia,
+            tuSysmem = tuSysmem, zinkLazy = zinkLazy, glThread = glThread, noGlError = noGlError, noXalia = noXalia,
             prootNoSeccomp = prootNoSeccomp, guestHostname = guestHostname, phantomWarning = phantomWarning,
             onClientOverride = { on -> SessionPrefs.setClientCpusOverride(this, on); clientOverride = on },
             onTuSysmem = { on -> SessionPrefs.setTuSysmem(this, on); tuSysmem = on },
             onZinkLazy = { on -> SessionPrefs.setZinkLazy(this, on); zinkLazy = on },
             onGlThread = { on -> SessionPrefs.setGlThread(this, on); glThread = on },
             onNoGlError = { on -> SessionPrefs.setNoGlError(this, on); noGlError = on },
-            onSteamDeckMode = { on -> SessionPrefs.setSteamDeckMode(this, on); steamDeckMode = on },
             onNoXalia = { on -> SessionPrefs.setNoXalia(this, on); noXalia = on },
             onProotNoSeccomp = { on -> SessionPrefs.setProotNoSeccomp(this, on); prootNoSeccomp = on },
             onGuestHostname = { name -> SessionPrefs.setGuestHostname(this, name) },
