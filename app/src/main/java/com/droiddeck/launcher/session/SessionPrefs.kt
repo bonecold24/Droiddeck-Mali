@@ -254,7 +254,7 @@ object SessionPrefs {
     fun noGlError(context: Context): Boolean = prefs(context).getBoolean("noGlError", true)
     fun setNoGlError(context: Context, on: Boolean) { prefs(context).edit().putBoolean("noGlError", on).apply() }
 
-    /** `steam -steamdeck -steamos3`: the client as SteamOS runs it. Expects Deck hardware; untested. */
+    /** Runs the SteamOS gamepad client with its Quick Access performance controls. */
     fun steamDeckMode(context: Context): Boolean = prefs(context).getBoolean("steamDeckMode", false)
     fun setSteamDeckMode(context: Context, on: Boolean) { prefs(context).edit().putBoolean("steamDeckMode", on).apply() }
 

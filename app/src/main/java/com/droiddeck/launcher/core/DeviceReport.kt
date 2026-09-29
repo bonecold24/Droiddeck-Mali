@@ -163,7 +163,7 @@ object DeviceReport {
         })
 
         h("Android process limits")
-        k("Phantom proc monitor", PhantomProcessLimit.reportValue(PhantomProcessLimit.read(context.contentResolver)))
+        k("Phantom proc monitor", PhantomProcessLimit.reportValue(PhantomProcessLimit.read(context)))
 
         h("Device switch files in Download")
         for (name in listOf("droiddeck-env", "droiddeck-tu-debug", "droiddeck-driver",
