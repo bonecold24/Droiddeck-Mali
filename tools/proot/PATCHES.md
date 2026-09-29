@@ -44,3 +44,14 @@ Ported from WinNative (`main`, 53836ca9, "Fix/performance and vac"):
 - `0009-tracee-relatives-sweep.patch` - tracees count their children, so a terminating thread
   with no children or ptracees no longer walks every tracee; the per-stop memory collector is
   emptied instead of freed and reallocated.
+
+Added by DroidDeck:
+
+- `0011-kompat-utsname-only.patch` - `--kernel-release` (the guest's `DroidDeck` hostname) loads
+  kompat, whose filter traps `futex`, `fcntl`, `epoll_pwait`, `pselect6`, `pipe2`, `eventfd2`,
+  `socket` and more, and which strips `AT_SYSINFO_EHDR` on every `execve`, so glibc runs without
+  the vDSO. When the virtual release is not older than the real kernel and the hwcap is left
+  alone, every one of those handlers is a no-op: kompat now traces only `uname`, `sethostname`
+  and `setdomainname` and leaves the auxv as the kernel wrote it. On an SD 8 Gen 2 guest this
+  took a futex ping-pong from 467 to 97 us, `epoll_pwait` from 60 to 0.8 us and `fcntl` from
+  40-107 to 0.4 us, and `clock_gettime` back to the vDSO.
