@@ -22,8 +22,10 @@ permissions:
   pull-requests: write
 
 concurrency:
-  group: build-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: true
+  # Replace older builds only for the same PR. Each push/dispatch gets its own group so one main
+  # build cannot cancel another before it signs and publishes.
+  group: build-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
   PRELOAD_CACHE_VERSION: v2
@@ -489,10 +491,24 @@ jobs:
           gh release delete "$tag" -R "$CI_REPO" --yes --cleanup-tag 2>/dev/null || true
           gh release create "$tag" -R "$CI_REPO" --target main --prerelease \
             --title "main ${GITHUB_SHA::7}" --notes "$notes" signed/*
-          # Only the newest KEEP main builds stay; PR releases (pr-N) are left alone.
-          gh release list -R "$CI_REPO" -L 200 --json tagName,createdAt \
-            --jq '[.[] | select(.tagName | startswith("main-"))] | sort_by(.createdAt) | reverse | .['"$KEEP"':][] | .tagName' |
-            while IFS= read -r old; do gh release delete "$old" -R "$CI_REPO" --yes --cleanup-tag; done
+          # Keep the newest main builds by publication time. GitHub App releases can share createdAt.
+          gh release list -R "$CI_REPO" -L 200 --json tagName,publishedAt \
+            --jq '[.[] | select(.tagName | startswith("main-"))] | sort_by(.publishedAt) | reverse | .['"$KEEP"':][] | .tagName' |
+            while IFS= read -r old; do
+              # Never remove this run's release, even if the API returns an unexpected ordering.
+              if [ "$old" = "$tag" ]; then
+                continue
+              fi
+              # Another main publish may have removed the same old release concurrently.
+              if ! gh release delete "$old" -R "$CI_REPO" --yes --cleanup-tag 2>/dev/null; then
+                if gh release view "$old" -R "$CI_REPO" >/dev/null 2>&1; then
+                  echo "::error::Could not delete old release $old"
+                  exit 1
+                fi
+              fi
+            done
+          published=$(gh release view "$tag" -R "$CI_REPO" --json tagName,assets)
+          jq -e --arg tag "$tag" '.tagName == $tag and (.assets | length) > 0' <<< "$published" >/dev/null
           url="$GITHUB_SERVER_URL/$CI_REPO/releases/tag/$tag"
           apk=$(cd signed && ls DroidDeck-*.apk | awk 'length(a) == 0 || length($0) < length(a) { a = $0 } END { print a }')
           echo "release=$url" >> "$GITHUB_OUTPUT"
