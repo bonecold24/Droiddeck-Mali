@@ -47,7 +47,6 @@ import com.droiddeck.launcher.input.SecondScreenMode
 import com.droiddeck.launcher.input.TouchpadGestures
 import com.droiddeck.launcher.runtime.LinuxRuntime
 import com.droiddeck.launcher.session.LoadingState
-import com.droiddeck.launcher.session.PerfHints
 import com.droiddeck.launcher.session.PerfHud
 import com.droiddeck.launcher.session.PerfMode
 import com.droiddeck.launcher.session.SessionPrefs
@@ -203,8 +202,8 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
             SessionEvents.record("agent.start_requested", mapOf("mode" to SessionState.mode))
         }
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-        // Game-tier power policy for the whole session: a sustained clock floor, the panel's
-        // fastest mode, and the OS told it is in gameplay. Logged so a slow device says why.
+        // Game-tier power policy for the whole session: the panel's fastest mode, and the OS told
+        // it is in gameplay. Logged so a slow device says why.
         Log.i(TAG, "perf: " + PerfMode.apply(this))
         goFullscreen()
         // The device's volume keys change the stream the session plays on (the relay and
@@ -761,9 +760,6 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
             applicationInfo.nativeLibraryDir, size.first, size.second, refreshHz(),
         )
         if (!SessionState.running) SessionEvents.record("compositor.started")
-        // ADPF: the compositor thread's frame intervals go to the power HAL against the panel's
-        // period, so a long frame raises CPU clocks now rather than after the load averages up.
-        PerfHints.arm(this, refreshHz())
         // The service owns everything below the compositor. It is started whenever no session is
         // running - NOT only when the compositor was just started: the compositor lives for the
         // whole process, so the second Play after a session ended used to re-attach the Surface,
@@ -849,9 +845,16 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
         return Pair(width and 1.inv(), height and 1.inv())
     }
 
+    /**
+     * The rate of the mode PerfMode asked for, not the one the panel is still in: the switch lands
+     * some frames after onCreate, and read too early it gave gamescope `-r 60` on a 120 Hz panel -
+     * the client and every game then paced themselves to 60. (WinNative's requestedPanelRefreshRate.)
+     */
     private fun refreshHz(): Float {
         val display = if (Build.VERSION.SDK_INT >= 30) display else windowManager.defaultDisplay
-        val hz = display?.refreshRate ?: 60f
+        val wanted = window.attributes.preferredDisplayModeId
+        val hz = display?.supportedModes?.firstOrNull { wanted != 0 && it.modeId == wanted }?.refreshRate
+            ?: display?.refreshRate ?: 60f
         return if (hz > 1f) hz else 60f
     }
 
