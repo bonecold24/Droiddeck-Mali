@@ -468,6 +468,12 @@ static struct seat_pointer g_ptrs[MAX_PTRS];
 static int g_nptrs;
 static struct seat_keyboard g_kbs[MAX_PTRS];
 static int g_nkbs;
+/* Modifier state in the keymap's real-modifier bits (Shift=0x1, Lock=0x2, Control=0x4, Mod1=0x8,
+ * Mod4=0x40). A client of the wayland backend - gamescope, labwc - takes modifiers only from
+ * wl_keyboard.modifiers and ignores what a Shift key event does to its xkb state, so without this
+ * every capital arrived lowercase. */
+static uint32_t g_mods_depressed, g_mods_locked;
+static uint32_t g_mod_keys_held; /* one bit per modifier key below, so a repeat press is harmless */
 static struct seat_touch g_touches[MAX_PTRS];
 static int g_ntouches;
 
@@ -2415,8 +2421,8 @@ static void keyboard_focus(struct wl_resource *target) {
         if (sk->focus == target) continue;
         sk->focus = target;
         wl_keyboard_send_enter(sk->kb, wl_display_next_serial(g_display), target, &keys);
-        /* Baseline modifiers = none; Shift/Ctrl arrive as their own key events. */
-        wl_keyboard_send_modifiers(sk->kb, wl_display_next_serial(g_display), 0, 0, 0, 0);
+        wl_keyboard_send_modifiers(sk->kb, wl_display_next_serial(g_display),
+                                   g_mods_depressed, 0, g_mods_locked, 0);
     }
     wl_array_release(&keys);
     banner_clipboard_keyboard_focus(client); /* wl_data_device selection follows focus */
@@ -3113,7 +3119,34 @@ static void scroll_event(int steps) {
     wl_display_flush_clients(g_display);
 }
 
+/* Folds a key into the modifier state; returns whether the state changed. */
+static int update_modifiers(uint32_t evdev, int pressed) {
+    static const struct { uint32_t evdev, mask; } mod_keys[] = {
+        { 42, 0x1 }, { 54, 0x1 },     /* Shift L/R */
+        { 29, 0x4 }, { 97, 0x4 },     /* Control L/R */
+        { 56, 0x8 }, { 100, 0x8 },    /* Alt L/R, both Mod1 in this keymap */
+        { 125, 0x40 }, { 126, 0x40 }, /* Super L/R */
+    };
+    uint32_t depressed = g_mods_depressed, locked = g_mods_locked;
+    if (evdev == 58) { /* Caps Lock toggles on press */
+        if (pressed) locked ^= 0x2;
+    } else {
+        int i, n = (int)(sizeof(mod_keys) / sizeof(mod_keys[0]));
+        for (i = 0; i < n && mod_keys[i].evdev != evdev; i++) {}
+        if (i == n) return 0;
+        if (pressed) g_mod_keys_held |= 1u << i; else g_mod_keys_held &= ~(1u << i);
+        depressed = 0;
+        for (int j = 0; j < n; j++) if (g_mod_keys_held & (1u << j)) depressed |= mod_keys[j].mask;
+    }
+    if (depressed == g_mods_depressed && locked == g_mods_locked) return 0;
+    g_mods_depressed = depressed;
+    g_mods_locked = locked;
+    return 1;
+}
+
 static void key_event(uint32_t evdev, int pressed) {
+    /* Tracked even with nothing to deliver to, so a Shift released unseen is not left held. */
+    int mods_changed = update_modifiers(evdev, pressed);
     /* Keys go to the program window the user last clicked (else the topmost non-shell window),
      * never to Wine's desktop surface: winewayland hands each key to the hwnd of the surface that
      * holds keyboard focus, and a key handed to explorer's desktop hwnd is queued to explorer's
@@ -3133,9 +3166,13 @@ static void key_event(uint32_t evdev, int pressed) {
     struct seat_keyboard *sk;
     if (!keyboard_for(client)) return;
     keyboard_focus(target->resource);
-    for_each_keyboard_of(client, sk)
+    for_each_keyboard_of(client, sk) {
         wl_keyboard_send_key(sk->kb, wl_display_next_serial(g_display), now_ms(), evdev,
                              pressed ? WL_KEYBOARD_KEY_STATE_PRESSED : WL_KEYBOARD_KEY_STATE_RELEASED);
+        if (mods_changed)
+            wl_keyboard_send_modifiers(sk->kb, wl_display_next_serial(g_display),
+                                       g_mods_depressed, 0, g_mods_locked, 0);
+    }
     wl_display_flush_clients(g_display);
 }
 

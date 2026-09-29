@@ -85,6 +85,9 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.InputMode
 import androidx.compose.ui.platform.LocalInputModeManager
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.layout.boundsInWindow
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
@@ -172,6 +175,8 @@ class DrawerActions(
     val onBackground: () -> Unit,
     val onShareLogs: () -> Unit,
     val onStop: () -> Unit,
+    /** Stop with the dialog's button's bounds on screen, for the flood to grow out of; null falls back to [onStop]. */
+    val onStopFrom: ((androidx.compose.ui.geometry.Rect?) -> Unit)? = null,
     val onClose: () -> Unit,
     /** Components tab: every Proton with what it uses; null until first read. */
     val components: ComponentsManager.Snapshot? = null,
@@ -453,7 +458,14 @@ fun SessionDrawer(open: Boolean, page: Int, controllerActive: Boolean, onPageCha
     if (confirmStop) {
         val cancelFocus = remember { FocusRequester() }
         val cancel = { confirmStop = false }
-        val stop = { confirmStop = false; a.onStop() }
+        // Where Stop sits on screen: the dialog is a window of its own, so its bounds are taken
+        // against the screen and the session's overlay converts them back.
+        var stopOnScreen by remember { mutableStateOf<androidx.compose.ui.geometry.Rect?>(null) }
+        val stop = {
+            confirmStop = false
+            val from = a.onStopFrom
+            if (from != null) from(stopOnScreen) else a.onStop()
+        }
         LaunchedEffect(controllerActive) {
             if (controllerActive) {
                 androidx.compose.runtime.withFrameNanos { }
@@ -465,9 +477,13 @@ fun SessionDrawer(open: Boolean, page: Int, controllerActive: Boolean, onPageCha
             modifier = Modifier.controllerBack(onBack = cancel),
             title = { Text("Stop session?") },
             confirmButton = {
+                val dialogView = LocalView.current
                 TextButton(
                     onClick = stop,
-                    modifier = Modifier.controllerConfirm(onClick = stop),
+                    modifier = Modifier.controllerConfirm(onClick = stop).onGloballyPositioned { c ->
+                        val at = IntArray(2).also { dialogView.rootView.getLocationOnScreen(it) }
+                        stopOnScreen = c.boundsInWindow().translate(at[0].toFloat(), at[1].toFloat())
+                    },
                     colors = ButtonDefaults.textButtonColors(contentColor = colors.error),
                 ) { Text("Stop") }
             },

@@ -538,10 +538,31 @@ BUSCONF
     # again on the branch it just wrote.
     steam_channel=${BL_STEAM_CHANNEL:-publicbeta}
     steam_beta=$steam_root/package/beta
+    if [ -n "${BL_ADDED_GAMES:-}" ] && [ -f "$BL_ADDED_GAMES" ]; then
+      bannerlator-steam-games watch "$steam_root" "$BL_ADDED_GAMES" &
+      games_watcher=$!
+    fi
     echo "== steam args: ${_bl_ui[*]} -clientbeta $steam_channel -no-cef-sandbox -cef-force-gpu -cef-ozone-platform=x11 -cef-use-gl=angle -cef-use-angle=vulkan $*"
     # An update that cannot install asks for a restart (rc=42) every time; the count is capped so a
     # session can never again loop in silence, which reads as a menu opening and closing by itself.
     steam_updates=0
+    rm -f "$HOME/.bl-stop-requested"
+    if [ -n "${BL_LAUNCH_DIR:-}" ] && [ -d "$BL_LAUNCH_DIR" ]; then
+      rm -f "$BL_LAUNCH_DIR/steam-stop"
+      (
+        while :; do
+          if [ -e "$BL_LAUNCH_DIR/steam-stop" ]; then
+            rm -f "$BL_LAUNCH_DIR/steam-stop"
+            : > "$HOME/.bl-stop-requested"
+            echo "== steam: the app asked for a clean exit"
+            "$steam_root/steamrtarm64/steam" -shutdown >/dev/null 2>&1 || true
+            exit 0
+          fi
+          sleep 0.5
+        done
+      ) &
+      stop_watcher=$!
+    fi
     while :; do
       rm -f "$HOME/.bl-restart-once"
       if [ -f "$steam_beta" ] && [ "$(cat "$steam_beta" 2>/dev/null)" != "$steam_channel" ]; then
@@ -555,6 +576,13 @@ BUSCONF
       rc=$?
       echo "== steam exited rc=$rc"
       collect_steam_logs
+      if [ -n "${BL_ADDED_GAMES:-}" ] && [ -f "$BL_ADDED_GAMES" ]; then
+        bannerlator-steam-shortcuts "$steam_root" "$BL_ADDED_GAMES" || true
+      fi
+      if [ -f "$HOME/.bl-stop-requested" ]; then
+        rm -f "$HOME/.bl-stop-requested" "$HOME/.bl-restart-once"
+        break
+      fi
       # The session asked for this exit (the ARM64 Proton landed): start again, without the URL
       # arguments, which were acted on. Not counted against the update cap.
       if [ -f "$HOME/.bl-restart-once" ]; then
@@ -571,6 +599,14 @@ BUSCONF
       # The URL arguments were acted on the first time; a restart must not repeat them.
       set --
     done
+    if [ -n "${stop_watcher:-}" ]; then
+      kill "$stop_watcher" 2>/dev/null || true
+      wait "$stop_watcher" 2>/dev/null || true
+    fi
+    if [ -n "${games_watcher:-}" ]; then
+      kill "$games_watcher" 2>/dev/null || true
+      wait "$games_watcher" 2>/dev/null || true
+    fi
     if [ -n "${BL_DESKTOP:-}" ]; then
       # Started from the desktop (bannerlator-steam-launch): the desktop's own programs share this
       # script's parent, so reap_orphans - right under gamescope, where everything is the client's -
