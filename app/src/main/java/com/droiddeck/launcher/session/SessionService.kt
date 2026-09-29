@@ -513,7 +513,11 @@ class SessionService : Service() {
         // Zink renders the client's UI (Chromium -> ANGLE -> Zink -> Turnip). Lazy descriptors is
         // the mode Zink recommends where the driver has no descriptor buffer, and what Ludashi ships
         // by default for its Zink path; a switch here because on one Fold the menus run at 14 fps.
-        if (SessionPrefs.zinkLazy(this)) guest.add("ZINK_DESCRIPTORS=lazy")
+        // compact packs Zink's descriptor sets into fewer, so a draw binds less (WinNative's default).
+        if (SessionPrefs.zinkLazy(this)) {
+            guest.add("ZINK_DESCRIPTORS=lazy")
+            guest.add("ZINK_DEBUG=compact")
+        }
         // The rest of the client-interface switches (SessionPrefs): GL marshalled off the calling
         // thread, no GL error checks, and the client run as SteamOS runs it (the script reads
         // BL_STEAMDECK; it is the one that builds the command line).
