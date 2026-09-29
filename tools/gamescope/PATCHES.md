@@ -14,8 +14,11 @@ library list, before anything is published.
 - `0020-color-p3-red-is-wide-gamut.patch` - Armada, verbatim.
 - `0100-realtime-queue-and-gamepad-cursor.patch` - this app, two of Armada's ported by hand onto
   3.16.29: realtime-priority Vulkan queues on request (`GAMESCOPE_FORCE_VULKAN_REALTIME=1`)
-  without CAP_SYS_NICE, which proot can never have; and the gamepad-driven cursor sprite following
-  the X pointer that XTest moves (it sat frozen).
+  without CAP_SYS_NICE, which proot can never have (a no-op on KGSL Turnip, which has a single
+  submit-queue priority); and the gamepad-driven cursor sprite following the X pointer that XTest
+  moves (it sat frozen). The X pointer is asked for only while a cursor image is drawn - every
+  vblank while shown, every 50 ms while hidden for inactivity - since each ask is a blocking round
+  trip to Xwayland on the paint thread; with no image, wlserver's position is used as upstream does.
 - `0110-wayland-backend-touch.patch` - this app: the nested Wayland backend bound only the host's
   pointer and keyboard, so a finger on the phone's screen never reached Steam. It now binds
   `wl_touch` too and hands each finger to wlserver's touch path (`wlserver_touchdown` / `motion` /
