@@ -736,6 +736,24 @@ class SessionService : Service() {
         return try { Pair(fields[1].toInt(), fields[19].toLong()) } catch (e: NumberFormatException) { null }
     }
 
+    private fun askSteamToExit(prootPid: Int) {
+        if (!File("/proc/$prootPid").exists()) return
+        val request = File(LinuxRuntime.sessionRoot(this), "steam-stop")
+        try {
+            request.writeText("")
+        } catch (e: Exception) {
+            Log.w(TAG, "could not ask the Steam client to exit", e)
+            return
+        }
+        val started = System.currentTimeMillis()
+        if (waitForExit(prootPid, STEAM_PICKUP_MS) || request.exists()) {
+            request.delete()
+            return
+        }
+        val exited = waitForExit(prootPid, STEAM_EXIT_MS)
+        Log.i(TAG, "Steam client ${if (exited) "exited" else "did not exit"} after ${System.currentTimeMillis() - started} ms")
+    }
+
     private fun waitForExit(pid: Int, timeoutMs: Long): Boolean {
         val deadline = System.currentTimeMillis() + timeoutMs
         while (System.currentTimeMillis() < deadline) {
@@ -953,9 +971,11 @@ class SessionService : Service() {
         }
         components.clear()
         FakeInputWriter.releaseAllRingSlots()
+        val steamClientMayRun = SessionState.mode == MODE_STEAM || SessionState.mode == MODE_DESKTOP
         val finishAfterTeardown: () -> Unit = {
             if (prootPid > 1 || auxiliary.isNotEmpty()) {
                 Thread({
+                    if (prootPid > 1 && steamClientMayRun) askSteamToExit(prootPid)
                     auxiliary.forEach { (pid, started) -> teardown(pid, started) }
                     if (prootPid > 1) teardown(prootPid)
                     killGuestLeftovers()
@@ -1114,6 +1134,8 @@ class SessionService : Service() {
             "steamwebhelper", "linuxfs/opt/android-host/proot", "/libproot.so", "pulseaudio/libpulseaudio.so")
         /** How long proot gets to run its own cleanup before it is killed outright. */
         private const val GRACE_MS = 1200L
+        private const val STEAM_PICKUP_MS = 1500L
+        private const val STEAM_EXIT_MS = 10_000L
         private const val NO_PAD_SWITCH = "Download/droiddeck-no-pad"
         private const val PAD_LOG_SWITCH = "Download/droiddeck-pad-log"
 
