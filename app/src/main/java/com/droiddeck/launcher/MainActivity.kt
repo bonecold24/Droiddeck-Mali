@@ -45,6 +45,7 @@ import com.droiddeck.launcher.core.CpuCores
 import com.droiddeck.launcher.core.PhantomProcessLimit
 import com.droiddeck.launcher.core.PhantomProcessStatus
 import com.droiddeck.launcher.core.WirelessAdbFix
+import com.droiddeck.launcher.core.WirelessAdbPairingService
 import com.droiddeck.launcher.ui.CoreRow
 import com.droiddeck.launcher.ui.PerformancePage
 import com.droiddeck.launcher.ui.ModeSettingsPage
@@ -431,6 +432,12 @@ class MainActivity : ComponentActivity() {
                             android.widget.Toast.makeText(this, "ADB command copied", android.widget.Toast.LENGTH_SHORT).show()
                         },
                         onDismissPhantomGate = { showPhantomGate = false },
+                        onStartWirelessAdbPairing = { WirelessAdbPairingService.start(this) },
+                        onOpenNotificationSettings = {
+                            startActivity(Intent(android.provider.Settings.ACTION_APP_NOTIFICATION_SETTINGS)
+                                .putExtra(android.provider.Settings.EXTRA_APP_PACKAGE, packageName)
+                                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                        },
                         controller = ControllerActions(
                             onOsc = { o -> SessionPrefs.setOscMode(this, o); oscMode = o },
                             onTint = { t -> ControllerPrefs.setTint(this, t); refreshController() },
@@ -1040,15 +1047,18 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun refreshPhantomStatus() {
-        phantomProcessStatus = PhantomProcessLimit.read(contentResolver)
+        phantomProcessStatus = PhantomProcessLimit.read(this)
         phantomWarning = if (PhantomProcessLimit.blocksSteam(phantomProcessStatus)) {
-            "${PhantomProcessLimit.title(phantomProcessStatus)}. ${PhantomProcessLimit.instructions(phantomProcessStatus)}\n\n${PhantomProcessLimit.ADB_COMMAND}"
+            "${PhantomProcessLimit.title(phantomProcessStatus)}. ${PhantomProcessLimit.instructions(phantomProcessStatus)}\n\n${PhantomProcessLimit.adbCommand()}"
         } else null
     }
 
     private fun openDeveloperOptions(displayId: Int?) {
+        val highlight = if (PhantomProcessLimit.hasDeveloperToggle() &&
+            WirelessAdbPairingService.stage.value == WirelessAdbPairingService.Stage.Idle) null else "toggle_adb_wireless"
         val intent = Intent(android.provider.Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS)
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            .apply { if (highlight != null) putExtra(":settings:fragment_args_key", highlight) }
         try {
             if (displayId == null) startActivity(intent)
             else startActivity(intent, ActivityOptions.makeBasic().setLaunchDisplayId(displayId).toBundle())
