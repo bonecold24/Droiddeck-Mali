@@ -29,6 +29,8 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.ComposeView
+import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.unit.dp
 import com.droiddeck.launcher.core.FileUtils
 import com.droiddeck.launcher.frontend.Library
 import com.droiddeck.launcher.gpu.FrameGen
@@ -144,6 +146,10 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
 
     // Compose reads these; the activity writes them.
     private var drawerOpen by mutableStateOf(false)
+    /** A stop growing out of the dialog's Stop (overlay px); the session ends once it covers the screen. */
+    private var quitFrom by mutableStateOf<androidx.compose.ui.geometry.Rect?>(null)
+    /** Left behind that flood: the front end opens on its blue, so no sink of our own. */
+    private var quitFlooded = false
     /** The drawer's Components tab: the Protons as last read (ComponentsManager). */
     private var drawerComponents by mutableStateOf<ComponentsManager.Snapshot?>(null)
     private var drawerPage by mutableIntStateOf(0)
@@ -394,6 +400,15 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
                     onBackground = { drawerOpen = false; moveTaskToBack(true) },
                     onShareLogs = { drawerOpen = false; shareCurrentSessionLogs() },
                     onStop = { drawerOpen = false; SessionService.stop(this@SessionActivity); finish() },
+                    onStopFrom = { onScreen ->
+                        drawerOpen = false
+                        if (onScreen == null || com.droiddeck.launcher.ui.Motion.scale == 0f || quitFrom != null) {
+                            if (quitFrom == null) { SessionService.stop(this@SessionActivity); finish() }
+                        } else {
+                            val at = IntArray(2).also { sessionOverlay.getLocationOnScreen(it) }
+                            quitFrom = onScreen.translate(-at[0].toFloat(), -at[1].toFloat())
+                        }
+                    },
                     onClose = { drawerOpen = false },
                     components = drawerComponents,
                     onComponentsRefresh = { refreshDrawerComponents() },
@@ -403,6 +418,14 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
                     title = pausedTitle(),
                     onResume = { SessionService.resume(this@SessionActivity) },
                 )
+                quitFrom?.let { from ->
+                    val error = androidx.compose.material3.MaterialTheme.colorScheme.error
+                    com.droiddeck.launcher.ui.LaunchFlood(
+                        from, onProgress = {},
+                        fromColors = error to androidx.compose.ui.graphics.lerp(error, androidx.compose.ui.graphics.Color.Black, 0.12f),
+                        cornerAtRest = 20.dp,
+                    ) { finishFlooded() }
+                }
             }
         }
     }
@@ -1554,10 +1577,22 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
         super.onDestroy()
     }
 
+    /** The screen is all blue: the session stops and the front end opens on the same blue (FloodReturn). */
+    private fun finishFlooded() {
+        if (isFinishing) return
+        val signal = com.droiddeck.launcher.ui.Themes.byId(SessionPrefs.theme(this)).signal
+        com.droiddeck.launcher.ui.QuitFlood.mark(signal.toArgb())
+        window.setBackgroundDrawable(android.graphics.drawable.ColorDrawable(signal.toArgb()))
+        quitFlooded = true
+        SessionService.stop(this)
+        finish()
+    }
+
     /** Leaving the session sinks its surface back down onto the front end. */
     override fun finish() {
         super.finish()
-        overridePendingTransition(R.anim.session_hold, R.anim.session_sink)
+        if (quitFlooded) overridePendingTransition(0, 0)
+        else overridePendingTransition(R.anim.session_hold, R.anim.session_sink)
     }
 
     companion object {

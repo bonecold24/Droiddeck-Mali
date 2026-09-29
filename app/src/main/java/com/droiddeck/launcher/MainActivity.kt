@@ -89,6 +89,9 @@ class MainActivity : ComponentActivity() {
     private var flood by mutableStateOf<PendingFlood?>(null)
     private var floodProgress by androidx.compose.runtime.mutableFloatStateOf(0f)
     private class PendingFlood(val from: androidx.compose.ui.geometry.Rect, val intent: Intent)
+    /** A session stopped behind a flood: its blue, drawn back into the button it started from (FloodReturn). */
+    private var returning by mutableStateOf<ReturningFlood?>(null)
+    private class ReturningFlood(val color: Int, val to: androidx.compose.ui.geometry.Rect?)
     private var ready by mutableStateOf(false)
     private var available by mutableStateOf<LinuxRuntimeInstaller.Release?>(null)
     private var busy by mutableStateOf(false)
@@ -481,6 +484,13 @@ class MainActivity : ComponentActivity() {
                 )
                 if (showCredits) CreditsDialog { showCredits = false }
                 flood?.let { f -> com.droiddeck.launcher.ui.LaunchFlood(f.from, onProgress = { floodProgress = it }) { launchFlooded(f) } }
+                returning?.let { r ->
+                    com.droiddeck.launcher.ui.FloodReturn(androidx.compose.ui.graphics.Color(r.color), r.to, onProgress = { floodProgress = it }) {
+                        returning = null
+                        floodProgress = 0f
+                        com.droiddeck.launcher.ui.LaunchOrigin.flooding = null
+                    }
+                }
             }
         }
 
@@ -557,6 +567,10 @@ class MainActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         com.droiddeck.launcher.ui.Motion.refresh(this)
+        // Back from a session stopped behind a flood: open on its blue, before the first frame.
+        com.droiddeck.launcher.ui.QuitFlood.take()?.let { c ->
+            returning = ReturningFlood(c, com.droiddeck.launcher.ui.LaunchOrigin.takeReturn())
+        }
         refreshPhantomStatus()
         // Swaps queued while a game ran on that Proton go in once nothing uses it (usually the
         // session has just ended). Cheap when nothing is queued.
@@ -592,6 +606,7 @@ class MainActivity : ComponentActivity() {
         displayManager.unregisterDisplayListener(secondScreenDisplayListener)
         // The session covers the page by now; coming back finds it as it was.
         flood = null
+        returning = null
         floodProgress = 0f
         com.droiddeck.launcher.ui.LaunchOrigin.flooding = null
         super.onStop()
