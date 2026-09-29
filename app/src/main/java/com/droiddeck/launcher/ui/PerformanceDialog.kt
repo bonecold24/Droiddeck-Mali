@@ -86,7 +86,7 @@ fun PerformancePage(
             )
             ToggleRow(
                 host, "zink", "Zink: lazy descriptors",
-                "Recommended for drivers without descriptor buffers.",
+                "Lazy, compact descriptors. Recommended for drivers without descriptor buffers.",
                 zinkLazy, onChange = onZinkLazy,
             )
             ToggleRow(
@@ -98,7 +98,7 @@ fun PerformancePage(
         SettingsGroup("Session fixes") {
             ToggleRow(
                 host, "sysmem", "Turnip: sysmem rendering",
-                "Required on Adreno 710/720/722. May fix corruption on other Adreno GPUs, but can reduce performance.",
+                "On by default: faster for the Steam interface and most games. Required on Adreno 710/720/722.",
                 tuSysmem, onChange = onTuSysmem,
             )
             ToggleRow(

@@ -227,8 +227,13 @@ object SessionPrefs {
         return trimmed.takeIf { Regex("[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?").matches(it) }
     }
 
-    /** Turnip's sysmem rendering (TU_DEBUG=sysmem) for the runtime's driver: bypasses GMEM tiling. */
-    fun tuSysmem(context: Context): Boolean = prefs(context).getBoolean("tuSysmem", false)
+    /**
+     * Turnip's sysmem rendering (TU_DEBUG=sysmem) for the runtime's driver: bypasses GMEM tiling.
+     * On by default, as WinNative runs every Linux session: Chromium -> ANGLE -> Zink draws the
+     * client's interface as many small render passes, each paying GMEM's load/store and binning,
+     * and WinNative's A/B on an Adreno 840 put a game ahead with it too (Palworld 42.8 against 41.3).
+     */
+    fun tuSysmem(context: Context): Boolean = prefs(context).getBoolean("tuSysmem", true)
 
     fun setTuSysmem(context: Context, on: Boolean) {
         prefs(context).edit().putBoolean("tuSysmem", on).apply()
@@ -252,7 +257,10 @@ object SessionPrefs {
     fun steamDeckMode(context: Context): Boolean = prefs(context).getBoolean("steamDeckMode", false)
     fun setSteamDeckMode(context: Context, on: Boolean) { prefs(context).edit().putBoolean("steamDeckMode", on).apply() }
 
-    /** Zink's lazy descriptor mode (ZINK_DESCRIPTORS=lazy) for the client's GL-on-Vulkan UI. On by default. */
+    /**
+     * Zink's lazy descriptor mode (ZINK_DESCRIPTORS=lazy) with its compact set layout
+     * (ZINK_DEBUG=compact) for the client's GL-on-Vulkan UI, as WinNative runs it. On by default.
+     */
     fun zinkLazy(context: Context): Boolean = prefs(context).getBoolean("zinkLazy", true)
 
     fun setZinkLazy(context: Context, on: Boolean) {
@@ -309,8 +317,15 @@ object SessionPrefs {
     fun resolutionChosen(context: Context, mode: String): Boolean =
         prefs(context).contains("resolutionCap.$mode") || customResolution(context, mode) != null
 
-    /** The FEXCore preset for the games the client launches (core/FexPreset ids); "" = FEX's defaults. */
-    fun fexPreset(context: Context): String = prefs(context).getString("fexPreset", "") ?: ""
+    /**
+     * The FEXCore preset for the games the client launches (core/FexPreset ids); "" = FEX's defaults.
+     * Performance + TSO unless chosen, WinNative's default: FEX's own defaults keep half-barrier TSO
+     * and full-precision x87, which cost every x86 game time; a game that needs them can still be
+     * given another preset.
+     */
+    fun fexPreset(context: Context): String = prefs(context).getString("fexPreset", DEFAULT_FEX_PRESET) ?: DEFAULT_FEX_PRESET
+
+    private const val DEFAULT_FEX_PRESET = "PERFORMANCE_TSO"
 
     fun setFexPreset(context: Context, id: String) {
         prefs(context).edit().putString("fexPreset", id).apply()
