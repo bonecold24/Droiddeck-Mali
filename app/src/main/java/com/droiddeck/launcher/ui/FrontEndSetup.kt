@@ -158,8 +158,9 @@ internal fun SetupPanel(
     var showLimitDetails by rememberSaveable { mutableStateOf(false) }
     val checks = 4
     val readyCount = listOf(gpuOk, s.ready && !s.busy, !limitBlocks, signedIn).count { it }
-    // Five tabs instead of one long scroll; LB and RB turn them from anywhere on the page.
-    val tabs = listOf("Overview", "Controller", "Session", "Launcher", "About")
+    // Four tabs instead of one long scroll; LB and RB turn them from anywhere on the page. Build
+    // and credits are on the Updates page.
+    val tabs = listOf("Overview", "Controller", "Session", "Launcher")
     var tab by rememberSaveable { mutableStateOf(0) }
     val tabFocus = remember { List(tabs.size) { FocusRequester() } }
     var tabTurned by remember { mutableStateOf(false) }
@@ -327,12 +328,6 @@ internal fun SetupPanel(
                             ) { a.onAppImagesEnabled(it) }
                         }
                     }
-                    else -> {
-                        SettingsGroup("About") {
-                            ActionRow("Build", s.buildLabel, "Check for newer", a.onCheckLatestBuild)
-                            ActionRow("Credits", "The people and projects DroidDeck builds on", "View", a.onCredits)
-                        }
-                    }
                 }
             }
         }
@@ -375,7 +370,7 @@ private fun ToolCard(t: ToolSpec, modifier: Modifier) {
             .graphicsLayer { scaleX = scale; scaleY = scale }
             .clip(Shape14)
             .background(if (hot) pal.signal.copy(alpha = 0.10f) else colors.surface)
-            .border(if (hot) 2.dp else 1.dp, if (hot) pal.signal else pal.line, Shape14)
+            .glideBorder(hot, Shape14, pal.signal, pal.line)
             .hoverable(src).clickable(interactionSource = src, indication = LocalIndication.current, role = Role.Button, onClick = t.onClick)
             .controllerConfirm(onClick = t.onClick)
             .padding(horizontal = 14.dp, vertical = 12.dp),
@@ -430,14 +425,13 @@ private fun SettingCard(label: String, value: String, id: String, modifier: Modi
     val hot = rememberHot(src)
     val pressed by src.collectIsPressedAsState()
     val scale by animateFloatAsState(if (pressed) 0.97f else 1f, Motion.sp(0.5f, Spring.StiffnessMedium), label = "cardScale")
-    val edge by animateColorAsState(if (hot) pal.signal else pal.line2, Motion.tw(220), label = "cardEdge")
     Column(
         verticalArrangement = Arrangement.spacedBy(3.dp),
         modifier = modifier.paneItem(id)
             .graphicsLayer { scaleX = scale; scaleY = scale }
             .clip(Shape14)
             .background(if (hot) pal.signal.copy(alpha = 0.10f) else colors.surface)
-            .border(if (hot) 2.dp else 1.dp, edge, Shape14)
+            .glideBorder(hot, Shape14, pal.signal, pal.line2)
             .hoverable(src).clickable(interactionSource = src, indication = LocalIndication.current, role = Role.Button, onClick = onClick)
             .controllerConfirm(onClick = onClick)
             .padding(horizontal = 14.dp, vertical = 12.dp),
