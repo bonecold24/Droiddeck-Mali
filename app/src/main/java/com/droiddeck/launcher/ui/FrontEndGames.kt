@@ -120,7 +120,8 @@ private fun GameActions(g: Library.SteamGame, s: FrontEndState, a: FrontEndActio
         }
         g.protonPrefix?.takeIf { it.isDirectory }?.let { dir ->
             SecondaryButton("Proton prefix", compact = true) { a.onBrowseFiles(dir) }
-            ManageSaves(g, dir, a)
+            // Only games added to the library; Steam titles keep their saves with Steam Cloud.
+            if (g.library == Library.ADDED) ManageSaves(g, dir, a)
         }
         BusyChip(s)
     }
@@ -278,7 +279,7 @@ private fun lastPlayedText(lastPlayed: Long): String? {
 
 private fun libraryLabel(library: String): String = when (library) {
     "internal" -> "Internal storage"
-    "added" -> "Added game"
+    Library.ADDED -> "Added game"
     else -> library
 }
 
