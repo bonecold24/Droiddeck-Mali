@@ -38,6 +38,7 @@ import com.droiddeck.launcher.session.OfflineMode
 import com.droiddeck.launcher.session.ProtonExtras
 import com.droiddeck.launcher.session.ComponentsManager
 import com.droiddeck.launcher.ui.ComponentsPage
+import com.droiddeck.launcher.session.GameSaves
 import com.droiddeck.launcher.session.SessionLogShare
 import com.droiddeck.launcher.session.SessionPrefs
 import com.droiddeck.launcher.ui.ProtonPage
@@ -111,6 +112,9 @@ class MainActivity : ComponentActivity() {
     private var showComponents by mutableStateOf(false)
     private var focusComponentsContent by mutableStateOf(true)
     private var showMapping by mutableStateOf(false)
+    private var saveBusy: String? = null
+    /** What to do with the zip or folder the file picker hands back after a game page's Manage saves. */
+    private var onSavePicked: ((File) -> Unit)? = null
     private var controllerSettings by mutableStateOf<ControllerPrefs.Settings?>(null)
     private var catalog by mutableStateOf<List<DesktopCatalog.Entry>?>(null)
     private var catalogLoading by mutableStateOf(false)
@@ -150,6 +154,42 @@ class MainActivity : ComponentActivity() {
     }
     private val pickAndroidDriver = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { r ->
         if (r.resultCode == RESULT_OK) InAppFilePicker.pickedUri(r.data)?.let { drivers.importDriver(it, linux = false) }
+    }
+    private val pickSaveZip = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { r ->
+        val then = onSavePicked.also { onSavePicked = null } ?: return@registerForActivityResult
+        if (r.resultCode == RESULT_OK) InAppFilePicker.pickedFile(r.data)?.let(then)
+    }
+    private val pickSaveDir = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { r ->
+        val then = onSavePicked.also { onSavePicked = null } ?: return@registerForActivityResult
+        if (r.resultCode == RESULT_OK) InAppFilePicker.pickedFile(r.data)?.let(then)
+    }
+
+    /** Import a save zip into [game]: pick it in the app's file picker, then back up and unzip off the main thread. */
+    private fun importSaves(name: String, game: () -> GameSaves.Game) {
+        if (SessionState.running) {
+            android.widget.Toast.makeText(this, "Close the Steam session first, so the game can't save over the import", android.widget.Toast.LENGTH_LONG).show()
+            return
+        }
+        onSavePicked = { zip ->
+            saveAction("Importing into $name") {
+                val (written, backup) = GameSaves.import(game(), zip)
+                val kind = GameSaves.layoutOf(zip)?.label ?: "zip"
+                "Imported $written files from the $kind into $name" + (backup?.let { ". Old saves backed up to Download/DroidDeck/Saves/backups" } ?: "")
+            }
+        }
+        pickSaveZip.launch(InAppFilePicker.buildIntent(this, listOf("zip"), "Choose a save zip for $name", GameSaves.savesDir().parentFile?.parentFile?.path))
+    }
+
+    /** Export [game]'s saves in [layout] to a folder picked in the app's file picker. */
+    private fun exportSaves(name: String, layout: GameSaves.Layout, game: () -> GameSaves.Game) {
+        onSavePicked = { dir ->
+            saveAction("Exporting $name") {
+                val (zip, count) = GameSaves.export(game(), layout, dir)
+                "Exported $count files as a ${layout.label}: ${zip.path.removePrefix("/storage/emulated/0/")}"
+            }
+        }
+        GameSaves.savesDir().mkdirs()
+        pickSaveDir.launch(InAppFilePicker.buildDirIntent(this, "Choose where to save $name (${layout.label})", GameSaves.savesDir().path))
     }
     private val pickAddedGamesDir = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { r ->
         if (r.resultCode == RESULT_OK) InAppFilePicker.pickedPath(r.data)?.let { path ->
@@ -348,6 +388,9 @@ class MainActivity : ComponentActivity() {
                         },
                         onProtons = { openProtons() },
                         onComponents = { focusContent -> openComponents(focusContent) },
+                        // A game page's Manage saves: the game's Proton and saves are read when the work runs, off the main thread.
+                        onSaveImport = { sg -> importSaves(sg.name) { GameSaves.game(sg) } },
+                        onSaveExport = { sg, layout -> exportSaves(sg.name, layout) { GameSaves.game(sg) } },
                         onPerformance = { refreshCores(); showProtons = false; showComponents = false; showMapping = false; showPerformance = true },
                         onRoms = { showRoms = true },
                         onFiles = { startActivity(Intent(this, com.droiddeck.launcher.files.FileManagerActivity::class.java)) },
@@ -657,6 +700,19 @@ class MainActivity : ComponentActivity() {
                 refreshPackages()
             }
         }, "catalog-desktop").start()
+    }
+
+    /** Runs a save import or export off the main thread, one at a time, and says how it went. */
+    private fun saveAction(label: String, work: () -> String) {
+        if (saveBusy != null) return
+        saveBusy = label
+        Thread({
+            val message = runCatching(work).getOrElse { e -> "$label failed: ${e.message ?: e.javaClass.simpleName}" }
+            ui.post {
+                saveBusy = null
+                android.widget.Toast.makeText(this, message, android.widget.Toast.LENGTH_LONG).show()
+            }
+        }, "game-saves-action").start()
     }
 
     private fun openProtons() {
@@ -1028,7 +1084,7 @@ class MainActivity : ComponentActivity() {
             val games = if (ready) Library.steamGames(this) + com.droiddeck.launcher.frontend.AddedGames.scan(this).map { g ->
                 com.droiddeck.launcher.frontend.AddedGameArt.resolve(this, g).let { art ->
                     Library.SteamGame(
-                        g.steamAppId ?: g.appId.toInt(), g.name, art.portrait ?: art.header, "added", g.gameId,
+                        g.steamAppId ?: g.appId.toInt(), g.name, art.portrait ?: art.header, Library.ADDED, g.gameId,
                         hero = art.hero ?: art.header, gameFiles = g.folder,
                         protonPrefix = Library.protonPrefix(this, g.steamAppId?.toLong() ?: g.appId),
                     )
