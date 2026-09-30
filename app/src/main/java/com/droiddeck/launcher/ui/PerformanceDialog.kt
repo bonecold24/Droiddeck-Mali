@@ -37,6 +37,7 @@ fun PerformancePage(
     glThread: Boolean,
     noGlError: Boolean,
     noXalia: Boolean,
+    gamescopeRealtime: Boolean,
     prootNoSeccomp: Boolean,
     guestHostname: String,
     phantomWarning: String?,
@@ -46,6 +47,7 @@ fun PerformancePage(
     onGlThread: (Boolean) -> Unit,
     onNoGlError: (Boolean) -> Unit,
     onNoXalia: (Boolean) -> Unit,
+    onGamescopeRealtime: (Boolean) -> Unit,
     onProotNoSeccomp: (Boolean) -> Unit,
     onGuestHostname: (String) -> Unit,
     onClientCore: (Int, Boolean) -> Unit,
@@ -94,6 +96,11 @@ fun PerformancePage(
                 "Disables per-call GL validation.",
                 noGlError, onChange = onNoGlError,
             )
+            ToggleRow(
+                host, "gsrealtime", "gamescope: realtime GPU queue",
+                "Gives the compositor's GPU work priority over the game's. Can smooth frame pacing, but can cost games GPU time.",
+                gamescopeRealtime, onChange = onGamescopeRealtime,
+            )
         }
         SettingsGroup("Session fixes") {
             ToggleRow(
@@ -103,7 +110,7 @@ fun PerformancePage(
             )
             ToggleRow(
                 host, "xalia", "Skip Steam's xalia helper",
-                "Disables Proton's gamepad navigation helper. Try if sessions crash at startup.",
+                "Disables Proton's gamepad navigation helper, which costs every game CPU time. Turn off only if a game needs it.",
                 noXalia, onChange = onNoXalia,
             )
             ToggleRow(

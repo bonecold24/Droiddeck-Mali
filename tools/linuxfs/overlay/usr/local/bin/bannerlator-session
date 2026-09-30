@@ -77,8 +77,9 @@ fi
 # switch instead of on CAP_SYS_NICE, which proot never has; it falls back to normal priority
 # where the driver refuses, and the runtime's own build ignores it. On KGSL Turnip (Mesa 26.2) it
 # changes nothing yet: the driver reports one submit-queue priority and creates every KGSL context
-# with the same flags, so no priority reaches the GPU. Kept for a driver that maps it.
-export GAMESCOPE_FORCE_VULKAN_REALTIME=${BL_GAMESCOPE_REALTIME:-1}
+# with the same flags, so no priority reaches the GPU. Kept for a driver that maps it, and off
+# unless the app's Performance page turns it on (BL_GAMESCOPE_REALTIME=1).
+export GAMESCOPE_FORCE_VULKAN_REALTIME=${BL_GAMESCOPE_REALTIME:-0}
 
 # A sleep that starts no process. Under proot every exec is a traced execve plus the loader's
 # opens and maps, and the watchers below poll for the whole session: `sleep 1` in a loop was 60

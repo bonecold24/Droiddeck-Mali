@@ -126,7 +126,8 @@ class MainActivity : ComponentActivity() {
     private var gameCores by mutableStateOf<Set<Int>>(emptySet())
     private var tuSysmem by mutableStateOf(false)
     private var zinkLazy by mutableStateOf(false)
-    private var noXalia by mutableStateOf(false)
+    private var noXalia by mutableStateOf(true)
+    private var gamescopeRealtime by mutableStateOf(false)
     private var prootNoSeccomp by mutableStateOf(false)
     private var guestHostname by mutableStateOf(SessionPrefs.DEFAULT_GUEST_HOSTNAME)
     private var phantomWarning by mutableStateOf<String?>(null)
@@ -503,8 +504,9 @@ class MainActivity : ComponentActivity() {
         if (checkSelfPermission(Manifest.permission.WRITE_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED) {
             wanted.add(Manifest.permission.WRITE_EXTERNAL_STORAGE)
         }
-        // The microphone is on by default; ask once, with the storage prompt, so voice chat works
-        // without a trip to the settings. A refusal is not asked again - the toggle asks when used.
+        // The microphone is off by default. Someone who turned it on before the permission was
+        // granted is asked once here, with the storage prompt; a refusal is not asked again - the
+        // toggle asks when used.
         if (SessionPrefs.micEnabled(this) && !SessionPrefs.micAsked(this)
             && checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
             wanted.add(Manifest.permission.RECORD_AUDIO)
@@ -893,6 +895,7 @@ class MainActivity : ComponentActivity() {
             cores = CpuCores.all.map { c -> CoreRow(c, "cpu$c" + (CpuCores.maxGhz(c)?.let { String.format(java.util.Locale.US, " · %.1f GHz", it) } ?: "")) },
             clientOverride = clientOverride, clientCores = clientCores, gameCores = gameCores,
             tuSysmem = tuSysmem, zinkLazy = zinkLazy, glThread = glThread, noGlError = noGlError, noXalia = noXalia,
+            gamescopeRealtime = gamescopeRealtime,
             prootNoSeccomp = prootNoSeccomp, guestHostname = guestHostname, phantomWarning = phantomWarning,
             onClientOverride = { on -> SessionPrefs.setClientCpusOverride(this, on); clientOverride = on },
             onTuSysmem = { on -> SessionPrefs.setTuSysmem(this, on); tuSysmem = on },
@@ -900,6 +903,7 @@ class MainActivity : ComponentActivity() {
             onGlThread = { on -> SessionPrefs.setGlThread(this, on); glThread = on },
             onNoGlError = { on -> SessionPrefs.setNoGlError(this, on); noGlError = on },
             onNoXalia = { on -> SessionPrefs.setNoXalia(this, on); noXalia = on },
+            onGamescopeRealtime = { on -> SessionPrefs.setGamescopeRealtime(this, on); gamescopeRealtime = on },
             onProotNoSeccomp = { on -> SessionPrefs.setProotNoSeccomp(this, on); prootNoSeccomp = on },
             onGuestHostname = { name -> SessionPrefs.setGuestHostname(this, name) },
             onClientCore = { core, on ->
@@ -944,6 +948,7 @@ class MainActivity : ComponentActivity() {
         customResolution = SessionPrefs.customResolution(this, mode)
         fexPreset = SessionPrefs.fexPreset(this)
         steamChannel = SessionPrefs.steamChannel(this)
+        steamDeckMode = SessionPrefs.steamDeckMode(this)
         runSteamAtStartup = SessionPrefs.runSteamAtStartup(this)
         addedGamesDirs = SessionPrefs.addedGamesDirs(this)
         refreshAddedGames()
@@ -993,6 +998,7 @@ class MainActivity : ComponentActivity() {
         tuSysmem = SessionPrefs.tuSysmem(this)
         zinkLazy = SessionPrefs.zinkLazy(this)
         noXalia = SessionPrefs.noXalia(this)
+        gamescopeRealtime = SessionPrefs.gamescopeRealtime(this)
         prootNoSeccomp = SessionPrefs.prootNoSeccomp(this)
         guestHostname = SessionPrefs.guestHostname(this)
         refreshPhantomStatus()

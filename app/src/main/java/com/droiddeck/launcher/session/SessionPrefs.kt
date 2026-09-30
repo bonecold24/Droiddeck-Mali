@@ -143,8 +143,8 @@ object SessionPrefs {
         prefs(context).edit().putBoolean("directAudio", on).apply()
     }
 
-    /** The microphone for voice chat, on unless turned off; used only once RECORD_AUDIO is granted. */
-    fun micEnabled(context: Context): Boolean = prefs(context).getBoolean("mic", true)
+    /** The microphone for voice chat, off until the user turns it on (which asks for RECORD_AUDIO). */
+    fun micEnabled(context: Context): Boolean = prefs(context).getBoolean("mic", false)
 
     /** Whether the app has already asked for the microphone once at start-up. */
     fun micAsked(context: Context): Boolean = prefs(context).getBoolean("micAsked", false)
@@ -188,12 +188,26 @@ object SessionPrefs {
      * xalia is an x86 Windows program Proton launches to give Windows programs gamepad navigation.
      * Under FEX it cannot load the session's aarch64 preload shim, so its socket() and memfd calls
      * reach the vendor's seccomp filter raw; where that answers ENOSYS - a Galaxy Fold, measured -
-     * it storms, and the session dies seconds after Big Picture appears.
+     * it storms, and the session dies seconds after Big Picture appears. On by default: where it
+     * does run, it sits beside every game under FEX for nothing a controller-first session needs
+     * (about 10% of a core beside Once Upon a KATAMARI on an SD 8 Gen 2).
      */
-    fun noXalia(context: Context): Boolean = prefs(context).getBoolean("noXalia", false)
+    fun noXalia(context: Context): Boolean = prefs(context).getBoolean("noXalia", true)
 
     fun setNoXalia(context: Context, on: Boolean) {
         prefs(context).edit().putBoolean("noXalia", on).apply()
+    }
+
+    /**
+     * Whether gamescope asks for realtime-priority Vulkan queues (GAMESCOPE_FORCE_VULKAN_REALTIME=1,
+     * which the app's gamescope build honours without CAP_SYS_NICE). Off by default, as in
+     * Bannerlator's session: the compositor's queue preempting the game's buys nothing on a device
+     * whose GPU is waiting on the CPU.
+     */
+    fun gamescopeRealtime(context: Context): Boolean = prefs(context).getBoolean("gamescopeRealtime", false)
+
+    fun setGamescopeRealtime(context: Context, on: Boolean) {
+        prefs(context).edit().putBoolean("gamescopeRealtime", on).apply()
     }
 
     /**

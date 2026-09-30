@@ -530,9 +530,12 @@ class SessionService : Service() {
             SessionPrefs.writeForceFullscreenFlag(this)
         }
         // Proton's own gate for its xalia helper (its `proton` script reads this, and sets
-        // XALIA_SUPPORTED_ONLY itself otherwise). Off by default: xalia is Valve's, and on a device
-        // whose seccomp answers its syscalls normally there is no reason to take it away.
+        // XALIA_SUPPORTED_ONLY itself otherwise). Skipped by default: under FEX it costs every game
+        // a slice of a core for gamepad navigation the session already has.
         if (SessionPrefs.noXalia(this)) guest.add("PROTON_USE_XALIA=0")
+        // gamescope's realtime Vulkan queues (the session script turns this into
+        // GAMESCOPE_FORCE_VULKAN_REALTIME); off unless the user turns it on.
+        guest.add("BL_GAMESCOPE_REALTIME=" + (if (SessionPrefs.gamescopeRealtime(this)) "1" else "0"))
         // Anything else, for a device that cannot be reached with a debugger: Downloads/droiddeck-env
         // holds KEY=VALUE lines that go into the session's environment as written, after ours, so a
         // line here wins. Zink and Turnip tunables (ZINK_DESCRIPTORS=lazy, MESA_*), gamescope's,
