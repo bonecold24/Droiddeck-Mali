@@ -396,6 +396,26 @@ case $mode in
         fi
       done
     ) &
+    # Resume from the Steam menu. The menu is an overlay that takes input, and a fullscreen game that
+    # loses input minimizes itself; gamescope only takes a window out of that state when the focused
+    # window changes, which the menu never does, so the game stayed minimized after Resume (a black
+    # screen with its small caption in the top-left corner). gamescope-3.16.29-p4 restores it itself;
+    # this asks it again a moment after input comes back from the client (app 769) to anything else,
+    # which covers a game that minimizes late. Harmless when nothing is minimized.
+    # BL_RESTORE_ON_RESUME=0 turns it off.
+    [ -z "${BL_DESKTOP:-}" ] && [ "${BL_RESTORE_ON_RESUME:-1}" = 1 ] && (
+      prev=
+      xprop -spy -root GAMESCOPE_FOCUSED_APP 2>/dev/null | while read -r line; do
+        app=${line##*= }
+        case $app in ''|*[!0-9]*) prev=; continue ;; esac
+        if [ "$prev" = 769 ] && [ "$app" != 769 ]; then
+          nap 1
+          xprop -root -f GAMESCOPE_RESTORE_FOCUS_WINDOW 32c -set GAMESCOPE_RESTORE_FOCUS_WINDOW 1 2>/dev/null \
+            && echo "== resume: asked gamescope to restore the game window (app $app)"
+        fi
+        prev=$app
+      done
+    ) &
     (
       beat=0
       for _ in $(seq 1 720); do
