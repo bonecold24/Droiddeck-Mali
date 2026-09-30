@@ -318,7 +318,7 @@ private fun ToolIcon(icon: ImageVector, description: String, busy: Boolean = fal
  * fill with an outline in the text colour - unmistakable in a column of identical buttons.
  */
 @Composable
-private fun SmallButton(text: String, enabled: Boolean = true, accent: Boolean = false, modifier: Modifier = Modifier, onClick: () -> Unit) {
+internal fun SmallButton(text: String, enabled: Boolean = true, accent: Boolean = false, modifier: Modifier = Modifier, onClick: () -> Unit) {
     val colors = MaterialTheme.colorScheme
     val pal = LocalPalette.current
     val src = remember { MutableInteractionSource() }

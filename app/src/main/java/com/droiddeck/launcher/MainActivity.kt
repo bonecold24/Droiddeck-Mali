@@ -38,6 +38,8 @@ import com.droiddeck.launcher.session.OfflineMode
 import com.droiddeck.launcher.session.ProtonExtras
 import com.droiddeck.launcher.session.ComponentsManager
 import com.droiddeck.launcher.ui.ComponentsPage
+import com.droiddeck.launcher.ui.GameSavesPage
+import com.droiddeck.launcher.session.GameSaves
 import com.droiddeck.launcher.session.SessionLogShare
 import com.droiddeck.launcher.session.SessionPrefs
 import com.droiddeck.launcher.ui.ProtonPage
@@ -111,6 +113,14 @@ class MainActivity : ComponentActivity() {
     private var showComponents by mutableStateOf(false)
     private var focusComponentsContent by mutableStateOf(true)
     private var showMapping by mutableStateOf(false)
+    // Game saves page: import / export save zips per game (the floppy beside the Steam cog).
+    private var showSaves by mutableStateOf(false)
+    private var saveTools by mutableStateOf<List<GameSaves.Tool>?>(null)
+    private var saveGames by mutableStateOf<List<GameSaves.Game>>(emptyList())
+    private var saveTool by mutableStateOf<String?>(null)
+    private var saveLayout by mutableStateOf(GameSaves.Layout.GAMEHUB)
+    private var saveBusy by mutableStateOf<String?>(null)
+    private var pendingSaveGame: GameSaves.Game? = null
     private var controllerSettings by mutableStateOf<ControllerPrefs.Settings?>(null)
     private var catalog by mutableStateOf<List<DesktopCatalog.Entry>?>(null)
     private var catalogLoading by mutableStateOf(false)
@@ -150,6 +160,26 @@ class MainActivity : ComponentActivity() {
     }
     private val pickAndroidDriver = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { r ->
         if (r.resultCode == RESULT_OK) InAppFilePicker.pickedUri(r.data)?.let { drivers.importDriver(it, linux = false) }
+    }
+    private val pickSaveZip = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { r ->
+        val game = pendingSaveGame ?: return@registerForActivityResult
+        if (r.resultCode == RESULT_OK) InAppFilePicker.pickedFile(r.data)?.let { zip ->
+            saveAction("Importing into ${game.game.name}") {
+                val (written, backup) = GameSaves.import(game, zip)
+                val kind = GameSaves.layoutOf(zip)?.label ?: "zip"
+                "Imported $written files from the $kind into ${game.game.name}" + (backup?.let { ". Old saves backed up to Download/DroidDeck/Saves/backups" } ?: "")
+            }
+        }
+    }
+    private val pickSaveDir = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { r ->
+        val game = pendingSaveGame ?: return@registerForActivityResult
+        if (r.resultCode == RESULT_OK) InAppFilePicker.pickedFile(r.data)?.let { dir ->
+            val layout = saveLayout
+            saveAction("Exporting ${game.game.name}") {
+                val (zip, count) = GameSaves.export(game, layout, dir)
+                "Exported $count files as a ${layout.label}: ${zip.path.removePrefix("/storage/emulated/0/")}"
+            }
+        }
     }
     private val pickAddedGamesDir = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { r ->
         if (r.resultCode == RESULT_OK) InAppFilePicker.pickedPath(r.data)?.let { path ->
@@ -275,6 +305,7 @@ class MainActivity : ComponentActivity() {
                     showPerformance -> { { PerformanceHost() } }
                     showProtons -> { { ProtonHost() } }
                     showComponents -> { { ComponentsHost() } }
+                    showSaves -> { { SavesHost() } }
                     showMapping -> { { MappingHost() } }
                     else -> null
                 }
@@ -289,7 +320,7 @@ class MainActivity : ComponentActivity() {
                         steamGames = steamGames, emulators = emulatorList, running = runningLabel,
                         frameGenEngine = FrameGen.engine(this), frameGenMultiplier = FrameGen.multiplier(this),
                         lsfgReady = LsfgNative.isInstalled(this),
-                        pageKey = sm?.let { "settings:$it" } ?: if (showPerformance) "performance" else if (showProtons) "protons" else if (showComponents) "components" else if (showMapping) "controller-mapping" else null,
+                        pageKey = sm?.let { "settings:$it" } ?: if (showPerformance) "performance" else if (showProtons) "protons" else if (showComponents) "components" else if (showSaves) "game-saves" else if (showMapping) "controller-mapping" else null,
                         theme = theme,
                         isHomeApp = homeAppSelected,
                         homeScreenEnabled = homeScreenEnabled,
@@ -348,7 +379,8 @@ class MainActivity : ComponentActivity() {
                         },
                         onProtons = { openProtons() },
                         onComponents = { focusContent -> openComponents(focusContent) },
-                        onPerformance = { refreshCores(); showProtons = false; showComponents = false; showMapping = false; showPerformance = true },
+                        onGameSaves = { openSaves() },
+                        onPerformance = { refreshCores(); showProtons = false; showComponents = false; showSaves = false; showMapping = false; showPerformance = true },
                         onRoms = { showRoms = true },
                         onFiles = { startActivity(Intent(this, com.droiddeck.launcher.files.FileManagerActivity::class.java)) },
                         onBrowseFiles = { dir ->
@@ -373,7 +405,7 @@ class MainActivity : ComponentActivity() {
                             offline = OfflineMode.enabled(this)
                         },
                         onCredits = { showCredits = true },
-                        onPageBack = { settingsMode = null; showPerformance = false; showProtons = false; showComponents = false; showMapping = false },
+                        onPageBack = { settingsMode = null; showPerformance = false; showProtons = false; showComponents = false; showSaves = false; showMapping = false },
                         onTheme = { id -> SessionPrefs.setTheme(this, id); theme = id },
                         onLauncherFullscreen = { on ->
                             SessionPrefs.setLauncherFullscreen(this, on)
@@ -452,7 +484,7 @@ class MainActivity : ComponentActivity() {
                             onAdaptiveSticks = { on -> ControllerPrefs.setAdaptiveSticks(this, on); refreshController() },
                             onEditLayout = { startActivity(Intent(this, ControllerEditorActivity::class.java)) },
                             onResetLayout = { ControllerPrefs.resetAllLayouts(this); refreshController() },
-                            onMapping = { settingsMode = null; showPerformance = false; showProtons = false; showComponents = false; showMapping = true },
+                            onMapping = { settingsMode = null; showPerformance = false; showProtons = false; showComponents = false; showSaves = false; showMapping = true },
                             onResetAll = { ControllerPrefs.resetAll(this); refreshController() },
                         ),
                     ),
@@ -556,6 +588,14 @@ class MainActivity : ComponentActivity() {
 
     /** On the Components page the pad's LB / RB step through FEX, DXVK and VKD3D-Proton, wrapping around. */
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        // On the Game saves page LB / RB flip the zip type exports are written in.
+        if (showSaves && (event.keyCode == KeyEvent.KEYCODE_BUTTON_L1 || event.keyCode == KeyEvent.KEYCODE_BUTTON_R1)) {
+            if (event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0) {
+                val all = GameSaves.Layout.entries
+                saveLayout = all[(saveLayout.ordinal + 1) % all.size]
+            }
+            return true
+        }
         if (showComponents && (event.keyCode == KeyEvent.KEYCODE_BUTTON_L1 || event.keyCode == KeyEvent.KEYCODE_BUTTON_R1)) {
             if (event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0) {
                 val all = ComponentsManager.COMPONENTS
@@ -659,10 +699,74 @@ class MainActivity : ComponentActivity() {
         }, "catalog-desktop").start()
     }
 
+    private fun openSaves() {
+        settingsMode = null
+        showPerformance = false
+        showProtons = false
+        showComponents = false
+        showMapping = false
+        showSaves = true
+        refreshSaves()
+    }
+
+    /** Protons, which game runs with which, and the saves found in each prefix: files only, off the main thread. */
+    private fun refreshSaves() {
+        val all = steamGames
+        Thread({
+            val tools = runCatching { GameSaves.tools(this) }.getOrDefault(emptyList())
+            val games = runCatching { GameSaves.games(this, all) }.getOrDefault(emptyList())
+            ui.post {
+                saveTools = tools
+                saveGames = games
+                // Open on the Proton the most launched games use, unless one was picked already.
+                if (saveTool == null || tools.none { it.name == saveTool }) saveTool =
+                    tools.maxByOrNull { t -> games.count { it.tool == t.name && it.launched } }?.name
+            }
+        }, "game-saves").start()
+    }
+
+    private fun saveAction(label: String, work: () -> String) {
+        if (saveBusy != null) return
+        saveBusy = label
+        Thread({
+            val message = runCatching(work).getOrElse { e -> "$label failed: ${e.message ?: e.javaClass.simpleName}" }
+            ui.post {
+                saveBusy = null
+                android.widget.Toast.makeText(this, message, android.widget.Toast.LENGTH_LONG).show()
+                refreshSaves()
+            }
+        }, "game-saves-action").start()
+    }
+
+    @Composable
+    private fun SavesHost() {
+        GameSavesPage(
+            tools = saveTools,
+            games = saveGames,
+            toolName = saveTool,
+            layout = saveLayout,
+            busy = saveBusy,
+            sessionRunning = SessionState.running,
+            onTool = { saveTool = it },
+            onLayout = { saveLayout = it },
+            onImport = { g ->
+                pendingSaveGame = g
+                pickSaveZip.launch(InAppFilePicker.buildIntent(this, listOf("zip"), "Choose a save zip for ${g.game.name}",
+                    GameSaves.savesDir().parentFile?.parentFile?.path))
+            },
+            onExport = { g ->
+                pendingSaveGame = g
+                GameSaves.savesDir().mkdirs()
+                pickSaveDir.launch(InAppFilePicker.buildDirIntent(this, "Choose where to save ${g.game.name}", GameSaves.savesDir().path))
+            },
+            onBack = { showSaves = false },
+        )
+    }
+
     private fun openProtons() {
         settingsMode = null
         showPerformance = false
-        showComponents = false
+        showComponents = false; showSaves = false
         showMapping = false
         showProtons = true
         protons.refreshProtons()
@@ -689,6 +793,7 @@ class MainActivity : ComponentActivity() {
         showPerformance = false
         showProtons = false
         showMapping = false
+        showSaves = false
         showComponents = true
         components.refreshComponents(snapshotFirst = true)
     }
@@ -944,7 +1049,7 @@ class MainActivity : ComponentActivity() {
     private fun openModeSettings(mode: String) {
         showPerformance = false
         showProtons = false
-        showComponents = false
+        showComponents = false; showSaves = false
         showMapping = false
         drivers.refreshDrivers()
         resolutionCap = SessionPrefs.resolutionCap(this, mode)

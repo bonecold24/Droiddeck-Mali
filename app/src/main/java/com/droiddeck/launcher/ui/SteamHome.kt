@@ -105,6 +105,7 @@ internal fun SteamHome(s: FrontEndState, a: FrontEndActions, modifier: Modifier)
                 // Enabled without a runtime: the session's loading screen installs it first.
                 PrimaryButton("Play Steam", enabled = !s.busy, main = true, large = true, icon = Icons.Filled.PlayArrow, onClick = a.onPlay)
                 Cog(size = 54.dp, onClick = a.onSteamSettings)
+                SaveDisk(size = 38.dp, onClick = a.onGameSaves)
             }
         }
     }

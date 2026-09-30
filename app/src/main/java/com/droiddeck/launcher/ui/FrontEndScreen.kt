@@ -133,6 +133,8 @@ class FrontEndActions(
     val onProtons: () -> Unit,
     /** The Components page: FEX / DXVK / VKD3D-Proton per Proton. */
     val onComponents: (focusContent: Boolean) -> Unit,
+    /** The Game saves page: import and export save zips per game (the floppy beside the Steam cog). */
+    val onGameSaves: () -> Unit = {},
     val onPerformance: () -> Unit,
     val onRoms: () -> Unit,
     val onFiles: () -> Unit,
@@ -358,7 +360,7 @@ private fun FrontEndScreenBody(s: FrontEndState, a: FrontEndActions, page: (@Com
 
     val railSelection = when {
         s.pageKey == "performance" || s.pageKey == "protons" || s.pageKey == "controller-mapping" -> "setup"
-        s.pageKey?.startsWith("settings:steam") == true -> "steam"
+        s.pageKey?.startsWith("settings:steam") == true || s.pageKey == "game-saves" -> "steam"
         s.pageKey?.startsWith("settings:") == true -> "desktop"
         selected.startsWith("app:") -> "games"
         selected.startsWith("emu:") || selected.startsWith("rom:") -> "desktop"

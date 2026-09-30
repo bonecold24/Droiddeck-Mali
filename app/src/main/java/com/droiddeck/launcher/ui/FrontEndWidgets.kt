@@ -31,6 +31,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Save
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.ChevronLeft
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -234,4 +235,19 @@ internal fun Cog(size: androidx.compose.ui.unit.Dp = 48.dp, onClick: () -> Unit)
         modifier = Modifier.paneItem("cog").downToFirstTile().size(size).clip(if (size > 48.dp) Shape14 else Shape12).background(Color.White.copy(alpha = 0.03f)).border(1.dp, edge, if (size > 48.dp) Shape14 else Shape12)
             .hoverable(src).clickable(interactionSource = src, indication = LocalIndication.current, onClick = onClick),
     ) { Icon(Icons.Filled.Settings, "Settings", tint = if (hot) pal.signal else colors.onBackground, modifier = Modifier.size(if (size > 48.dp) 20.dp else 18.dp).rotate(rot)) }
+}
+
+/** Game saves: a floppy disk beside the cog, 70% of its size, drawn the same way. */
+@Composable
+internal fun SaveDisk(size: androidx.compose.ui.unit.Dp = 38.dp, onClick: () -> Unit) {
+    val colors = MaterialTheme.colorScheme
+    val src = remember { MutableInteractionSource() }
+    val hot = rememberHot(src)
+    val pal = LocalPalette.current
+    val edge by animateColorAsState(if (hot) pal.signal else pal.line2, Motion.tw(250), label = "saveEdge")
+    Box(
+        contentAlignment = Alignment.Center,
+        modifier = Modifier.paneItem("saves").downToFirstTile().size(size).clip(Shape12).background(Color.White.copy(alpha = 0.03f)).border(1.dp, edge, Shape12)
+            .hoverable(src).clickable(interactionSource = src, indication = LocalIndication.current, onClick = onClick),
+    ) { Icon(Icons.Outlined.Save, "Game saves", tint = if (hot) pal.signal else colors.onBackground, modifier = Modifier.size(16.dp)) }
 }
