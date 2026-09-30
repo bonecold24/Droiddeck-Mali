@@ -1,9 +1,7 @@
 package com.droiddeck.launcher.session
 
-import android.content.Context
 import android.os.Environment
 import com.droiddeck.launcher.frontend.Library
-import com.droiddeck.launcher.runtime.LinuxRuntime
 import java.io.BufferedInputStream
 import java.io.BufferedOutputStream
 import java.io.File
@@ -23,9 +21,8 @@ import java.util.zip.ZipOutputStream
  * "drive_c/users/xuser/…". Proton here runs as steamuser too, so on the way in any user folder but
  * Public becomes steamuser, and on the way out the chosen layout decides the user segment.
  *
- * Saves belong to the game's prefix (compatdata/<appid>/pfx), not to a Proton: the Proton a game is
- * set to (the client's CompatToolMapping) only decides where the page lists it. Ported from
- * Bannerlator's GameSaveBackup and SaveLocator.
+ * Saves belong to the game's prefix (compatdata/<appid>/pfx), whichever Proton it runs with.
+ * Ported from Bannerlator's GameSaveBackup and SaveLocator.
  */
 object GameSaves {
     enum class Layout(val label: String, val rootPrefix: String, val user: String) {
@@ -33,64 +30,21 @@ object GameSaves {
         WINLATOR("Winlator zip", "drive_c/", "xuser"),
     }
 
-    /** A compatibility tool the client can run a game with, by the name it records per game. */
-    data class Tool(val name: String, val label: String)
-
-    /** A game as the page lists it: its Proton, and where its saves are. */
-    data class Game(val game: Library.SteamGame, val tool: String?, val prefix: File?, val saves: List<SaveDir>) {
+    /** A game, its prefix, and the save folders found in it. */
+    data class Game(val game: Library.SteamGame, val prefix: File?, val saves: List<SaveDir>) {
         val launched get() = prefix?.let { File(it, "drive_c").isDirectory } == true
     }
 
     /** A folder of saves, relative to the steamuser profile. */
     data class SaveDir(val relPath: String, val files: Int, val bytes: Long)
 
-    /** DroidDeck's launcher around Valve's ARM64 Proton Experimental (bannerlator-steam-compat). */
-    private const val WRAPPER_TOOL = "bannerlator-proton-arm64"
     private const val USER = "steamuser"
-
-    private fun steam(context: Context) = File(LinuxRuntime.rootDir(context), "root/.local/share/Steam")
 
     fun savesDir(): File = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "DroidDeck/Saves")
     private fun backupsDir(): File = File(savesDir(), "backups")
 
-    // ------------------------------------------------------------------ Protons and games
-
-    /** The compatibility tools installed for the client, each by its registered name and shown name. */
-    fun tools(context: Context): List<Tool> {
-        val out = LinkedHashMap<String, Tool>()
-        File(steam(context), "compatibilitytools.d").listFiles()?.sortedBy { it.name }?.forEach { dir ->
-            val vdf = File(dir, "compatibilitytool.vdf").takeIf { it.isFile } ?: return@forEach
-            val tools = runCatching { Vdf.parse(vdf.readText()) }.getOrNull()
-                ?.child("compatibilitytools")?.child("compat_tools") ?: return@forEach
-            for ((name, v) in tools.children) {
-                val shown = (v as? Vdf.Node)?.string("display_name") ?: name
-                out[name] = Tool(name, if (name == WRAPPER_TOOL) "Proton Experimental (ARM64)" else shown)
-            }
-        }
-        return out.values.toList()
-    }
-
-    /** The client's per-game compatibility tool, by app id; "0" is its default for every other game. */
-    fun mapping(context: Context): Map<String, String> {
-        val config = File(steam(context), "config/config.vdf").takeIf { it.isFile } ?: return emptyMap()
-        val root = runCatching { Vdf.parse(config.readText()) }.getOrNull() ?: return emptyMap()
-        val map = root.find("CompatToolMapping") ?: return emptyMap()
-        val out = HashMap<String, String>()
-        for ((id, v) in map.children) (v as? Vdf.Node)?.string("name")?.takeIf { it.isNotEmpty() }?.let { out[id] = it }
-        return out
-    }
-
-    /** Every game with the tool it runs with (null = none set) and the saves found in its prefix. */
-    fun games(context: Context, all: List<Library.SteamGame>): List<Game> {
-        val mapping = mapping(context)
-        val fallback = mapping["0"]
-        return all.map { g ->
-            val unsigned = (g.appId.toLong() and 0xffffffffL).toString()
-            val tool = mapping[unsigned] ?: mapping[g.appId.toString()] ?: mapping[g.gameId.toString()] ?: fallback
-            val prefix = g.protonPrefix
-            Game(g, tool, prefix, prefix?.let { locate(it, g) } ?: emptyList())
-        }
-    }
+    /** [game] with its prefix and the saves found there; reads files, so not on the main thread. */
+    fun game(game: Library.SteamGame): Game = Game(game, game.protonPrefix, game.protonPrefix?.let { locate(it, game) } ?: emptyList())
 
     // ------------------------------------------------------------------ finding saves
 
@@ -280,56 +234,5 @@ object GameSaves {
         val segs = raw.replace('\\', '/').trimStart('/').split("/").filter { it.isNotEmpty() && it != "." }
         if (segs.isEmpty() || !segs[0].equals("drive_c", true)) return null
         return segs.drop(1).toMutableList()
-    }
-
-    // ------------------------------------------------------------------ Valve KeyValues
-
-    /** The client's text KeyValues (VDF): quoted keys, quoted values or { nested blocks }. */
-    internal object Vdf {
-        class Node(val children: LinkedHashMap<String, Any> = LinkedHashMap()) {
-            fun child(key: String): Node? = children.entries.firstOrNull { it.key.equals(key, true) }?.value as? Node
-            fun string(key: String): String? = children.entries.firstOrNull { it.key.equals(key, true) }?.value as? String
-            /** The first block named [key] anywhere below. */
-            fun find(key: String): Node? {
-                child(key)?.let { return it }
-                for (v in children.values) (v as? Node)?.find(key)?.let { return it }
-                return null
-            }
-        }
-
-        fun parse(text: String): Node {
-            var i = 0
-            fun token(): String? {
-                while (i < text.length) {
-                    val c = text[i]
-                    when {
-                        c.isWhitespace() -> i++
-                        c == '/' && i + 1 < text.length && text[i + 1] == '/' -> { while (i < text.length && text[i] != '\n') i++ }
-                        c == '{' || c == '}' -> { i++; return c.toString() }
-                        c == '"' -> {
-                            val sb = StringBuilder(); i++
-                            while (i < text.length && text[i] != '"') {
-                                if (text[i] == '\\' && i + 1 < text.length) { sb.append(text[i + 1]); i += 2 } else sb.append(text[i++])
-                            }
-                            i++
-                            return "\"" + sb
-                        }
-                        else -> { val s = i; while (i < text.length && !text[i].isWhitespace() && text[i] != '{' && text[i] != '}') i++; return "\"" + text.substring(s, i) }
-                    }
-                }
-                return null
-            }
-            fun block(into: Node) {
-                while (true) {
-                    val k = token() ?: return
-                    if (k == "}") return
-                    if (k == "{") continue
-                    val key = k.drop(1)
-                    val v = token() ?: return
-                    if (v == "{") { val n = Node(); block(n); into.children[key] = n } else into.children[key] = v.drop(1)
-                }
-            }
-            return Node().also { block(it) }
-        }
     }
 }
