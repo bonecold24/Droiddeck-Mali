@@ -350,6 +350,8 @@ static int is_link_query(unsigned long request) {
 }
 
 void bl_kgsl_chip_id_fixup(unsigned long request, void *arg, int rc); /* kgslid.c */
+int bl_kgsl_poll(int (*real)(int, unsigned long, void *), int fd, unsigned long request,
+                 void *arg, int *rc) __attribute__((visibility("hidden")));
 
 /* Every DRM and evdev call comes through here, so the lookup is done once. Two threads racing
  * to store it store the same pointer. */
@@ -362,7 +364,8 @@ int ioctl(int fd, unsigned long request, ...) {
     va_end(ap);
 
     if (real == NULL) real = (ioctl_fn) dlsym(RTLD_NEXT, "ioctl");
-    int rc = real(fd, request, arg);
+    int rc;
+    if (!bl_kgsl_poll(real, fd, request, arg, &rc)) rc = real(fd, request, arg);
     bl_kgsl_chip_id_fixup(request, arg, rc);
     if (arg == NULL || !is_link_query(request)) return rc;
     int saved = errno;
