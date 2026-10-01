@@ -105,8 +105,10 @@ def parse_variants(text: str) -> list[tuple[str, str]]:
     return out
 
 
-def published_millis(release: dict) -> int:
-    value = release.get("published_at") or release.get("created_at")
+def published_millis(release: dict, prefer_updated: bool = False) -> int:
+    value = (
+        release.get("updated_at") if prefer_updated else None
+    ) or release.get("published_at") or release.get("created_at")
     if not value:
         return 0
     return int(dt.datetime.fromisoformat(value.replace("Z", "+00:00")).timestamp() * 1000)
@@ -197,6 +199,7 @@ def release_entry(
     signer: str,
     title: str,
     summary: str,
+    prefer_updated: bool = False,
 ):
     suffixes = [suffix for _, suffix in variants]
     apks = {}
@@ -220,7 +223,7 @@ def release_entry(
         "pr": pr,
         "version": version,
         "versionCode": version_code,
-        "publishedAt": published_millis(release),
+        "publishedAt": published_millis(release, prefer_updated),
         "url": release.get("html_url") or "",
         "apks": apks,
     }
@@ -324,7 +327,18 @@ def build_catalog(source: GitHub, ci: GitHub, source_repo: str, ci_repo: str) ->
                 pass
         title, summary = ci_description(release)
         tests.append(
-            release_entry(release, commit, pr, None, version_code, variants, signer, title, summary)
+            release_entry(
+                release,
+                commit,
+                pr,
+                None,
+                version_code,
+                variants,
+                signer,
+                title,
+                summary,
+                prefer_updated=True,
+            )
         )
 
     previews.sort(key=lambda r: r["publishedAt"], reverse=True)

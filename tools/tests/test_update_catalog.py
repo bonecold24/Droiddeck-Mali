@@ -5,6 +5,7 @@ from tools.release.update_catalog import (
     ci_description,
     parse_gradle,
     parse_variants,
+    published_millis,
     release_body_value,
 )
 
@@ -74,6 +75,16 @@ pubg com.tencent.ig -pubg
         self.assertEqual("abcdef1234567", release_body_value(body, "Commit"))
         self.assertEqual("1234567", release_body_value(body, "Base"))
         self.assertEqual("42", release_body_value(body, "VersionCode"))
+
+    def test_republished_pr_uses_updated_time_but_other_channels_use_publish_time(self):
+        release = {
+            "published_at": "2026-09-30T10:00:00Z",
+            "updated_at": "2026-09-30T12:00:00Z",
+        }
+        self.assertLess(
+            published_millis(release),
+            published_millis(release, prefer_updated=True),
+        )
 
 
 if __name__ == "__main__":
