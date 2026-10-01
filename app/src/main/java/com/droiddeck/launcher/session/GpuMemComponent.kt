@@ -16,12 +16,15 @@ import java.io.File
  *   counts, where the policy allows it;
  * - else KGSL's own accounting of each of the session's processes
  *   (`/sys/class/kgsl/kgsl/proc/<pid>/gpumem_mapped` and `gpumem_unmapped`);
- * - else the size of the KGSL mappings in each of the session's processes' `smaps` - only the
+ * - else the size of the KGSL mappings in each of the session's processes' `maps` - only the
  *   buffers the CPU has mapped, so less than the GPU holds (about 40 % of KGSL's own count in a
  *   game on an AYN Thor), but always readable: every process the app can see in `/proc` is one of
- *   its own.
+ *   its own. `maps` rather than `smaps`, which gives the same sizes but walks page tables to do it:
+ *   in a game, 180,000 lines and most of a second of CPU a pass.
+ *
+ * Sampled only while the overlay shows (OverlayShown).
  */
-class GpuMemComponent(private val file: File) : SessionPart() {
+class GpuMemComponent(private val file: File, private val root: File) : SessionPart() {
     @Volatile private var running = false
     private var thread: Thread? = null
     private var source = ""
@@ -39,7 +42,7 @@ class GpuMemComponent(private val file: File) : SessionPart() {
         thread = Thread({
             while (running) {
                 try { Thread.sleep(PERIOD_MS) } catch (e: InterruptedException) { break }
-                if (running) sample()?.let { write(it) }
+                if (running && OverlayShown.check(root)) sample()?.let { write(it) }
             }
         }, "gpu-mem").apply { isDaemon = true; start() }
     }
@@ -69,7 +72,7 @@ class GpuMemComponent(private val file: File) : SessionPart() {
             mappedKb += kb
             anyMap = true
         }
-        if (anyMap) { source = "/proc/<pid>/smaps (KGSL mappings)"; return mappedKb * 1024 }
+        if (anyMap) { source = "/proc/<pid>/maps (KGSL mappings)"; return mappedKb * 1024 }
         return null
     }
 
@@ -77,18 +80,19 @@ class GpuMemComponent(private val file: File) : SessionPart() {
     private fun sessionPids(): List<String> =
         File("/proc").list()?.filter { it.isNotEmpty() && it.all(Char::isDigit) }.orEmpty()
 
-    /** Size of a process's mappings of the KGSL device, in kB; null where its smaps cannot be read. */
+    /** Size of a process's mappings of the KGSL device, in kB; null where its maps cannot be read. */
     private fun kgslMappedKb(pid: String): Long? = runCatching {
-        var total = 0L
-        var inKgsl = false
-        File("/proc/$pid/smaps").forEachLine { line ->
-            if (MAPPING.containsMatchIn(line)) {
-                inKgsl = line.contains("kgsl-3d0") || line.contains("/dev/dri/renderD")
-            } else if (inKgsl && line.startsWith("Size:")) {
-                total += line.substring(5).trim().removeSuffix("kB").trim().toLongOrNull() ?: 0L
+        var bytes = 0L
+        File("/proc/$pid/maps").forEachLine { line ->
+            if (line.endsWith("kgsl-3d0") || line.contains("/dev/dri/renderD")) {
+                val dash = line.indexOf('-')
+                val space = line.indexOf(' ')
+                if (dash > 0 && space > dash) {
+                    bytes += line.substring(dash + 1, space).toLong(16) - line.substring(0, dash).toLong(16)
+                }
             }
         }
-        total
+        bytes / 1024
     }.getOrNull()
 
     /** Whole, renamed into place: the reader opens either the last value or this one. */
@@ -105,9 +109,8 @@ class GpuMemComponent(private val file: File) : SessionPart() {
     companion object {
         private const val TAG = "SessionService"
         private const val KGSL_ROOT = "/sys/class/kgsl/kgsl"
-        private const val PERIOD_MS = 2_000L
-        /** A mapping's header in smaps: its address range first, then its fields and path. */
-        private val MAPPING = Regex("^[0-9a-f]+-[0-9a-f]+ ")
+        /** GPU memory moves slowly; a pass over every process's maps is ~40 ms of CPU in a game. */
+        private const val PERIOD_MS = 5_000L
 
         private fun readLong(path: String): Long? =
             runCatching { File(path).readText().trim().toLong() }.getOrNull()

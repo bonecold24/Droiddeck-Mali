@@ -689,7 +689,7 @@ class SessionService : Service() {
         components.add(battery)
         binds.add(battery.dir.path + ":/sys/class/power_supply")
         // The overlay's CPU and GPU temperatures and the fan, as hwmon sensors it knows by name.
-        val hwmon = HwmonComponent(File(filesDir, "session/sys/hwmon"))
+        val hwmon = HwmonComponent(File(filesDir, "session/sys/hwmon"), LinuxRuntime.rootDir(this))
         if (hwmon.prepare()) {
             hwmon.attach(this)
             components.add(hwmon)
@@ -703,7 +703,7 @@ class SessionService : Service() {
             binds.add(cpuStat.file.path + ":/proc/stat")
         }
         // The GPU memory in use for the overlay's VRAM lines, which it would read from tracefs.
-        val gpuMem = GpuMemComponent(File(LinuxRuntime.rootDir(this), "run/droiddeck-hud/gpu-mem"))
+        val gpuMem = GpuMemComponent(File(LinuxRuntime.rootDir(this), "run/droiddeck-hud/gpu-mem"), LinuxRuntime.rootDir(this))
         if (gpuMem.prepare()) {
             gpuMem.attach(this)
             components.add(gpuMem)

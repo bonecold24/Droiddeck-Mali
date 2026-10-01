@@ -27,7 +27,7 @@ import java.io.RandomAccessFile
  *
  * Nothing in a phone's own hwmon is read by the overlay, so standing in for it loses nothing.
  */
-class HwmonComponent(val dir: File) : SessionPart() {
+class HwmonComponent(val dir: File, private val root: File) : SessionPart() {
     @Volatile private var running = false
     private var thread: Thread? = null
     private var fanSource: String? = null
@@ -65,7 +65,8 @@ class HwmonComponent(val dir: File) : SessionPart() {
         thread = Thread({
             while (running) {
                 try { Thread.sleep(FAN_PERIOD_MS) } catch (e: InterruptedException) { break }
-                if (running) writeFan(sampleFan())
+                // A tachometer read busy-waits 100 ms in the kernel: only while the overlay shows.
+                if (running && OverlayShown.check(root)) writeFan(sampleFan())
             }
         }, "hwmon-fan").apply { isDaemon = true; start() }
     }
