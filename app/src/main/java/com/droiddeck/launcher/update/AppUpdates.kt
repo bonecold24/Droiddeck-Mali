@@ -194,10 +194,11 @@ object AppUpdates {
 
     /** One static request, rather than several unauthenticated GitHub API requests. */
     fun refresh(context: Context): Catalog {
+        val checkedAt = System.currentTimeMillis()
         val catalog = readPublishedCatalog(
-            JSONObject(get(CATALOG_URL)),
+            JSONObject(get("$CATALOG_URL?checked=$checkedAt")),
             context.packageName,
-            System.currentTimeMillis(),
+            checkedAt,
         )
         prefs(context).edit().putString(KEY_CATALOG, writeCatalog(catalog).toString()).apply()
         return catalog
