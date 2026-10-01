@@ -44,7 +44,8 @@ library list, before anything is published.
   its overlay; wine then deactivates the game and a fullscreen game minimizes itself, freezing
   behind the menu instead of running on as on a Steam Deck. Steam's own overlay taking input now
   keeps keyboard focus on the game, as mode 2 does; its input comes from the controller through
-  Steam Input, not the X keyboard.
+  Steam Input, not the X keyboard. The pointer warps gamescope makes as input moves to Steam and
+  back are skipped around it, since the game - still taking input - saw them as a mouse jump.
 
 Sixteen more of Armada's patches are DRM/lease/HDR-on-KMS work for a native display, which this
 app's Wayland-hosted gamescope never reaches, or need a newer gamescope than the runtime has.

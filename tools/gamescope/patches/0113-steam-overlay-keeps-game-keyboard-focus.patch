@@ -14,8 +14,14 @@ The overlay's input does not need X keyboard focus: the controller drives it thr
 Measured by rewriting the property to 2 by hand: the game kept running behind the menu and the
 controller still moved only the menu.
 
+With the game keeping focus, the pointer resets gamescope makes when input moves to Steam (warp
+to the centre, park in the corner) and back (warp to the centre) reached it as a sudden mouse
+move: a mouse-look camera spun every time the menu opened and closed. Skip them while Steam's
+overlay opens over a game that keeps focus, and as it closes - by then the overlay has dropped its
+STEAM_INPUT_FOCUS, so whether the opening kept focus is remembered.
+
 diff --git a/src/steamcompmgr.cpp b/src/steamcompmgr.cpp
-index 372a82c..f870974 100644
+index 372a82c..3fab3c6 100644
 --- a/src/steamcompmgr.cpp
 +++ b/src/steamcompmgr.cpp
 @@ -1321,6 +1321,22 @@ window_is_steam( steamcompmgr_win_t *w )
@@ -50,7 +56,35 @@ index 372a82c..f870974 100644
  			keyboardFocusWin = ctx->focus.focusWindow;
  	}
  	else
-@@ -5340,7 +5356,7 @@ determine_and_apply_focus( global_focus_t *pFocus )
+@@ -4834,12 +4850,26 @@ void xwayland_ctx_t::DetermineAndApplyFocus( const std::vector< steamcompmgr_win
+ 		if ( ctx->focus.inputFocusWindow != inputFocus ||
+ 			 ctx->focus.inputFocusMode != inputFocus->inputFocusMode )
+ 		{
++			// Steam's overlay opening over a game, or closing again, while the game keeps keyboard focus
++			// (window_keeps_game_keyboard_focus): the game is still taking input, so a pointer warp
++			// reaches it as a sudden mouse move - the camera of a mouse-look game spun as the Quick
++			// Access Menu opened and as it closed. The overlay is driven by the controller and the
++			// cursor is hidden, so leave the pointer where it is. Closing, the overlay has already
++			// dropped its STEAM_INPUT_FOCUS, so whether the opening kept focus is remembered.
++			static bool s_bOverlayKeptGameFocus = false;
++			bool bOverlayKeepsGameFocus = window_keeps_game_keyboard_focus( inputFocus ) &&
++				ctx->focus.focusWindow && !window_is_steam( ctx->focus.focusWindow );
++			bool bSkipPointerReset = bOverlayKeepsGameFocus || s_bOverlayKeptGameFocus;
++			s_bOverlayKeptGameFocus = bOverlayKeepsGameFocus;
++
+ 			// If the window doesn't want focus when hidden, move it away
+ 			// as we are going to hide it straight after.
+ 			// otherwise, if we switch from wanting it to not
+ 			// (steam -> game)
+ 			// put us back in the centre of the screen.
+-			if (window_wants_no_focus_when_mouse_hidden(inputFocus))
++			if ( bSkipPointerReset )
++				;
++			else if (window_wants_no_focus_when_mouse_hidden(inputFocus))
+ 				ctx->focus.bResetToCorner = true;
+ 			else if ( window_wants_no_focus_when_mouse_hidden(inputFocus) != window_wants_no_focus_when_mouse_hidden(ctx->focus.inputFocusWindow) )
+ 				ctx->focus.bResetToCenter = true;
+@@ -5340,7 +5370,7 @@ determine_and_apply_focus( global_focus_t *pFocus )
  		pFocus->inputFocusMode = pFocus->inputFocusWindow->inputFocusMode;
  
  	if ( gamescope::VirtualConnectorIsSingleOutput() &&
@@ -59,7 +93,7 @@ index 372a82c..f870974 100644
  	{
  		pFocus->keyboardFocusWindow = pFocus->overrideWindow
  			? pFocus->overrideWindow
-@@ -6485,7 +6501,7 @@ handle_wl_surface_id(xwayland_ctx_t *ctx, steamcompmgr_win_t *w, uint32_t surfac
+@@ -6485,7 +6515,7 @@ handle_wl_surface_id(xwayland_ctx_t *ctx, steamcompmgr_win_t *w, uint32_t surfac
  		steamcompmgr_win_t *keyboardFocusWindow = pCurrentFocus->inputFocusWindow;
  
  		if ( gamescope::VirtualConnectorIsSingleOutput() &&
