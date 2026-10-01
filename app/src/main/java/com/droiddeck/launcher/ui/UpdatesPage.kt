@@ -148,6 +148,7 @@ private fun StatusPanel(s: FrontEndState, u: UpdatesState, ua: UpdatesActions, m
     val offer = if (me.updatable) catalog?.let { AppUpdates.offer(it, u.follow, me) } else null
     val name = channelName(u.follow)
     val offered = release != null && (offer == Offer.UPDATE || offer == Offer.SWITCH)
+    val installBlock = release?.let { AppUpdates.installBlock(it, me) }
     class Look(val tint: Color, val status: String, val headline: String, val detail: String?)
     val look = when {
         !me.updatable -> Look(colors.onSurfaceVariant, "Signed differently", "Can't update in place",
@@ -158,7 +159,7 @@ private fun StatusPanel(s: FrontEndState, u: UpdatesState, ua: UpdatesActions, m
         offer == Offer.AHEAD -> Look(pal.signal, "Ahead of Stable", "You're ahead of Stable",
             "This build is newer than the last Stable release. You'll move onto Stable with its next one.")
         offer == Offer.GONE -> Look(AttentionAmber, "Test ended", "This test has ended",
-            "Its fix was merged or dropped. Follow Nightly to keep getting the newest fixes.")
+            "Its fix was merged or dropped. Follow Preview to keep getting the newest fixes.")
         else -> Look(pal.good, "Up to date", "You have the latest $name", null)
     }
     Column(
@@ -174,8 +175,11 @@ private fun StatusPanel(s: FrontEndState, u: UpdatesState, ua: UpdatesActions, m
             ReleaseNotes(changeTitle(release!!.title.ifBlank { release.tag }), release.summary, release.tag)
         }
         if (look.detail != null) Text(look.detail, fontSize = 14.sp, color = colors.onSurfaceVariant, modifier = Modifier.padding(top = 10.dp))
+        if (installBlock != null && (offered || offer == Offer.AHEAD)) {
+            Text(installBlock, fontSize = 13.sp, color = AttentionAmber, modifier = Modifier.padding(top = 10.dp))
+        }
         if (u.error != null) Text(u.error, fontSize = 13.sp, color = pal.error, modifier = Modifier.padding(top = 12.dp))
-        val installable = release?.apk != null && !s.sessionRunning
+        val installable = release?.apk != null && installBlock == null && !s.sessionRunning
         val button = release?.apk?.size?.takeIf { it > 0 }?.let { " · ${megabytes(it)}" }.orEmpty()
         Box(Modifier.padding(top = 14.dp)) {
             when {
@@ -186,8 +190,9 @@ private fun StatusPanel(s: FrontEndState, u: UpdatesState, ua: UpdatesActions, m
                 }
                 offer == Offer.UPDATE -> PrimaryButton("Update$button", enabled = installable, main = true) { ua.onInstall(release!!) }
                 offer == Offer.SWITCH -> PrimaryButton("Install$button", enabled = installable, main = true) { ua.onInstall(release!!) }
-                offer == Offer.AHEAD -> SecondaryButton("Install Stable ${release?.version.orEmpty()} anyway", enabled = installable) { ua.onInstall(release!!) }
-                offer == Offer.GONE -> PrimaryButton("Follow Nightly", main = true) { ua.onFollow(Follow(Channel.NIGHTLY)) }
+                offer == Offer.AHEAD && installBlock == null ->
+                    SecondaryButton("Install Stable ${release?.version.orEmpty()} anyway", enabled = installable) { ua.onInstall(release!!) }
+                offer == Offer.GONE -> PrimaryButton("Follow Preview", main = true) { ua.onFollow(Follow(Channel.NIGHTLY)) }
             }
         }
         if (s.sessionRunning && (offered || offer == Offer.AHEAD)) {
@@ -226,10 +231,10 @@ private fun ReleaseNotes(title: String, notes: String, key: String) {
     }
 }
 
-/** The headline for a build on offer: "DroidDeck 0.3.0", "New Nightly build", "PR #93 test build". */
+/** The headline for a build on offer: "DroidDeck 0.3.0", "New Preview build", "PR #93 test build". */
 private fun newBuild(f: Follow, r: Release) = when (f.channel) {
     Channel.STABLE -> "DroidDeck ${r.version ?: r.tag}"
-    Channel.NIGHTLY -> "New Nightly build"
+    Channel.NIGHTLY -> "New Preview build"
     Channel.TEST -> "PR #${r.pr} test build"
 }
 
@@ -259,8 +264,8 @@ private fun ChannelPicker(u: UpdatesState, ua: UpdatesActions) {
             catalog?.stable?.let { "${it.version ?: it.tag} · ${ago(it.publishedAt)}" }, u.follow.channel == Channel.STABLE,
         ) { ua.onFollow(Follow(Channel.STABLE)) }
         ChannelCard(
-            Icons.Outlined.Bolt, "Nightly", "Newest fixes, the odd new bug",
-            catalog?.nightly?.let { ago(it.publishedAt) }, u.follow.channel == Channel.NIGHTLY,
+            Icons.Outlined.Bolt, "Preview", "Newest main-branch fixes, before Stable",
+            catalog?.preview?.let { ago(it.publishedAt) }, u.follow.channel == Channel.NIGHTLY,
         ) { ua.onFollow(Follow(Channel.NIGHTLY)) }
         ChannelCard(
             Icons.Outlined.Science, "Test builds", "Try a fix before it's released",
@@ -343,7 +348,7 @@ private fun TestRow(t: Release, selected: Boolean, onClick: () -> Unit) {
 
 private fun channelName(f: Follow) = when (f.channel) {
     Channel.STABLE -> "Stable"
-    Channel.NIGHTLY -> "Nightly"
+    Channel.NIGHTLY -> "Preview"
     Channel.TEST -> "the PR #${f.pr} test"
 }
 
