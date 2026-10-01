@@ -239,9 +239,8 @@ public final class LinuxRuntime {
             }
         }
         bindGpuNode(context, cmd);
-        bindAdrenoStats(cmd);
+        bindAdrenoStats(cmd, extraBinds);
         bindCpuTemps(cmd, root);
-        bindCpuHwmon(context.getCacheDir(), cmd);
         if (extraBinds != null) {
             for (String spec : extraBinds) bind(cmd, spec);
         }
@@ -333,36 +332,13 @@ public final class LinuxRuntime {
         }
     }
 
-    /**
-     * MangoHud's CPU temperature: it looks first in {@code /sys/class/hwmon} for a sensor named
-     * {@code cpuN_thermal} (a mainline Arm kernel's), then at thermal zones of a type it knows; an
-     * Android kernel has neither - its hwmon holds the PMIC's sensors and its zones are named by
-     * the vendor (cpu-1-0-usr) - so the overlay showed no CPU temperature, and where the app may
-     * not list hwmon the overlay logged an error twice a second. The session's hwmon is one sensor
-     * named so, reading a CPU zone the app can read. Nothing else in a phone's hwmon is read by it.
-     */
-    private static void bindCpuHwmon(File cacheDir, List<String> cmd) {
-        String zone = null;
+    /** The temperature of a CPU zone the app may read (the first by name), or null. */
+    public static String cpuTempSource() {
         for (java.util.Map.Entry<String, File> e : new java.util.TreeMap<>(thermalZones()).entrySet()) {
             File temp = new File(e.getValue(), "temp");
-            if (e.getKey().contains("cpu") && !e.getKey().contains("gpu") && temp.canRead()) {
-                zone = temp.getPath();
-                break;
-            }
+            if (e.getKey().contains("cpu") && !e.getKey().contains("gpu") && temp.canRead()) return temp.getPath();
         }
-        if (zone == null) return;
-        File sensor = new File(cacheDir, "hwmon/hwmon0");
-        try {
-            if (!sensor.isDirectory() && !sensor.mkdirs()) return;
-            Files.write(new File(sensor, "name").toPath(), "cpu0_thermal\n".getBytes(StandardCharsets.US_ASCII));
-            File input = new File(sensor, "temp1_input");
-            Files.deleteIfExists(input.toPath());
-            Os.symlink(zone, input.getPath());
-        } catch (IOException | ErrnoException e) {
-            return;
-        }
-        bind(cmd, sensor.getParent() + ":/sys/class/hwmon");
-        android.util.Log.i("LinuxRuntime", "hud: cpu temp from " + zone);
+        return null;
     }
 
     /** The file the GPU's temperature reads from, or null where the app may read none. */
@@ -384,7 +360,7 @@ public final class LinuxRuntime {
      * Android PC emulators (GameNative, Winlator forks) read them in. A value found nowhere is left
      * alone.
      */
-    private static void bindAdrenoStats(List<String> cmd) {
+    private static void bindAdrenoStats(List<String> cmd, List<String> extraBinds) {
         String kgsl = "/sys/class/kgsl/kgsl-3d0/";
         String gpuTemp = gpuTempSource();
         String[][] stats = {
@@ -396,7 +372,10 @@ public final class LinuxRuntime {
                 {thermalZone("ddr"), "/sys/class/thermal/thermal_zone22/temp"},
         };
         for (String[] stat : stats) {
-            if (stat[0] != null) bind(cmd, stat[0] + ":" + stat[1]);
+            // A value the session feeds itself (GpuStatsComponent, where KGSL is refused) wins.
+            boolean fed = false;
+            if (extraBinds != null) for (String spec : extraBinds) fed |= spec.endsWith(":" + stat[1]);
+            if (stat[0] != null && !fed) bind(cmd, stat[0] + ":" + stat[1]);
         }
         // Which of the overlay's GPU values this device lets the app read: a phone under an
         // enforcing policy refuses some of them, and the overlay then has no line for that value.

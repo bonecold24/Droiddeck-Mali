@@ -688,6 +688,13 @@ class SessionService : Service() {
         battery.attach(this)
         components.add(battery)
         binds.add(battery.dir.path + ":/sys/class/power_supply")
+        // The overlay's CPU and GPU temperatures and the fan, as hwmon sensors it knows by name.
+        val hwmon = HwmonComponent(File(filesDir, "session/sys/hwmon"))
+        if (hwmon.prepare()) {
+            hwmon.attach(this)
+            components.add(hwmon)
+            binds.add(hwmon.dir.path + ":/sys/class/hwmon")
+        }
         // CPU load for everything in the session that reads /proc/stat, the overlay among them.
         val cpuStat = CpuStatComponent(File(filesDir, "session/proc-stat"))
         if (cpuStat.prepare()) {
@@ -695,12 +702,18 @@ class SessionService : Service() {
             components.add(cpuStat)
             binds.add(cpuStat.file.path + ":/proc/stat")
         }
+        // The GPU memory in use for the overlay's VRAM lines, which it would read from tracefs.
+        val gpuMem = GpuMemComponent(File(LinuxRuntime.rootDir(this), "run/droiddeck-hud/gpu-mem"))
+        if (gpuMem.prepare()) {
+            gpuMem.attach(this)
+            components.add(gpuMem)
+        }
         // The GPU's load and temperature for the performance overlay, where KGSL's sysfs is refused.
         val gpuStats = GpuStatsComponent(File(filesDir, "session/sys/kgsl-3d0"))
         if (gpuStats.prepare()) {
             gpuStats.attach(this)
             components.add(gpuStats)
-            binds.add(gpuStats.dir.path + ":" + GpuStatsComponent.KGSL)
+            binds.addAll(gpuStats.binds())
         }
         // Rumble for the on-screen pad: the fake evdev layer sends force-feedback effects to this
         // listener, which drives the phone's vibrator (see RumbleComponent).

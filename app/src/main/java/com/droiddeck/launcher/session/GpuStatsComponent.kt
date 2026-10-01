@@ -19,6 +19,11 @@ import java.io.RandomAccessFile
  * Adreno's numbers from, across Snapdragon generations and vendor kernels. A value with no
  * readable source is left out, and the overlay shows no line for it. Where all three are
  * readable, nothing is done.
+ *
+ * Valve's build also reads load and clock where a mainline msm kernel has them (debugfs
+ * `perf_now`, the GPU's devfreq `cur_freq` in Hz) - the paths LinuxRuntime.bindAdrenoStats points
+ * at KGSL's own files when it may - so the same values are fed there too, in the same formats
+ * ([binds]).
  */
 class GpuStatsComponent(val dir: File) : SessionPart() {
     @Volatile private var running = false
@@ -26,7 +31,17 @@ class GpuStatsComponent(val dir: File) : SessionPart() {
     private val feeds = ArrayList<Feed>()
 
     /** One of MangoHud's files and where its value comes from. */
-    private class Feed(val file: File, val source: String, val read: () -> Long?, val format: String)
+    private class Feed(
+        val file: File, val source: String, val read: () -> Long?, val format: String, val percent: Boolean = false,
+    )
+
+    /** Where Valve's msm reader looks, and the feed for it, as host:guest binds. */
+    fun binds(): List<String> {
+        val list = mutableListOf(dir.path + ":" + KGSL)
+        if (File(dir, "perf_now").exists()) list.add(File(dir, "perf_now").path + ":" + MSM_LOAD)
+        if (File(dir, "cur_freq").exists()) list.add(File(dir, "cur_freq").path + ":" + MSM_CLOCK)
+        return list
+    }
 
     /** Writes the directory; true when it should be bound over [KGSL]. */
     fun prepare(): Boolean {
@@ -35,8 +50,16 @@ class GpuStatsComponent(val dir: File) : SessionPart() {
             dir.mkdirs()
             dir.listFiles()?.forEach { java.nio.file.Files.deleteIfExists(it.toPath()) }
             feeds.clear()
-            loadFeed()?.let { feeds.add(it) }
-            pick("clock_mhz", clockSources(), "%5d\n") { mhz(it) }?.let { feeds.add(it) }
+            loadFeed()?.let { load ->
+                feeds.add(load)
+                // KGSL's gpu_busy_percentage reads "37 %"; padded after, so a shorter value
+                // written over a longer one leaves no digits behind.
+                feeds.add(Feed(File(dir, "perf_now"), load.source, load.read, "%-6s\n", percent = true))
+            }
+            pick("clock_mhz", clockSources(), "%5d\n") { mhz(it) }?.let { clock ->
+                feeds.add(clock)
+                feeds.add(Feed(File(dir, "cur_freq"), clock.source, { clock.read()?.times(1_000_000) }, "%-10d\n"))
+            }
             pick("temp", tempSources(), "%6d\n") { milliCelsius(it) }?.let { feeds.add(it) }
             feeds.forEach { feed -> feed.read()?.let { write(feed, it) } }
             Log.i(TAG, "hud: kgsl stats from the session's own: " + MANGOHUD_FILES.joinToString { name ->
@@ -93,7 +116,8 @@ class GpuStatsComponent(val dir: File) : SessionPart() {
     /** In place and at one length, so a reader that keeps the file open sees each value whole. */
     private fun write(feed: Feed, value: Long) {
         try {
-            RandomAccessFile(feed.file, "rw").use { it.seek(0); it.write(String.format(feed.format, value).toByteArray()) }
+            val text = if (feed.percent) String.format(feed.format, "$value %") else String.format(feed.format, value)
+            RandomAccessFile(feed.file, "rw").use { it.seek(0); it.write(text.toByteArray()) }
         } catch (e: Exception) {
         }
     }
@@ -101,6 +125,9 @@ class GpuStatsComponent(val dir: File) : SessionPart() {
     companion object {
         private const val TAG = "SessionService"
         const val KGSL = "/sys/class/kgsl/kgsl-3d0"
+        /** Must match LinuxRuntime.bindAdrenoStats. */
+        const val MSM_LOAD = "/sys/kernel/debug/dri/0/perf_now"
+        const val MSM_CLOCK = "/sys/devices/platform/soc@0/3d00000.gpu/devfreq/3d00000.gpu/cur_freq"
         private const val PERIOD_MS = 500L
         private val MANGOHUD_FILES = listOf("gpu_busy_percentage", "clock_mhz", "temp")
         /** Qualcomm's own GPU summary, beside KGSL in vendor kernels, under the plain sysfs label. */
