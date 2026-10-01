@@ -16,7 +16,7 @@ permissions:
   actions: read
   contents: read
   issues: write
-  pull-requests: read
+  pull-requests: write
 
 concurrency:
   group: pr-release-${{ github.event_name == 'pull_request_target' && github.event.pull_request.number || inputs.pr_number }}
@@ -130,7 +130,7 @@ jobs:
       actions: read
       contents: read
       issues: write
-      pull-requests: read
+      pull-requests: write
     steps:
       - uses: actions/download-artifact@v4
         with:
@@ -211,6 +211,14 @@ jobs:
           echo "release=$release" >> "$GITHUB_OUTPUT"
           echo "apk=$GITHUB_SERVER_URL/$repo/releases/download/$tag/$apk" >> "$GITHUB_OUTPUT"
 
+      - name: Clear the publish request label
+        if: ${{ github.event_name == 'pull_request_target' && steps.publish.outcome == 'success' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ needs.authorize.outputs.pr_number }}
+        run: |
+          gh api --method DELETE "repos/$GITHUB_REPOSITORY/issues/$PR_NUMBER/labels/publish-test"
+
       - name: Report the signed build on the PR
         env:
           GH_TOKEN: ${{ github.token }}
@@ -243,15 +251,8 @@ jobs:
             gh api -X POST "repos/$GITHUB_REPOSITORY/issues/$PR_NUMBER/comments" -f body="$body" >/dev/null
           fi
 
-      - name: Clear the publish request label
-        if: github.event_name == 'pull_request_target'
-        env:
-          GH_TOKEN: ${{ github.token }}
-          PR_NUMBER: ${{ needs.authorize.outputs.pr_number }}
-        run: |
-          gh api --method DELETE "repos/$GITHUB_REPOSITORY/issues/$PR_NUMBER/labels/publish-test"
-
       - name: Post to Discord
+        if: ${{ always() && steps.publish.outcome == 'success' }}
         env:
           WEBHOOK: ${{ secrets.DISCORD_BUILDS_WEBHOOK }}
           GH_TOKEN: ${{ github.token }}
