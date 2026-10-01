@@ -150,6 +150,11 @@ if [ -z "${BL_INSIDE:-}" ]; then
     args+=(-r "$BL_REFRESH")
   fi
   [ "$mode" = steam ] && args+=(-e)
+  # Touch passes through to the client as touch until the client says otherwise, as SteamOS's
+  # gamescope-session starts it (TOUCH_MODE=4). The client sets the mode itself (STEAM_TOUCH_CLICK_MODE)
+  # only once it has a controller; until then gamescope's own default made a finger a left-click
+  # mouse, so the Steam interface took taps but would not scroll on a phone with no pad attached.
+  [ "$mode" = steam ] && args+=(--default-touch-mode 4)
   # A game that resizes its own window when it loses focus (the Steam menu opening over it) comes
   # back smaller, and gamescope draws a window that is not flagged fullscreen at its own size in
   # the top-left corner. Forcing every window to the output's size keeps it filling the screen.

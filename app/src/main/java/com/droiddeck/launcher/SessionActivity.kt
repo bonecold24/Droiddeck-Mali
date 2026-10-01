@@ -98,7 +98,19 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
     private var padMotion: com.droiddeck.launcher.input.PadMotion? = null
     /** Between onResume and onPause. */
     private var resumed = false
-    private val deckPadListener: () -> Unit = { uiHandler.post { updatePadMotion() } }
+    private val deckPadListener: () -> Unit = { uiHandler.post { updatePadMotion(); openDeckRing() } }
+
+    /**
+     * A Deck's controller is there from the moment it boots, and the client looks for it once, as
+     * it starts. The ring behind the Deck (libfakeinput's /dev/hidraw16) opens on the pad's first
+     * input otherwise - on a phone with nothing attached, the first touch of the on-screen
+     * controls, seconds after the client had looked, found no controller and never set the touch
+     * mode, so its interface took a finger as a mouse. Opened as soon as the session settles on a
+     * Deck instead.
+     */
+    private fun openDeckRing() {
+        if (SessionState.deckPad) padBridge?.start()
+    }
 
     /** Motion is read while the session shows and only if the pad is a Deck controller - which
      *  the service can decide after this activity has resumed (SessionState.deckPadListener). */
@@ -272,6 +284,7 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
             (if (Build.VERSION.SDK_INT >= 30) display else windowManager.defaultDisplay)?.rotation ?: android.view.Surface.ROTATION_0
         }
         SessionState.deckPadListener = deckPadListener
+        openDeckRing()
         // A player on the pad or the on-screen controls has no use for the mouse arrow; the next
         // touchpad or mouse move brings it back (showCursor), once the pad has been quiet a moment.
         bridge.setOnPlayerInput {
