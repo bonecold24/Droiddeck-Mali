@@ -32,7 +32,9 @@ object CompositorHost {
         outputWidth: Int,
         outputHeight: Int,
         refreshHz: Float,
+        fpsLimit: Int,
     ): Boolean {
+        pace(refreshHz, fpsLimit)
         if (started) {
             attached = surface
             WaylandCompositor.nativeSetSurface(surface)
@@ -41,10 +43,6 @@ object CompositorHost {
         }
         WaylandCompositor.nativeSetOutputSize(outputWidth, outputHeight)
         WaylandCompositor.nativeSetOutputRefreshRate(refreshHz)
-        // The cadence the zero-copy layer votes for. Left at 0 the system infers it from the rate
-        // already being achieved, and on a phone whose vendor picks clocks from that a session
-        // that has been slowed reads as one that wants to be. (WinNative, WaylandSession.)
-        WaylandCompositor.nativeSetLayerFrameRate(refreshHz)
         WaylandCompositor.nativeStartWithSurface(
             surface, xdgRuntimeDir, driverPath, libraryName, nativeLibDir,
         )
@@ -52,6 +50,19 @@ object CompositorHost {
         started = true
         resumeVsync()
         return true
+    }
+
+    /**
+     * The session's frame cap, on every attach: the compositor outlives sessions, and the next one
+     * may have a different cap. The release pacer hands a game one buffer back per capped frame
+     * (per refresh without a cap), and the zero-copy layer votes for the same cadence. Left at 0
+     * the vote is inferred from the rate already being achieved, and on a phone whose vendor picks
+     * clocks from that a session that has been slowed reads as one that wants to be. (WinNative,
+     * WaylandSession.)
+     */
+    private fun pace(refreshHz: Float, fpsLimit: Int) {
+        WaylandCompositor.nativeSetFpsLimit(fpsLimit)
+        WaylandCompositor.nativeSetLayerFrameRate(if (fpsLimit > 0) fpsLimit.toFloat() else refreshHz)
     }
 
     /**
@@ -69,7 +80,7 @@ object CompositorHost {
         // came back stretched with an engine on and right with it off. Disarmed, the window is
         // rebound and the swapchain rebuilt; the caller re-arms once that has settled, and every
         // engine-side object is made again for the new size.
-        WaylandCompositor.nativeSetFrameGenArmed(false, 0)
+        WaylandCompositor.nativeSetFrameGenArmed(false, 0, 0)
         WaylandCompositor.nativeLog("screen", "surface resized: rebinding the window, frame generation re-armed after")
         WaylandCompositor.nativeSetSurface(null)
         attached = surface
@@ -85,7 +96,7 @@ object CompositorHost {
      */
     fun rearmFrameGen(rearm: () -> Unit) {
         if (!started) return
-        WaylandCompositor.nativeSetFrameGenArmed(false, 0)
+        WaylandCompositor.nativeSetFrameGenArmed(false, 0, 0)
         WaylandCompositor.nativeLog("screen", "presenting window changed: frame generation re-armed")
         android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(rearm, 600)
     }

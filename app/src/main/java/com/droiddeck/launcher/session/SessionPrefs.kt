@@ -44,11 +44,22 @@ object SessionPrefs {
         prefs(context).edit().putBoolean("appImagesEnabled", on).apply()
     }
 
-    fun hudEnabled(context: Context): Boolean = prefs(context).getBoolean("hud", true)
+    /**
+     * The session's performance HUD (the fps box). A Deck-mode Steam session with the performance
+     * overlay has Steam's own (mangoapp, from the QAM), so there the HUD is off unless turned on
+     * in one - a choice kept apart from every other session's, where it stays on by default.
+     */
+    fun hudEnabled(context: Context): Boolean = prefs(context).getBoolean(hudKey(context), !mangoappSession(context))
 
     fun setHudEnabled(context: Context, on: Boolean) {
-        prefs(context).edit().putBoolean("hud", on).apply()
+        prefs(context).edit().putBoolean(hudKey(context), on).apply()
     }
+
+    private fun hudKey(context: Context) = if (mangoappSession(context)) "hudDeck" else "hud"
+
+    /** A Steam session that runs Deck mode with its performance overlay (mangoapp). */
+    private fun mangoappSession(context: Context) =
+        SessionState.mode == SessionService.MODE_STEAM && steamDeckMode(context) && mangoapp(context)
 
     /** When enabled, a single Back opens Steam QAM and a double Back opens the session menu. */
     fun backActionsInverted(context: Context): Boolean = prefs(context).getBoolean("backActionsInverted", false)
@@ -101,15 +112,52 @@ object SessionPrefs {
     }
 
     /**
-     * The imported glibc Turnip a mode draws with inside the runtime, keyed by
-     * SessionService.MODE_STEAM / MODE_DESKTOP so Steam and the desktop can differ; "" = the
-     * driver built into the runtime. Resolved by LinuxVulkanDriver at session start.
+     * The imported glibc Turnip every session draws with inside the runtime - Steam, its games and
+     * the desktop alike, as they run on the same GPU; "" = the driver built into the runtime.
+     * Resolved by LinuxVulkanDriver at session start. It was once chosen per mode: the Steam
+     * session's choice, the one nearly everyone set, carries over.
      */
-    fun linuxDriver(context: Context, mode: String): String =
-        prefs(context).getString("linuxDriver.$mode", "") ?: ""
+    fun linuxDriver(context: Context): String =
+        prefs(context).getString("linuxDriver", null)
+            ?: prefs(context).getString("linuxDriver.steam", null)
+            ?: prefs(context).getString("linuxDriver.desktop", "") ?: ""
 
-    fun setLinuxDriver(context: Context, mode: String, id: String) {
-        prefs(context).edit().putString("linuxDriver.$mode", id).apply()
+    fun setLinuxDriver(context: Context, id: String) {
+        prefs(context).edit().putString("linuxDriver", id).apply()
+    }
+
+    const val GPU_DRIVERS_AUTO = "auto"
+    const val GPU_DRIVERS_MANUAL = "manual"
+
+    /**
+     * Who picks the GPU drivers: [GPU_DRIVERS_AUTO] (the app, the matched pair recommended for
+     * this GPU, kept current - DriverPairs) or [GPU_DRIVERS_MANUAL] (the user). Auto for new
+     * installs; see settleGpuDriverMode.
+     */
+    fun gpuDriverMode(context: Context): String =
+        prefs(context).getString("gpuDriverMode", GPU_DRIVERS_AUTO) ?: GPU_DRIVERS_AUTO
+
+    fun setGpuDriverMode(context: Context, mode: String) {
+        prefs(context).edit().putString("gpuDriverMode", mode).apply()
+    }
+
+    /**
+     * Auto arrived after people had picked drivers by hand: an install that chose either driver
+     * keeps its choice (Manual), everyone else is Auto. Decided once, at process start.
+     */
+    fun settleGpuDriverMode(context: Context) {
+        val p = prefs(context)
+        if (p.contains("gpuDriverMode")) return
+        val chosen = androidDriver(context).isNotEmpty() || linuxDriver(context).isNotEmpty()
+        p.edit().putString("gpuDriverMode", if (chosen) GPU_DRIVERS_MANUAL else GPU_DRIVERS_AUTO).apply()
+    }
+
+    /** Drivers Auto downloaded: the only ones it removes when a newer pair replaces them. */
+    fun gpuAutoInstalled(context: Context): Set<String> =
+        prefs(context).getStringSet("gpuAutoInstalled", emptySet()).orEmpty()
+
+    fun setGpuAutoInstalled(context: Context, ids: Set<String>) {
+        prefs(context).edit().putStringSet("gpuAutoInstalled", ids.toSet()).apply()
     }
 
     /**
@@ -241,6 +289,13 @@ object SessionPrefs {
      * plainly exist is the signature - and the fallback is to trace everything instead: slower,
      * but correct. Max's advice for devices whose kernels "don't work well with it".
      */
+    /** Hold the GPU at its top clock during a session (GpuClockPin). Off by default: power and heat. */
+    fun gpuClockPin(context: Context): Boolean = prefs(context).getBoolean("gpuClockPin", false)
+
+    fun setGpuClockPin(context: Context, on: Boolean) {
+        prefs(context).edit().putBoolean("gpuClockPin", on).apply()
+    }
+
     fun prootNoSeccomp(context: Context): Boolean = prefs(context).getBoolean("prootNoSeccomp", false)
 
     fun setProotNoSeccomp(context: Context, on: Boolean) {
@@ -298,9 +353,29 @@ object SessionPrefs {
         prefs(context).getString("steamController", CONTROLLER_DECK) ?: CONTROLLER_DECK
     fun setSteamController(context: Context, id: String) { prefs(context).edit().putString("steamController", id).apply() }
 
-    /** Runs the SteamOS gamepad client with its Quick Access performance controls. */
-    fun steamDeckMode(context: Context): Boolean = prefs(context).getBoolean("steamDeckMode", false)
+    /** Runs the SteamOS gamepad client with its Quick Access performance controls. On for new installs (settleDeckModeDefault). */
+    fun steamDeckMode(context: Context): Boolean = prefs(context).getBoolean("steamDeckMode", true)
     fun setSteamDeckMode(context: Context, on: Boolean) { prefs(context).edit().putBoolean("steamDeckMode", on).apply() }
+
+    /**
+     * Deck mode became the default for new installs; an install from before keeps what it ran with
+     * (off), so an update never changes its interface or restarts the client on its own. Run once at
+     * process start, before anything reads or writes these prefs: a new install has neither prefs
+     * nor a runtime yet. The answer is written down, so it is decided once.
+     */
+    fun settleDeckModeDefault(context: Context) {
+        val p = prefs(context)
+        if (p.contains("steamDeckMode")) return
+        val existing = p.all.isNotEmpty() || java.io.File(context.filesDir, "linuxfs").exists()
+        p.edit().putBoolean("steamDeckMode", !existing).apply()
+    }
+
+    /**
+     * Deck mode's performance overlay (mangoapp, beside gamescope): the QAM's Overlay Level draws
+     * through it. Off is the way out where Valve's mangoapp crashes (one Turnip build did).
+     */
+    fun mangoapp(context: Context): Boolean = prefs(context).getBoolean("mangoapp", true)
+    fun setMangoapp(context: Context, on: Boolean) { prefs(context).edit().putBoolean("mangoapp", on).apply() }
 
     /**
      * Zink's lazy descriptor mode (ZINK_DESCRIPTORS=lazy) with its compact set layout
@@ -495,6 +570,22 @@ object SessionPrefs {
     }
 
     /**
+     * The session's frame cap, 0 for none. One number used everywhere a frame is paced: gamescope's
+     * -r (what the client and its games see as the display's rate), the compositor's buffer release
+     * pacer, the rate the display layer votes for, and the panel mode picked, which is the fastest
+     * one the cap divides evenly (40 on a 120 Hz panel, not on a 144 Hz one). A 60 fps cap on a
+     * 144 Hz panel with nothing else changed judders; this is what WinNative's per-shortcut limit
+     * does. Applies next session.
+     */
+    fun fpsLimit(context: Context, mode: String): Int = prefs(context).getInt("fpsLimit.$mode", 0)
+
+    fun setFpsLimit(context: Context, mode: String, fps: Int) {
+        prefs(context).edit().putInt("fpsLimit.$mode", fps.coerceAtLeast(0)).apply()
+    }
+
+    val fpsLimitChoices = listOf(0 to "Off", 30 to "30", 40 to "40", 45 to "45", 60 to "60", 90 to "90", 120 to "120")
+
+    /**
      * The mode whose per-mode settings apply: a program run under gamescope (MODE_RUN) is a
      * fullscreen session like Steam's, so it takes Steam's display, driver and HDR choices.
      */
@@ -514,7 +605,7 @@ object SessionPrefs {
     // ── Game storage ────────────────────────────────────────────────────────────────────────
 
     /**
-     * A second Steam library on this device: the folder bound at /mnt/bannerlator-sd and
+     * A second Steam library on this device: the folder bound at /mnt/droiddeck-sd and
      * registered with the client, which then asks where to install every game and shows both
      * on its Storage page. "" = automatic: the SD card when one is in the phone (the default,
      * so the choice is made inside the client like anywhere else); GAME_STORAGE_OFF = internal

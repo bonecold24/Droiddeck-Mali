@@ -102,6 +102,9 @@ fun ComponentsPage(
     onImport: () -> Unit,
     onBack: () -> Unit,
     requestInitialFocus: Boolean = true,
+    /** The GPU drivers tab ([GPU_TAB]): what it shows and does. */
+    gpu: GpuDriversState = GpuDriversState(),
+    gpuActions: GpuDriversActions = GpuDriversActions(),
 ) {
     val colors = MaterialTheme.colorScheme
     val pal = LocalPalette.current
@@ -112,23 +115,55 @@ fun ComponentsPage(
     var about by remember { mutableStateOf(false) }
     var protonMenu by remember { mutableStateOf(false) }
     fun ask(title: String, body: String, action: () -> Unit) { confirmTitle = title; confirm = body to action }
+    // The GPU drivers tab's Advanced pages: one driver list on its own, full page.
+    var driverPage by remember { mutableStateOf<String?>(null) }
+    val gpuTab = comp == GPU_TAB
+    when (driverPage) {
+        "rt" -> {
+            DriverPage(
+                title = "Runtime driver", hint = "Steam, its games and the desktop draw with it. Applies next session.",
+                rows = gpu.linuxRows, selected = gpu.linuxSelected, downloads = gpu.linuxDownloads,
+                status = gpu.releaseStatus, checking = gpu.checking, importLabel = "Import Turnip zip…", canRestore = false,
+                onSelect = gpuActions.onSelectLinux, onDelete = gpuActions.onRemoveLinux, onRefresh = gpuActions.onRefresh,
+                onDownload = gpuActions.onDownloadDriver, onImport = gpuActions.onImportLinux, onRestore = {}, onBack = { driverPage = null },
+            )
+            return
+        }
+        "panel" -> {
+            DriverPage(
+                title = "Display driver", hint = "Puts frames on the screen in both modes. Restart the app to apply.",
+                rows = gpu.androidRows, selected = gpu.androidSelected, downloads = gpu.androidDownloads,
+                status = gpu.releaseStatus, checking = gpu.checking, importLabel = "Import an AdrenoTools zip…",
+                canRestore = gpu.canRestoreBundled,
+                onSelect = gpuActions.onSelectAndroid, onDelete = gpuActions.onRemoveAndroid, onRefresh = gpuActions.onRefresh,
+                onDownload = gpuActions.onDownloadDriver, onImport = gpuActions.onImportAndroid, onRestore = gpuActions.onRestoreBundled,
+                onBack = { driverPage = null },
+            )
+            return
+        }
+    }
 
     val views = snapshot?.protons ?: emptyList()
     val view = views.firstOrNull { it.proton.id == protonId } ?: views.firstOrNull()
     val label = ComponentsManager.LABEL[comp] ?: comp
     val checked = if (catalogAt > 0) DateFormat.getTimeInstance(DateFormat.SHORT).format(Date(catalogAt * 1000)) else "never"
-    val nightlies = if (busy != null) "$busy…" else "Nightlies checked $checked"
+    val nightlies = if (gpuTab) gpu.releaseStatus else if (busy != null) "$busy…" else "Nightlies checked $checked"
 
     Column(Modifier.fillMaxSize().padding(horizontal = if (narrow) 16.dp else 22.dp, vertical = if (narrow) 12.dp else 18.dp)) {
         // ---- title, and the one thing that goes online -----------------------------------------
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
             Text(
                 "Components", fontSize = if (narrow) 22.sp else 26.sp, fontWeight = FontWeight.Bold, color = colors.onBackground,
-                maxLines = 1, modifier = Modifier.weight(1f),
+                maxLines = 1,
             )
-            if (!narrow) Text(nightlies, fontSize = 13.sp, color = colors.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            ToolIcon(Icons.Outlined.Info, "About Components") { about = true }
-            ToolIcon(Icons.Outlined.Refresh, "Check the Nightlies for new packages", busy = checking, enabled = !checking, onClick = onRefresh)
+            // The status gives way to the title, not the other way round.
+            if (!narrow) Text(
+                nightlies, fontSize = 13.sp, color = colors.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                textAlign = androidx.compose.ui.text.style.TextAlign.End, modifier = Modifier.weight(1f),
+            ) else Spacer(Modifier.weight(1f))
+            if (!gpuTab) ToolIcon(Icons.Outlined.Info, "About Components") { about = true }
+            if (gpuTab) ToolIcon(Icons.Outlined.Refresh, "Check for new drivers", busy = gpu.checking, enabled = !gpu.checking && gpu.busy == null, onClick = gpuActions.onRefresh)
+            else ToolIcon(Icons.Outlined.Refresh, "Check the Nightlies for new packages", busy = checking, enabled = !checking, onClick = onRefresh)
         }
         if (narrow) Text(nightlies, fontSize = 13.sp, color = colors.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
 
@@ -138,7 +173,7 @@ fun ComponentsPage(
             horizontalArrangement = Arrangement.spacedBy(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp),
             modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
         ) {
-            if (view != null) Box {
+            if (view != null && !gpuTab) Box {
                 ValueChip(view.proton.name, protonMenu, modifier = Modifier.widthIn(max = 300.dp).heightIn(min = 44.dp)) { protonMenu = !protonMenu }
                 AnchoredMenu(protonMenu, onDismiss = { protonMenu = false }, title = "Proton",
                     note = "Valve's own Proton is replaced when Steam updates it; its originals are kept per build.") { first ->
@@ -152,11 +187,12 @@ fun ComponentsPage(
                     }
                 }
             }
-            TabStrip(comps.map { ComponentsManager.LABEL.getValue(it) }, comps.indexOf(comp).coerceAtLeast(0), { onComp(comps[it]) })
+            val tabs = listOf(GPU_TAB) + comps
+            TabStrip(tabs.map { ComponentsManager.LABEL[it] ?: "GPU drivers" }, tabs.indexOf(comp).coerceAtLeast(0), { onComp(tabs[it]) })
         }
 
         // ---- what is in use -----------------------------------------------------------------------
-        if (view != null) {
+        if (view != null && !gpuTab) {
             val st = view.components.getValue(comp)
             val fixedAt = if (view.reappliedAt > 0) " · re-applied at launch " + DateFormat.getTimeInstance(DateFormat.SHORT).format(Date(view.reappliedAt * 1000)) else ""
             Row(
@@ -179,6 +215,12 @@ fun ComponentsPage(
 
         // ---- the lists ------------------------------------------------------------------------------
         when {
+            gpuTab -> Column(Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()).padding(bottom = 16.dp)) {
+                GpuDriversPanel(gpu, gpuActions) { driverPage = it }
+                Row(modifier = Modifier.padding(top = 14.dp)) {
+                    SmallButton("Import .zip", onClick = gpuActions.onImportZip)
+                }
+            }
             snapshot == null -> Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(16.dp)) {
                 CircularProgressIndicator(strokeWidth = 2.dp, modifier = Modifier.size(18.dp))
                 Spacer(Modifier.width(12.dp))
@@ -304,7 +346,7 @@ internal fun ToolIcon(icon: ImageVector, description: String, busy: Boolean = fa
         contentAlignment = Alignment.Center,
         modifier = Modifier.size(40.dp).clip(RoundedCornerShape(12.dp))
             .background(if (hot) pal.signal.copy(alpha = 0.16f) else Color.Transparent)
-            .border(if (hot) 2.dp else 1.dp, if (hot) pal.signal else pal.line2, RoundedCornerShape(12.dp))
+            .glideBorder(hot, RoundedCornerShape(12.dp), pal.signal, pal.line2)
             .hoverable(src).clickable(interactionSource = src, indication = null, enabled = enabled, onClick = onClick)
             .controllerConfirm(enabled = enabled, onClick = onClick),
     ) {
@@ -327,7 +369,7 @@ private fun SmallButton(text: String, enabled: Boolean = true, accent: Boolean =
         contentAlignment = Alignment.Center,
         modifier = modifier.heightIn(min = 44.dp).clip(RoundedCornerShape(10.dp))
             .background(if (hot) pal.signal else colors.surfaceVariant)
-            .border(2.dp, if (hot) colors.onBackground else pal.line2, RoundedCornerShape(10.dp))
+            .glideBorder(hot, RoundedCornerShape(10.dp), colors.onBackground, pal.line2, restWidth = 2.dp)
             .hoverable(src).clickable(interactionSource = src, indication = null, enabled = enabled, onClick = onClick)
             .controllerConfirm(enabled = enabled, onClick = onClick)
             .padding(horizontal = 14.dp, vertical = 8.dp),
@@ -369,7 +411,7 @@ private fun InstalledLine(item: InstalledItem, modifier: Modifier = Modifier, on
         Row(
             verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp),
             modifier = Modifier.weight(1f).heightIn(min = 56.dp).then(modifier)
-                .border(2.dp, if (hot) pal.signal else Color.Transparent, ROW_SHAPE)
+                .glideBorder(hot, ROW_SHAPE, pal.signal)
                 .hoverable(src).clickable(interactionSource = src, indication = null, onClick = onSelect)
                 .controllerConfirm(onClick = onSelect)
                 .padding(start = 14.dp, end = 8.dp, top = 8.dp, bottom = 8.dp),
@@ -398,7 +440,7 @@ private fun InstalledLine(item: InstalledItem, modifier: Modifier = Modifier, on
                 contentAlignment = Alignment.Center,
                 modifier = Modifier.padding(end = 6.dp).size(40.dp).clip(ROW_SHAPE)
                     .background(if (delHot) colors.error.copy(alpha = 0.14f) else Color.Transparent)
-                    .border(2.dp, if (delHot) colors.error else Color.Transparent, ROW_SHAPE)
+                    .glideBorder(delHot, ROW_SHAPE, colors.error)
                     .hoverable(delSrc).clickable(interactionSource = delSrc, indication = null, onClick = onDelete)
                     .controllerConfirm(onClick = onDelete),
             ) { Icon(Icons.Outlined.Delete, contentDescription = "Delete ${item.name}", tint = if (delHot) colors.error else colors.onSurfaceVariant, modifier = Modifier.size(19.dp)) }
@@ -432,3 +474,6 @@ private fun AvailableLine(d: CatalogItem, progress: Int?, enabled: Boolean, onDo
     }
     Box(Modifier.fillMaxWidth().height(1.dp).background(pal.line))
 }
+
+/** The Components page's tab for the GPU drivers, before the Proton components' own. */
+const val GPU_TAB = "gpu"

@@ -68,6 +68,7 @@ import androidx.compose.ui.unit.sp
 import com.droiddeck.launcher.HomeApp
 import com.droiddeck.launcher.frontend.Library
 import com.droiddeck.launcher.gpu.FrameGen
+import com.droiddeck.launcher.gpu.Lossless
 import com.droiddeck.launcher.input.SecondScreenDisplay
 import com.droiddeck.launcher.core.PhantomProcessLimit
 import com.droiddeck.launcher.core.PhantomProcessStatus
@@ -91,9 +92,8 @@ class FrontEndState(
     val steamGames: List<Library.SteamGame>,
     val emulators: List<Library.Emulator>,
     val running: String?,
-    val frameGenEngine: String = FrameGen.ENGINE_OFF,
-    val frameGenMultiplier: Int = 2,
-    val lsfgReady: Boolean = false,
+    val frameGen: FrameGen.Mode = FrameGen.Mode.OFF,
+    val lossless: Lossless.State = Lossless.State.NONE,
     val pageKey: String? = null,
     val theme: String = Themes.GRAPHITE,
     val isHomeApp: Boolean = false,
@@ -139,7 +139,8 @@ class FrontEndActions(
     val onInstallPackage: (String) -> Unit,
     val onRemovePackage: (String) -> Unit,
     val onRuntime: () -> Unit,
-    val onFrameGenPick: (engine: String, multiplier: Int) -> Unit,
+    val onFrameGenPick: (FrameGen.Mode) -> Unit,
+    val onImportLossless: () -> Unit,
     val onProtons: () -> Unit,
     /** The Components page: FEX / DXVK / VKD3D-Proton per Proton. */
     val onComponents: (focusContent: Boolean) -> Unit,
@@ -152,6 +153,7 @@ class FrontEndActions(
     val onBrowseFiles: (File) -> Unit = {},
     val onLogs: () -> Unit,
     val onShareLogs: () -> Unit = {},
+    val onClearLogs: () -> Unit = {},
     val onOffline: () -> Unit,
     val onPageBack: () -> Unit = {},
     val onTheme: (String) -> Unit = {},

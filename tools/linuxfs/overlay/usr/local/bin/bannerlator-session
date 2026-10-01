@@ -159,6 +159,11 @@ if [ -z "${BL_INSIDE:-}" ]; then
     args+=(-r "$BL_REFRESH")
   fi
   [ "$mode" = steam ] && args+=(-e)
+  # Touch passes through to the client as touch until the client says otherwise, as SteamOS's
+  # gamescope-session starts it (TOUCH_MODE=4). The client sets the mode itself (STEAM_TOUCH_CLICK_MODE)
+  # only once it has a controller; until then gamescope's own default made a finger a left-click
+  # mouse, so the Steam interface took taps but would not scroll on a phone with no pad attached.
+  [ "$mode" = steam ] && args+=(--default-touch-mode 4)
   # A game that resizes its own window when it loses focus (the Steam menu opening over it) comes
   # back smaller, and gamescope draws a window that is not flagged fullscreen at its own size in
   # the top-left corner. Forcing every window to the output's size keeps it filling the screen.
@@ -243,7 +248,7 @@ case $mode in
     bannerlator-steam-install || exit $?
     step "Steam client ready"
     steam_root=$XDG_DATA_HOME/Steam
-    # Register the card library (bound at /mnt/bannerlator-sd) with the client - internal storage is
+    # Register the card library (bound at /mnt/droiddeck-sd) with the client - internal storage is
     # its main library already - and the ARM64 Proton that lets it launch the Windows ones.
     # A request left in ~/.bl-proton-extra installs a third-party Proton before the client starts,
     # so it is in the Compatibility dropdown the first time the user looks. One per line, each the
@@ -282,13 +287,24 @@ case $mode in
     # device it took 5 of 8, leaving out both little cores and the fastest one - which is a
     # reasonable thing to do while a game is running and the wrong thing when the client is all
     # there is. BL_CLIENT_CPUS overrides it. Re-applied on a beat because steamwebhelper spawns
-    # children continuously and each one inherits Steam's choice, not ours.
+    # children continuously and each one inherits Steam's choice, not ours. The beat reads /proc
+    # itself instead of running pgrep, and only runs taskset for a process that is new or has
+    # grown threads since it was last pinned: every fork is a round of traced syscalls, and a
+    # beat that forked a taskset per process every 5 s did that for an hour. taskset -a, because
+    # without it only a process's main thread moves and the renderer's workers stay where they were.
     if [ -n "${BL_CLIENT_CPUS:-}" ]; then
       step "client cores: $BL_CLIENT_CPUS"
       (
-        for _ in $(seq 1 720); do
-          for _p in $(pgrep -f 'steamwebhelper|steamrtarm64/steam|gamescope' 2>/dev/null); do
-            taskset -cp "$BL_CLIENT_CPUS" "$_p" >/dev/null 2>&1 || true
+        declare -A _bl_pinned=()
+        for ((_i = 0; _i < 720; _i++)); do
+          for _d in /proc/[0-9]*; do
+            IFS= read -r -d '' _c < "$_d/cmdline" 2>/dev/null || continue
+            case $_c in *steamwebhelper*|*steamrtarm64/steam|*gamescope*) ;; *) continue ;; esac
+            _t=("$_d"/task/*)
+            _p=${_d#/proc/}
+            [ "${_bl_pinned[$_p]:-}" = "${#_t[@]}" ] && continue
+            taskset -a -cp "$BL_CLIENT_CPUS" "$_p" >/dev/null 2>&1 || true
+            _bl_pinned[$_p]=${#_t[@]}
           done
           nap 5
         done
@@ -429,13 +445,64 @@ case $mode in
         prev=$app
       done
     ) &
+    # Evidence for touch reports: the touch mode the client asks gamescope for (STEAM_TOUCH_CLICK_MODE,
+    # set once it has a controller, per focused app) and which app has focus, logged as they change.
+    # A finger that clicks but won't scroll, or touch that stops once a pad is used, shows here as
+    # the mode in force at that moment. 4 is touch passed through, 1 a left-click mouse.
+    [ -z "${BL_DESKTOP:-}" ] && (
+      # What follows "=" in an xprop line, or $2 for a property that is missing or has no value
+      # yet ("NAME(CARDINAL) =", which read leaves with nothing after the "=").
+      xprop_value() {
+        case $1 in *'not found'*|*=) echo "$2"; return ;; esac
+        local v=${1#*=}
+        v=${v# }
+        echo "${v:-$2}"
+      }
+      tmode= app=
+      xprop -spy -root STEAM_TOUCH_CLICK_MODE GAMESCOPE_FOCUSED_APP 2>/dev/null | while read -r line; do
+        case $line in
+          STEAM_TOUCH_CLICK_MODE*)
+            v=$(xprop_value "$line" unset)
+            [ "$v" = "$tmode" ] && continue
+            tmode=$v
+            echo "== touch mode: $tmode (focused app ${app:-?}) at $(date +%T)"
+            ;;
+          GAMESCOPE_FOCUSED_APP*)
+            v=$(xprop_value "$line" none)
+            [ "$v" = "$app" ] && continue
+            app=$v
+            echo "== focused app: $app (touch mode ${tmode:-unset}) at $(date +%T)"
+            ;;
+        esac
+      done
+    ) &
+    # The library beat. Both helpers are whole programs under proot (the compat one a python
+    # start and a parse of the client's config), and nearly every beat has nothing new for them.
+    # The seeder marks Proton's prefix template as well as the prefixes, so a new prefix is born
+    # marked and every 15 s is soon enough for the rest. The compat pass runs when a directory it
+    # reads from has changed since its last run - a new manifest, a new depot or tool, the client
+    # rewriting config.vdf - which [ -nt ] answers without starting anything, and once a minute
+    # regardless.
     (
       beat=0
-      for _ in $(seq 1 720); do
+      compat_stamp=$HOME/.bl-compat-beat
+      rm -f "$compat_stamp"
+      compat_due() {
+        local d
+        [ -e "$compat_stamp" ] && [ "$((beat % 12))" -ne 0 ] || return 0
+        for d in "$steam_root/steamapps" "$steam_root/steamapps/common" "$steam_root/config" \
+                 "$steam_root/compatibilitytools.d" /mnt/droiddeck-sd/steamapps; do
+          [ "$d" -nt "$compat_stamp" ] && return 0
+        done
+        return 1
+      }
+      for ((_i = 0; _i < 720; _i++)); do
         nap 5
-        bannerlator-seed-redists "$steam_root" >/dev/null 2>&1 || true
         beat=$((beat + 1))
-        if [ "$((beat % 3))" -eq 0 ]; then
+        [ "$((beat % 3))" -eq 0 ] || continue
+        bannerlator-seed-redists "$steam_root" >/dev/null 2>&1 || true
+        if compat_due; then
+          : > "$compat_stamp"
           bannerlator-steam-compat "$steam_root" >/dev/null 2>&1 || true
         fi
       done
@@ -586,6 +653,24 @@ BUSCONF
     if [ -n "${BL_ADDED_GAMES:-}" ] && [ -f "$BL_ADDED_GAMES" ]; then
       bannerlator-steam-games watch "$steam_root" "$BL_ADDED_GAMES" &
       games_watcher=$!
+    fi
+    # Lossless Scaling (Steam app 993090): whether this account owns it, asked of the signed-in
+    # client once a session until the answer is yes. From then on the app offers importing
+    # Lossless.dll and passes BL_LOSSLESS_OWNED=1, so the question is never asked again.
+    if [ "${BL_LOSSLESS_OWNED:-0}" != 1 ]; then
+      (
+        owned=$HOME/.config/droiddeck/lossless-owned
+        for ((_i = 0; _i < 60; _i++)); do
+          nap 30
+          [ -e "$owned" ] && exit 0
+          answer=$(bannerlator-steam-games probe "$steam_root" 993090 2>/dev/null) || continue
+          case $answer in
+            *'"993090": true'*) mkdir -p "${owned%/*}" && : > "$owned" && echo "== Lossless Scaling: owned" ;;
+            *) echo "== Lossless Scaling: not owned by this account" ;;
+          esac
+          exit 0
+        done
+      ) &
     fi
     echo "== steam args: ${_bl_ui[*]} -clientbeta $steam_channel -no-cef-sandbox -cef-force-gpu -cef-ozone-platform=x11 -cef-use-gl=angle -cef-use-angle=vulkan $*"
     # An update that cannot install asks for a restart (rc=42) every time; the count is capped so a

@@ -1,5 +1,6 @@
 package com.droiddeck.launcher
 
+import androidx.compose.foundation.layout.fillMaxSize
 import android.hardware.input.InputManager
 import android.hardware.display.DisplayManager
 import android.content.Intent
@@ -23,6 +24,7 @@ import android.widget.FrameLayout
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.OnBackPressedCallback
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -32,9 +34,10 @@ import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.unit.dp
 import com.droiddeck.launcher.core.FileUtils
+import com.droiddeck.launcher.files.InAppFilePicker
 import com.droiddeck.launcher.frontend.Library
 import com.droiddeck.launcher.gpu.FrameGen
-import com.droiddeck.launcher.gpu.LsfgNative
+import com.droiddeck.launcher.gpu.Lossless
 import com.droiddeck.launcher.gpu.TurnipDriver
 import com.droiddeck.launcher.input.EvdevKeys
 import com.droiddeck.launcher.input.KeyboardHost
@@ -95,7 +98,25 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
     private var padMotion: com.droiddeck.launcher.input.PadMotion? = null
     /** Between onResume and onPause. */
     private var resumed = false
-    private val deckPadListener: () -> Unit = { uiHandler.post { updatePadMotion() } }
+    private val deckPadListener: () -> Unit = { uiHandler.post { updatePadMotion(); openDeckRing("deck pad changed") } }
+
+    /**
+     * A Deck's controller is there from the moment it boots, and the client looks for it once, as
+     * it starts. The ring behind the Deck (libfakeinput's /dev/hidraw16) opens on the pad's first
+     * input otherwise - on a phone with nothing attached, the first touch of the on-screen
+     * controls, seconds after the client had looked, found no controller and never set the touch
+     * mode, so its interface took a finger as a mouse. Opened as soon as the session settles on a
+     * Deck instead.
+     */
+    private fun openDeckRing(why: String) {
+        val deck = SessionState.deckPad
+        val opened = if (deck) padBridge?.start() else null
+        Log.i(TAG, "deck ring ($why): deck pad $deck" + when (opened) {
+            null -> ", left for first input"
+            true -> ", ring open"
+            false -> ", ring NOT open"
+        })
+    }
 
     /** Motion is read while the session shows and only if the pad is a Deck controller - which
      *  the service can decide after this activity has resumed (SessionState.deckPadListener). */
@@ -169,9 +190,11 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
     private var pcKeyboardOpen by mutableStateOf(false)
     private var hudOn by mutableStateOf(true)
     private var fillScreen by mutableStateOf(true)
-    private var frameGenLabel by mutableStateOf("Off")
-    private var frameGenEngine by mutableStateOf(FrameGen.ENGINE_OFF)
-    private var frameGenMultiplier by mutableStateOf(2)
+    private var lossless by mutableStateOf(Lossless.State.NONE)
+    private val pickLossless = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { r ->
+        if (r.resultCode == RESULT_OK) InAppFilePicker.pickedFile(r.data)?.let { importLossless(it) }
+    }
+    private var frameGen by mutableStateOf(FrameGen.Mode.OFF)
     private var fexPreset by mutableStateOf("")
     private var suspendPolicy by mutableStateOf(SessionPrefs.SUSPEND_MANUAL)
     private var oscMode by mutableStateOf(SessionPrefs.OSC_AUTO)
@@ -186,7 +209,24 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
     private val displayListener = object : DisplayManager.DisplayListener {
         override fun onDisplayAdded(displayId: Int) = refreshSecondScreenDisplays()
         override fun onDisplayRemoved(displayId: Int) = refreshSecondScreenDisplays()
-        override fun onDisplayChanged(displayId: Int) = refreshSecondScreenDisplays()
+        override fun onDisplayChanged(displayId: Int) {
+            followPanelRefresh(displayId)
+            refreshSecondScreenDisplays()
+        }
+    }
+
+    /**
+     * The panel's rate, followed for the rest of the session. It is read once at start, and a
+     * panel that drops from 120 to 60 Hz later (battery saver, heat, a vendor overriding the mode
+     * asked for) left the compositor telling gamescope every frame took 8.3 ms, so the client and
+     * its games paced against a vblank that no longer came. (WinNative 53836ca9.)
+     */
+    private fun followPanelRefresh(displayId: Int) {
+        if (!CompositorHost.isStarted) return
+        val display = (if (Build.VERSION.SDK_INT >= 30) display else windowManager.defaultDisplay) ?: return
+        if (display.displayId != displayId) return
+        val hz = display.refreshRate
+        if (hz > 1f) WaylandCompositor.nativeSetOutputRefreshRate(hz)
     }
     private var isHomeApp by mutableStateOf(false)
     private var androidApps by mutableStateOf<List<HomeApp.LaunchableApp>>(emptyList())
@@ -197,15 +237,24 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
      * press, and a user without one must not be left with no way to answer Big Picture.
      */
     private val deviceListener = object : InputManager.InputDeviceListener {
-        override fun onInputDeviceAdded(deviceId: Int) = updateOnScreenControls()
-        override fun onInputDeviceRemoved(deviceId: Int) = updateOnScreenControls()
+        override fun onInputDeviceAdded(deviceId: Int) {
+            logInputDevice("connected", deviceId)
+            updateOnScreenControls()
+        }
+        override fun onInputDeviceRemoved(deviceId: Int) {
+            Log.i(TAG, "input device $deviceId disconnected")
+            updateOnScreenControls()
+        }
         override fun onInputDeviceChanged(deviceId: Int) = updateOnScreenControls()
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         if (!SessionState.running && SessionState.phase in setOf(SessionPhase.IDLE, SessionPhase.FAILED)) {
-            SessionEvents.begin(this, intent.getStringExtra(SessionService.EXTRA_MODE) ?: SessionService.MODE_STEAM)
+            val mode = intent.getStringExtra(SessionService.EXTRA_MODE) ?: SessionService.MODE_STEAM
+            // A Flatpak app or AppImage is named by its arguments, which the name lookup reads here.
+            SessionState.programArgs = intent.getStringArrayExtra(SessionService.EXTRA_PROGRAM_ARGS)?.toList().orEmpty()
+            SessionEvents.begin(this, mode, SessionPaths.label(mode, intent.getStringExtra(SessionService.EXTRA_PROGRAM)))
         }
         SessionState.program = intent.getStringExtra(SessionService.EXTRA_PROGRAM)
         SessionState.programArgs = intent.getStringArrayExtra(SessionService.EXTRA_PROGRAM_ARGS)?.toList().orEmpty()
@@ -215,9 +264,15 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
             SessionEvents.record("agent.start_requested", mapOf("mode" to SessionState.mode))
         }
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-        // Game-tier power policy for the whole session: the panel's fastest mode, and the OS told
-        // it is in gameplay. Logged so a slow device says why.
-        Log.i(TAG, "perf: " + PerfMode.apply(this))
+        // Game-tier power policy for the whole session: the panel's fastest mode (one the frame cap
+        // divides, when there is a cap), and the OS told it is in gameplay. Logged so a slow device
+        // says why. The cap is the session's: an activity re-created mid-session keeps it.
+        if (!SessionState.running) {
+            SessionState.fpsLimit = SessionPrefs.fpsLimit(
+                this, SessionPrefs.prefMode(intent.getStringExtra(SessionService.EXTRA_MODE) ?: SessionService.MODE_STEAM),
+            )
+        }
+        Log.i(TAG, "perf: " + PerfMode.apply(this, SessionState.fpsLimit))
         goFullscreen()
         // The device's volume keys change the stream the session plays on (the relay and
         // PulseAudio are media playback); they are never forwarded to the guest.
@@ -241,6 +296,7 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
             (if (Build.VERSION.SDK_INT >= 30) display else windowManager.defaultDisplay)?.rotation ?: android.view.Surface.ROTATION_0
         }
         SessionState.deckPadListener = deckPadListener
+        openDeckRing("activity created")
         // A player on the pad or the on-screen controls has no use for the mouse arrow; the next
         // touchpad or mouse move brings it back (showCursor), once the pad has been quiet a moment.
         bridge.setOnPlayerInput {
@@ -315,6 +371,7 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
         isFocusableInTouchMode = true
         setContent {
             DroidDeckTheme {
+            com.droiddeck.launcher.ui.FocusGlideHost(androidx.compose.ui.Modifier.fillMaxSize()) {
                 CursorOverlay(cursorPos, cursorVisible, resources.displayMetrics.density,
                     cursorImage, cursorHotX, cursorHotY, cursorImageScale)
                 if (hud.text.isNotEmpty()) HudText(hud.text)
@@ -336,6 +393,7 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
                 // Opening the drawer takes the controller away from the game: release its pad.
                 androidx.compose.runtime.LaunchedEffect(drawerOpen) {
                     if (drawerOpen) {
+                        syncLossless()
                         padBridge?.releaseAll()
                         androidx.compose.runtime.withFrameNanos { }
                         val requested = sessionOverlay.requestFocus()
@@ -359,8 +417,8 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
                     androidApps = androidApps,
                     hudOn = hudOn,
                     fillScreen = if (SessionState.mode == SessionService.MODE_STEAM) fillScreen else null,
-                    frameGenEngine = frameGenEngine, frameGenMultiplier = frameGenMultiplier,
-                    lsfgReady = LsfgNative.isInstalled(this@SessionActivity),
+                    frameGen = frameGen,
+                    lossless = lossless,
                     oscMode = oscMode, suspendPolicy = suspendPolicy, touchMode = touchMode,
                     touchAuto = if (usingTouchpad()) "touchpad" else "direct",
                     shapeMode = shapeMode, fexPreset = fexPreset,
@@ -369,10 +427,14 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
                     selectedSecondScreenDisplay = selectedSecondScreenDisplay,
                     onHud = { on -> SessionPrefs.setHudEnabled(this@SessionActivity, on); hudOn = on; hud.refresh() },
                     onFillScreen = { on -> SessionPrefs.setForceFullscreen(this@SessionActivity, on); fillScreen = on },
-                    onFrameGenPick = { engine, multiplier ->
-                        FrameGen.set(this@SessionActivity, engine, multiplier)
+                    onFrameGenPick = { mode ->
+                        FrameGen.set(this@SessionActivity, mode)
                         readPrefs()
                         applyFrameGen()
+                    },
+                    onImportLossless = {
+                        pickLossless.launch(InAppFilePicker.buildIntent(
+                            this@SessionActivity, listOf("dll"), getString(R.string.lsfg_pick_title)))
                     },
                     onKeyboard = { drawerOpen = false; pcKeyboardOpen = false; keyboard?.toggle() },
                     onHardwareKeyboard = { drawerOpen = false; pcKeyboardOpen = !pcKeyboardOpen },
@@ -444,6 +506,7 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
                     ) { finishFlooded() }
                 }
             }
+        }
         }
     }
 
@@ -551,7 +614,9 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
     }
 
     private fun shareCurrentSessionLogs() {
-        val folder = SessionPaths.current()
+        // Once a session has ended its folder has been handed on (SessionPaths.take), and the
+        // ended screen's Share logs is for that one.
+        val folder = SessionPaths.current() ?: SessionPaths.lastEnded()
         if (folder == null || !folder.isDirectory) {
             Toast.makeText(this, "No logs for this session.", Toast.LENGTH_LONG).show()
             return
@@ -578,9 +643,7 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
         hudOn = SessionPrefs.hudEnabled(this)
         fillScreen = SessionPrefs.forceFullscreen(this)
         touchMode = SessionPrefs.touchMode(this)
-        frameGenLabel = FrameGen.label(this)
-        frameGenEngine = FrameGen.engine(this)
-        frameGenMultiplier = FrameGen.multiplier(this)
+        frameGen = FrameGen.mode(this)
         fexPreset = SessionPrefs.fexPreset(this)
         suspendPolicy = SessionPrefs.suspendPolicy(this, SessionState.mode)
         oscMode = SessionPrefs.oscMode(this)
@@ -775,7 +838,7 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
         CompositorHost.startOrAttach(
             holder.surface, runtimeDir.path,
             driverId?.let { turnip.driverPath(it) }, driverId?.let { turnip.libraryName(it) },
-            applicationInfo.nativeLibraryDir, size.first, size.second, refreshHz(),
+            applicationInfo.nativeLibraryDir, size.first, size.second, refreshHz(), SessionState.fpsLimit,
         )
         if (!SessionState.running) SessionEvents.record("compositor.started")
         // The service owns everything below the compositor. It is started whenever no session is
@@ -884,8 +947,33 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
         val hz = refreshHz()
         Thread({
             val problem = FrameGen.apply(this, hz)
-            if (problem != null) runOnUiThread { Toast.makeText(this, problem, Toast.LENGTH_LONG).show() }
+            val state = Lossless.state(this)
+            runOnUiThread {
+                lossless = state
+                if (problem != null) Toast.makeText(this, problem, Toast.LENGTH_LONG).show()
+            }
         }, "frame-gen").start()
+    }
+
+    /** A Lossless Scaling installed or updated in Steam during the session is taken when the drawer opens. */
+    private fun syncLossless() {
+        Thread({
+            Lossless.sync(this)
+            val state = Lossless.state(this)
+            runOnUiThread { lossless = state }
+        }, "lossless-sync").start()
+    }
+
+    private fun importLossless(dll: File) {
+        Thread({
+            val message = Lossless.message(this, Lossless.import(this, dll))
+            val state = Lossless.state(this)
+            runOnUiThread {
+                lossless = state
+                Toast.makeText(this, message, Toast.LENGTH_LONG).show()
+                if (FrameGen.engine(this) == FrameGen.ENGINE_LSFG) applyFrameGen()
+            }
+        }, "lossless-import").start()
     }
 
     // ── Session state ───────────────────────────────────────────────────────────────────────
@@ -1256,6 +1344,8 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
      */
     private fun syncClientCursor(): Boolean {
         if (!CompositorHost.isStarted) return false
+        // Asked on every pointer move; the image is copied only when the client has changed it.
+        if (WaylandCompositor.nativeCursorSerial() == cursorSerial) return false
         val n = WaylandCompositor.nativeCursorSnapshot(cursorBuf)
         if (n < 6) return false
         val serial = cursorBuf[0]
@@ -1466,6 +1556,14 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
     }
 
     /** The mode decides which controls appear; `droiddeck-osc` in Downloads still overrides. */
+    /** Which controller the session has, so a pad report says what was plugged in and when. */
+    private fun logInputDevice(what: String, deviceId: Int) {
+        val d = InputDevice.getDevice(deviceId) ?: return
+        if (!PadBridge.isFromController(d)) return
+        Log.i(TAG, String.format(java.util.Locale.ROOT, "controller %s: \"%s\" (%04x:%04x, id %d, sources 0x%x)",
+            what, d.name, d.vendorId, d.productId, d.id, d.sources))
+    }
+
     private fun updateOnScreenControls() {
         val forced = File(Environment.getExternalStorageDirectory(), "Download/droiddeck-osc")
             .takeIf { it.isFile }
