@@ -112,10 +112,15 @@ internal fun UpdatesPage(s: FrontEndState, a: FrontEndActions, modifier: Modifie
             if (LocalNarrowPane.current) {
                 StatusPanel(s, u, ua, me)
                 Box(Modifier.height(18.dp))
+                ChannelLabel()
                 ChannelPicker(u, ua)
-            } else Row(horizontalArrangement = Arrangement.spacedBy(18.dp)) {
-                Box(Modifier.weight(1f)) { ChannelPicker(u, ua) }
-                Box(Modifier.weight(1.15f)) { StatusPanel(s, u, ua, me) }
+            } else {
+                // The label sits over both columns, so the status card lines up with the first channel.
+                ChannelLabel()
+                Row(horizontalArrangement = Arrangement.spacedBy(18.dp)) {
+                    Box(Modifier.weight(1f)) { ChannelPicker(u, ua) }
+                    Box(Modifier.weight(1.15f)) { StatusPanel(s, u, ua, me) }
+                }
             }
         }
     }
@@ -140,13 +145,13 @@ private fun StatusPanel(s: FrontEndState, u: UpdatesState, ua: UpdatesActions, m
     val pal = LocalPalette.current
     val catalog = u.catalog
     val release = catalog?.let { AppUpdates.release(it, u.follow) }
-    val offer = if (me.ci) catalog?.let { AppUpdates.offer(it, u.follow, me) } else null
+    val offer = if (me.updatable) catalog?.let { AppUpdates.offer(it, u.follow, me) } else null
     val name = channelName(u.follow)
     val offered = release != null && (offer == Offer.UPDATE || offer == Offer.SWITCH)
     class Look(val tint: Color, val status: String, val headline: String, val detail: String?)
     val look = when {
-        !me.ci -> Look(colors.onSurfaceVariant, "Local build", "Built on a computer",
-            "It's signed differently from the builds here, so Android won't update it in place. Uninstall it to switch.")
+        !me.updatable -> Look(colors.onSurfaceVariant, "Signed differently", "Can't update in place",
+            "This copy isn't signed with DroidDeck's release key, so Android won't install the builds here over it. Uninstall it to switch.")
         catalog == null -> Look(colors.onSurfaceVariant, if (u.checking) "Checking…" else "Not checked yet", "Updates", null)
         offer == Offer.UPDATE -> Look(AttentionAmber, "Update available", newBuild(u.follow, release!!), null)
         offer == Offer.SWITCH -> Look(pal.signal, "Ready to switch", newBuild(u.follow, release!!), null)
@@ -236,12 +241,19 @@ private fun megabytes(bytes: Long) = "${(bytes + 524_288) / 1_048_576} MB"
 
 /** The three channels as cards to pick from; Test builds opens its list of PRs under it. */
 @Composable
+private fun ChannelLabel() {
+    Text(
+        "UPDATE CHANNEL", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 1.5.sp,
+        color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(start = 2.dp, top = 2.dp, bottom = 10.dp),
+    )
+}
+
+@Composable
 private fun ChannelPicker(u: UpdatesState, ua: UpdatesActions) {
     val colors = MaterialTheme.colorScheme
     val catalog = u.catalog
     val tests = catalog?.tests.orEmpty()
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        Text("UPDATE CHANNEL", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 1.5.sp, color = colors.onSurfaceVariant, modifier = Modifier.padding(start = 2.dp, top = 2.dp))
         ChannelCard(
             Icons.Outlined.Verified, "Stable", "Tested releases, for most people",
             catalog?.stable?.let { "${it.version ?: it.tag} · ${ago(it.publishedAt)}" }, u.follow.channel == Channel.STABLE,

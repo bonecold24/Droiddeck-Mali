@@ -20,7 +20,7 @@ class AppUpdatesTest {
         checkedAt = 0L,
     )
 
-    private fun me(commit: String, pr: Int = 0, version: String = "0.2.0") = Installed(commit, pr, version, ci = true)
+    private fun me(commit: String, pr: Int = 0, version: String = "0.2.0") = Installed(commit, pr, version, updatable = true)
 
     @Test
     fun theStableBuildIsCurrentOnStable() {
