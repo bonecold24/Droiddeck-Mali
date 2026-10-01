@@ -1488,8 +1488,18 @@ __attribute__((visibility("hidden"))) static int open_deck_hidraw(int flags) {
 // into /sys, so those paths are said to be sysfs; nothing else is touched.
 static constexpr long SYSFS_FS_MAGIC = 0x62656572;
 
+// FAKE_DECK_SYSFS_LISTING: stand-ins for the listings of /sys, /sys/class and /sys/bus
+// (SteamDeckPad.listingDir), for a client that is not allowed to list the real ones.
+__attribute__((visibility("hidden"))) static const char *deck_listing_dir() {
+  static const char *dir = getenv("FAKE_DECK_SYSFS_LISTING");
+  return dir && *dir ? dir : nullptr;
+}
+
 __attribute__((visibility("hidden"))) static bool is_deck_sysfs_path(const char *path) {
-  return path && (!strncmp(path, "/sys/devices/droiddeck", 22) || !strncmp(path, "/sys/class/hidraw", 17));
+  if (!path) return false;
+  if (!strncmp(path, "/sys/devices/droiddeck", 22) || !strncmp(path, "/sys/class/hidraw", 17)) return true;
+  const char *listing = deck_listing_dir();
+  return listing && !strncmp(path, listing, strlen(listing));
 }
 
 __attribute__((visibility("hidden"))) static bool is_deck_sysfs_fd(int fd) {
@@ -1644,6 +1654,80 @@ ioctl_deck(DeckHidraw &deck, ioctl_request_t op, void *argp) {
   }
 }
 
+// A device scan that fails on a phone and not on the Thor: libudev gives up its whole scan on any
+// sysfs directory it cannot read for a reason other than its absence, and a phone's SELinux policy
+// denies directories a permissive device lets through. The client's /sys failures that are not
+// ENOENT are logged, each path once, so pad.log names the directory that stopped the scan.
+__attribute__((visibility("hidden"))) static std::string note_sys_failure(int dirfd, const char *pathname) {
+  int saved_errno = errno;
+  std::string path;
+  if (saved_errno == ENOENT || !pathname || !process_is_steam_client()) {
+    errno = saved_errno;
+    return path;
+  }
+  if (pathname[0] == '/' || dirfd == AT_FDCWD) {
+    path = pathname;
+  } else {
+    char link[64], dir[PATH_MAX];
+    snprintf(link, sizeof(link), "/proc/self/fd/%d", dirfd);
+    ssize_t length = readlink(link, dir, sizeof(dir) - 1);
+    if (length <= 0) {
+      errno = saved_errno;
+      return path;
+    }
+    path.assign(dir, length);
+    path += '/';
+    path += pathname;
+  }
+  if (path.compare(0, 5, "/sys/") != 0 && path != "/sys") {
+    errno = saved_errno;
+    return {};
+  }
+  static std::mutex mutex;
+  static std::vector<std::string> *seen = new std::vector<std::string>();
+  bool first = false;
+  {
+    std::lock_guard<std::mutex> guard(mutex);
+    if (seen->size() < 64 && std::find(seen->begin(), seen->end(), path) == seen->end()) {
+      seen->push_back(path);
+      first = true;
+    }
+  }
+  if (first) Logger::log("sysfs: %s not readable (%s)\n", path.c_str(), strerror(saved_errno));
+  errno = saved_errno;
+  return path;
+}
+
+// An enforcing SELinux policy (every retail phone; the Thor only with it forced on) refuses an app
+// a listing of /sys, /sys/class and /sys/bus. libudev lists /sys/class to find the subsystems to
+// descend into and gives up its whole scan when it cannot, so the client never reached hidraw and
+// found no Deck. The client is listed the stand-ins instead - hidraw under class - and opens
+// /sys/class/hidraw itself, which is ours and readable. Only on that refusal, only for the client.
+__attribute__((visibility("hidden"))) static std::string deck_listing_for(const char *path) {
+  const char *listing = deck_listing_dir();
+  if (!path || !listing || errno != EACCES || !fake_deck_enabled() || !process_is_steam_client()) return {};
+  std::string p(path);
+  while (p.size() > 1 && p.back() == '/') p.pop_back();
+  int which = p == "/sys" ? 0 : p == "/sys/class" ? 1 : p == "/sys/bus" ? 2 : -1;
+  if (which < 0) return {};
+  static const char *const names[] = {"sys", "class", "bus"};
+  static std::atomic<int> logged{0};
+  if (!(logged.fetch_or(1 << which) & (1 << which)))
+    Logger::log("sysfs: %s listed from the Deck's stand-in\n", p.c_str());
+  return std::string(listing) + "/" + names[which];
+}
+
+EXPORT DIR *opendir(const char *name) {
+  static auto real = reinterpret_cast<DIR *(*)(const char *)>(dlsym(RTLD_NEXT, "opendir"));
+  DIR *dir = real(name);
+  if (!dir) {
+    note_sys_failure(AT_FDCWD, name);
+    std::string listing = deck_listing_for(name);
+    if (!listing.empty()) dir = real(listing.c_str());
+  }
+  return dir;
+}
+
 EXPORT int open(const char *pathname, int flags, ...) {
   va_list va;
   mode_t mode;
@@ -1707,6 +1791,10 @@ EXPORT int open(const char *pathname, int flags, ...) {
     fd = my_open(pathname, flags, mode);
   else
     fd = my_open(pathname, flags);
+  if (fd < 0) {
+    std::string listing = deck_listing_for(note_sys_failure(AT_FDCWD, pathname).c_str());
+    if (!listing.empty()) fd = my_open(listing.c_str(), flags);
+  }
 
   if (fake_path)
     free(fake_path);
@@ -1777,6 +1865,10 @@ EXPORT int openat(int dirfd, const char *pathname, int flags, ...) {
     fd = my_openat(dirfd, pathname, flags, mode);
   else
     fd = my_openat(dirfd, pathname, flags);
+  if (fd < 0) {
+    std::string listing = deck_listing_for(note_sys_failure(dirfd, pathname).c_str());
+    if (!listing.empty()) fd = my_openat(AT_FDCWD, listing.c_str(), flags);
+  }
 
   if (fake_path)
     free(fake_path);
