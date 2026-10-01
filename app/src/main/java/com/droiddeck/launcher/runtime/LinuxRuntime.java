@@ -34,6 +34,14 @@ public final class LinuxRuntime {
     /** Shortcut extra naming which of the modes above a Linux entry launches. */
     public static final String EXTRA_LINUX_MODE = "linux_mode";
     private static final String KGSL_DEVICE = "/dev/kgsl-3d0";
+    /**
+     * Where the guest sees a command's XDG_RUNTIME_DIR. A Unix socket's path must fit in 108 bytes,
+     * and libwayland checks the guest's path before proot ever sees it: with the app on an SD card
+     * adopted as internal storage the files directory is /mnt/expand/<uuid>/user/0/<package>/files,
+     * and gamescope-0 under it is one byte over, so gamescope could not open its socket and the
+     * session ended at once. A long host path behind it is proot's to shorten.
+     */
+    public static final String GUEST_RUNTIME_DIR = "/run/droiddeck";
     /** Where every Linux session's debug log lands: public, so a user can just hand the folder over. */
     public static final String DEBUG_LOG_DIR = "DroidDeck";
 
@@ -185,7 +193,10 @@ public final class LinuxRuntime {
         bind(cmd, new File(root, "etc/bannerlator/empty").getPath() + ":/sys/fs/selinux");
         bind(cmd, context.getFilesDir().getPath());
         bind(cmd, context.getCacheDir().getPath());
-        if (runtimeDir != null) bind(cmd, runtimeDir.getPath());
+        if (runtimeDir != null) {
+            bind(cmd, runtimeDir.getPath());
+            bind(cmd, runtimeDir.getPath() + ":" + GUEST_RUNTIME_DIR);
+        }
         if (sessionRoot != null) bind(cmd, sessionRoot.getPath());
         if (externalStorage != null && externalStorage.isDirectory()) {
             bind(cmd, externalStorage.getPath());

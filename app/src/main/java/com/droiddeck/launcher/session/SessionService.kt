@@ -277,7 +277,7 @@ class SessionService : Service() {
         // The desktop's Steam launchers start the client there (bannerlator-steam-launch), through the
         // same set-up as a Steam session: it gets what the client and its games are started with.
         val steamHere = SessionState.mode == MODE_STEAM || SessionState.mode == MODE_DESKTOP
-        addClientEnvironment(guest, runtimeDir, steamHere)
+        addClientEnvironment(guest, steamHere)
 
         val pulse = startAudio(guest, sessionDir)
 
@@ -483,7 +483,7 @@ class SessionService : Service() {
     }
 
     /** The guest's base environment: paths, the display, the GL/Vulkan stack and the client's switches. */
-    private fun addClientEnvironment(guest: MutableList<String>, runtimeDir: File, steamHere: Boolean) {
+    private fun addClientEnvironment(guest: MutableList<String>, steamHere: Boolean) {
         guest.add("/usr/bin/env")
         guest.add("-i")
         guest.add("HOME=/root")
@@ -494,7 +494,7 @@ class SessionService : Service() {
         // Without this the session is UTC: the client's clock, its logs and every timestamp in a
         // session bundle sit hours off the device's. Bannerlator carries the same line.
         guest.add("TZ=" + java.util.TimeZone.getDefault().id)
-        guest.add("XDG_RUNTIME_DIR=" + runtimeDir.path)
+        guest.add("XDG_RUNTIME_DIR=" + LinuxRuntime.GUEST_RUNTIME_DIR)
         guest.add("XDG_SESSION_TYPE=wayland")
         guest.add("WAYLAND_DISPLAY=wayland-0")
         guest.add("GAMESCOPE_FORCE_GENERAL_QUEUE=1")
