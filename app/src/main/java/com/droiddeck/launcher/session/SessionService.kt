@@ -688,6 +688,13 @@ class SessionService : Service() {
         battery.attach(this)
         components.add(battery)
         binds.add(battery.dir.path + ":/sys/class/power_supply")
+        // The GPU's load and temperature for the performance overlay, where KGSL's sysfs is refused.
+        val gpuStats = GpuStatsComponent(File(filesDir, "session/sys/kgsl-3d0"))
+        if (gpuStats.prepare()) {
+            gpuStats.attach(this)
+            components.add(gpuStats)
+            binds.add(gpuStats.dir.path + ":" + GpuStatsComponent.KGSL)
+        }
         // Rumble for the on-screen pad: the fake evdev layer sends force-feedback effects to this
         // listener, which drives the phone's vibrator (see RumbleComponent).
         if (controllersOn) components.add(RumbleComponent().also { it.attach(this) })
