@@ -14,9 +14,10 @@ import java.io.RandomAccessFile
  * process on a file there it may not read - not a file that is missing, which it skips. Under an
  * enforcing SELinux policy (every retail phone) KGSL's sysfs is refused to apps, so mangoapp died
  * on start and the session ran with no overlay. Where that is so, a directory of our own is bound
- * there instead: `gpu_busy_percentage` worked out from `gpubusy` (busy and total cycles of the
- * last sample) and `clock_mhz` from `gpuclk` - files with labels of their own that policies often
- * leave to apps for GPU profilers - when they are readable, and `temp` linked to the GPU's
+ * there instead: `gpu_busy_percentage` and `clock_mhz` from Qualcomm's `/sys/kernel/gpu` (load
+ * and MHz, under the plain sysfs label - where other Android overlays read them), else from KGSL's
+ * `gpubusy` (busy and total cycles of the last sample) and `gpuclk` (Hz), files with labels of
+ * their own that policies often leave to apps for GPU profilers; and `temp` linked to the GPU's
  * thermal zone when there is one. What is not readable is left out, and the overlay shows no line
  * for it. Where KGSL's own files are readable, nothing is done.
  */
@@ -32,14 +33,12 @@ class GpuStatsComponent(val dir: File) : SessionPart() {
         return try {
             dir.mkdirs()
             dir.listFiles()?.forEach { java.nio.file.Files.deleteIfExists(it.toPath()) }
-            val busy = File(KGSL, "gpubusy").canRead()
-            if (busy) writeLoad(0)
-            val clk = File(KGSL, "gpuclk").canRead()
-            if (clk) readClock()?.let { write(clock, String.format("%5d\n", it)) }
+            val busy = readBusy()?.also { writeLoad(it) } != null
+            val clk = readClock()?.also { write(clock, String.format("%5d\n", it)) } != null
             val temp = LinuxRuntime.gpuTempSource()
             if (temp != null) Os.symlink(temp, File(dir, "temp").path)
-            Log.i(TAG, "hud: kgsl stats from the session's own: load " + (if (busy) "from gpubusy" else "none") +
-                ", clock " + (if (clk) "from gpuclk" else "none") + ", temp " + (temp ?: "none"))
+            Log.i(TAG, "hud: kgsl stats from the session's own: load " + (if (busy) loadFrom else "none") +
+                ", clock " + (if (clk) clockFrom else "none") + ", temp " + (temp ?: "none"))
             true
         } catch (e: Exception) {
             Log.w(TAG, "hud: could not stand in for kgsl stats: $e")
@@ -66,20 +65,30 @@ class GpuStatsComponent(val dir: File) : SessionPart() {
         thread = null
     }
 
-    private fun readBusy(): Int? = try {
-        val parts = File(KGSL, "gpubusy").readText().trim().split(Regex("\\s+"))
-        val busy = parts[0].toLong()
-        val total = parts[1].toLong()
-        if (total > 0) (busy * 100 / total).toInt().coerceIn(0, 100) else 0
-    } catch (e: Exception) {
-        null
+    private var loadFrom = ""
+    private var clockFrom = ""
+
+    /** GPU load in percent: /sys/kernel/gpu's "NN %", else KGSL's busy and total cycles. */
+    private fun readBusy(): Int? {
+        runCatching { File(QCOM_GPU, "gpu_busy").readText().trim().removeSuffix("%").trim().toInt() }.getOrNull()?.let {
+            loadFrom = "$QCOM_GPU/gpu_busy"
+            return it.coerceIn(0, 100)
+        }
+        return runCatching {
+            val parts = File(KGSL, "gpubusy").readText().trim().split(Regex("\\s+"))
+            val total = parts[1].toLong()
+            if (total > 0) (parts[0].toLong() * 100 / total).toInt().coerceIn(0, 100) else 0
+        }.getOrNull()?.also { loadFrom = "$KGSL/gpubusy" }
     }
 
-    /** The GPU clock in MHz; gpuclk is in Hz. */
-    private fun readClock(): Int? = try {
-        (File(KGSL, "gpuclk").readText().trim().toLong() / 1_000_000).toInt()
-    } catch (e: Exception) {
-        null
+    /** GPU clock in MHz: /sys/kernel/gpu's, else KGSL's gpuclk in Hz. */
+    private fun readClock(): Int? {
+        runCatching { File(QCOM_GPU, "gpu_clock").readText().trim().toInt() }.getOrNull()?.let {
+            clockFrom = "$QCOM_GPU/gpu_clock"
+            return it
+        }
+        return runCatching { (File(KGSL, "gpuclk").readText().trim().toLong() / 1_000_000).toInt() }.getOrNull()
+            ?.also { clockFrom = "$KGSL/gpuclk" }
     }
 
     private fun writeLoad(percent: Int) = write(load, String.format("%3d %%\n", percent))
@@ -95,6 +104,8 @@ class GpuStatsComponent(val dir: File) : SessionPart() {
     companion object {
         private const val TAG = "SessionService"
         const val KGSL = "/sys/class/kgsl/kgsl-3d0"
+        /** Qualcomm's own GPU summary, beside KGSL in vendor kernels. */
+        private const val QCOM_GPU = "/sys/kernel/gpu"
         private const val PERIOD_MS = 500L
     }
 }

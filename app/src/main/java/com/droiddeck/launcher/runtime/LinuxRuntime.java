@@ -231,7 +231,10 @@ public final class LinuxRuntime {
         };
         for (String[] entry : procFiles) {
             File fake = new File(fakeProc, entry[0]);
-            if (fake.isFile() && !new File(entry[1]).canRead()) {
+            // A live stand-in the session binds itself (CpuStatComponent's /proc/stat) wins.
+            boolean live = false;
+            if (extraBinds != null) for (String spec : extraBinds) live |= spec.endsWith(":" + entry[1]);
+            if (!live && fake.isFile() && !new File(entry[1]).canRead()) {
                 bind(cmd, fake.getPath() + ":" + entry[1]);
             }
         }

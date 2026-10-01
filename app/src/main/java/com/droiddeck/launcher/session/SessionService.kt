@@ -688,6 +688,13 @@ class SessionService : Service() {
         battery.attach(this)
         components.add(battery)
         binds.add(battery.dir.path + ":/sys/class/power_supply")
+        // CPU load for everything in the session that reads /proc/stat, the overlay among them.
+        val cpuStat = CpuStatComponent(File(filesDir, "session/proc-stat"))
+        if (cpuStat.prepare()) {
+            cpuStat.attach(this)
+            components.add(cpuStat)
+            binds.add(cpuStat.file.path + ":/proc/stat")
+        }
         // The GPU's load and temperature for the performance overlay, where KGSL's sysfs is refused.
         val gpuStats = GpuStatsComponent(File(filesDir, "session/sys/kgsl-3d0"))
         if (gpuStats.prepare()) {
