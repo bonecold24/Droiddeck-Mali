@@ -798,6 +798,8 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
         // Letterbox, never stretch or crop: the output can be a different shape from the panel,
         // and a game's picture must keep its proportions with bars, not lose its edges.
         WaylandCompositor.nativeSetScaleMode(SCALE_FIT, ALIGN_CENTER)
+        WaylandCompositor.nativeSetUpscaler(SessionPrefs.upscaler(this))
+        WaylandCompositor.nativeSetUpscaleSharpness(SessionPrefs.upscaleSharpness(this))
         // The session's folder, claimed here because the compositor starts before the service and
         // opens its log once. The compositor reads the path from its environment; setting it after
         // it has started changes nothing, which is why the service copies the file in at teardown.

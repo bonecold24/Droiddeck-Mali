@@ -53,6 +53,8 @@ class ModeSettings(
     val gpuDrivers: String = "Auto",
     /** Frames per second the session is capped at; 0 = none. */
     val fpsLimit: Int = 0,
+    val upscaler: Int = 0,
+    val upscaleSharpness: Int = 75,
     val touchMode: String,
     val suspendPolicy: String,
     /** Steam only. */
@@ -105,6 +107,8 @@ class ModeSettingsActions(
     /** Opens the GPU drivers on the Components page: they are shared by every session. */
     val onGpuDrivers: () -> Unit = {},
     val onFpsLimit: (Int) -> Unit = {},
+    val onUpscaler: (Int) -> Unit = {},
+    val onUpscaleSharpness: (Int) -> Unit = {},
     val onTouch: (String) -> Unit,
     val onSuspendPolicy: (String) -> Unit,
     val onOsc: (String) -> Unit,
@@ -176,6 +180,17 @@ fun ModeSettingsPage(s: ModeSettings, a: ModeSettingsActions) {
                 com.droiddeck.launcher.session.SessionPrefs.fpsLimitChoices, s.fpsLimit,
                 note = "Caps the whole session. The screen switches to a rate the cap divides evenly.",
                 onPick = a.onFpsLimit,
+            )
+            ChoiceRow(
+                host, "upscaler", "Upscaler", "Sharpens the picture where it is enlarged to the screen.",
+                com.droiddeck.launcher.session.SessionPrefs.upscalerChoices, s.upscaler,
+                note = "Works only when the session is smaller than the screen; Sharpen only works at any size. Costs a little GPU time.",
+                onPick = a.onUpscaler,
+            )
+            ChoiceRow(
+                host, "upscale-sharpness", "Upscaler sharpness", null,
+                com.droiddeck.launcher.session.SessionPrefs.upscaleSharpnessChoices, s.upscaleSharpness,
+                enabled = s.upscaler != 0, onPick = a.onUpscaleSharpness,
             )
             if (editCustom) CustomResolutionDialog(
                 initial = custom,
