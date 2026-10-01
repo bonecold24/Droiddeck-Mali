@@ -1,5 +1,5 @@
 name: PR Release Publish
-run-name: ${{ github.event_name == 'pull_request_target' && format('sign PR #{0} requested by @{1}', github.event.pull_request.number, github.actor) || format('sign PR #{0} with the release key', inputs.pr_number) }}
+run-name: "sign PR #${{ github.event_name == 'pull_request_target' && github.event.pull_request.number || inputs.pr_number }} with the release key"
 
 on:
   workflow_dispatch:
@@ -32,6 +32,8 @@ jobs:
       pr_number: ${{ steps.gate.outputs.pr_number }}
       run_id: ${{ steps.gate.outputs.run_id }}
       head_sha: ${{ steps.gate.outputs.head_sha }}
+      base_sha: ${{ steps.gate.outputs.base_sha }}
+      version_code: ${{ steps.gate.outputs.version_code }}
       label: ${{ steps.gate.outputs.label }}
       variants: ${{ steps.variants.outputs.list }}
     steps:
@@ -105,6 +107,8 @@ jobs:
             echo "pr_number=$PR_NUMBER"
             echo "run_id=$run_id"
             echo "head_sha=$head"
+            echo "base_sha=$base"
+            echo "version_code=${candidate##* }"
             echo "label=PR.$PR_NUMBER-${head:0:7}"
           } >> "$GITHUB_OUTPUT"
 
@@ -167,6 +171,8 @@ jobs:
           GH_TOKEN: ${{ steps.ci-token.outputs.token }}
           PR_NUMBER: ${{ needs.authorize.outputs.pr_number }}
           HEAD_SHA: ${{ needs.authorize.outputs.head_sha }}
+          BASE_SHA: ${{ needs.authorize.outputs.base_sha }}
+          VERSION_CODE: ${{ needs.authorize.outputs.version_code }}
         run: |
           set -euo pipefail
           repo=Droid-Deck/DroidDeck-CI
@@ -177,6 +183,8 @@ jobs:
 
           Source: https://github.com/$GITHUB_REPOSITORY/pull/$PR_NUMBER
           Commit: $HEAD_SHA
+          Base: $BASE_SHA
+          VersionCode: $VERSION_CODE
           Each apk installs over a DroidDeck release and keeps its data. \`standard\` is the normal app; the others are the same app under another package name, installed beside it.
 
           SHA-256:
@@ -218,7 +226,7 @@ jobs:
           $mark
           ## Signed test build
 
-          A release-signed build of this PR at \`$short\` is ready. It installs over Stable or Nightly and keeps app data.
+          A release-signed build of this PR at \`$short\` is ready. It installs over Stable or Preview and keeps app data.
 
           [Download the standard APK]($APK) · [All variants and checksums]($RELEASE)
 
@@ -265,3 +273,9 @@ jobs:
           jq -n --arg content "$content" '{content: $content, allowed_mentions: {parse: []}}' |
             curl -fsS -H 'Content-Type: application/json' -d @- "$WEBHOOK" -o /dev/null
           echo "Posted: $content"
+
+  catalog:
+    needs: publish
+    if: ${{ always() && needs.publish.result != 'skipped' }}
+    uses: ./.github/workflows/update-catalog.yml
+    secrets: inherit
