@@ -98,7 +98,7 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
     private var padMotion: com.droiddeck.launcher.input.PadMotion? = null
     /** Between onResume and onPause. */
     private var resumed = false
-    private val deckPadListener: () -> Unit = { uiHandler.post { updatePadMotion(); openDeckRing() } }
+    private val deckPadListener: () -> Unit = { uiHandler.post { updatePadMotion(); openDeckRing("deck pad changed") } }
 
     /**
      * A Deck's controller is there from the moment it boots, and the client looks for it once, as
@@ -108,8 +108,14 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
      * mode, so its interface took a finger as a mouse. Opened as soon as the session settles on a
      * Deck instead.
      */
-    private fun openDeckRing() {
-        if (SessionState.deckPad) padBridge?.start()
+    private fun openDeckRing(why: String) {
+        val deck = SessionState.deckPad
+        val opened = if (deck) padBridge?.start() else null
+        Log.i(TAG, "deck ring ($why): deck pad $deck" + when (opened) {
+            null -> ", left for first input"
+            true -> ", ring open"
+            false -> ", ring NOT open"
+        })
     }
 
     /** Motion is read while the session shows and only if the pad is a Deck controller - which
@@ -231,8 +237,14 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
      * press, and a user without one must not be left with no way to answer Big Picture.
      */
     private val deviceListener = object : InputManager.InputDeviceListener {
-        override fun onInputDeviceAdded(deviceId: Int) = updateOnScreenControls()
-        override fun onInputDeviceRemoved(deviceId: Int) = updateOnScreenControls()
+        override fun onInputDeviceAdded(deviceId: Int) {
+            logInputDevice("connected", deviceId)
+            updateOnScreenControls()
+        }
+        override fun onInputDeviceRemoved(deviceId: Int) {
+            Log.i(TAG, "input device $deviceId disconnected")
+            updateOnScreenControls()
+        }
         override fun onInputDeviceChanged(deviceId: Int) = updateOnScreenControls()
     }
 
@@ -284,7 +296,7 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
             (if (Build.VERSION.SDK_INT >= 30) display else windowManager.defaultDisplay)?.rotation ?: android.view.Surface.ROTATION_0
         }
         SessionState.deckPadListener = deckPadListener
-        openDeckRing()
+        openDeckRing("activity created")
         // A player on the pad or the on-screen controls has no use for the mouse arrow; the next
         // touchpad or mouse move brings it back (showCursor), once the pad has been quiet a moment.
         bridge.setOnPlayerInput {
@@ -1544,6 +1556,14 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
     }
 
     /** The mode decides which controls appear; `droiddeck-osc` in Downloads still overrides. */
+    /** Which controller the session has, so a pad report says what was plugged in and when. */
+    private fun logInputDevice(what: String, deviceId: Int) {
+        val d = InputDevice.getDevice(deviceId) ?: return
+        if (!PadBridge.isFromController(d)) return
+        Log.i(TAG, String.format(java.util.Locale.ROOT, "controller %s: \"%s\" (%04x:%04x, id %d, sources 0x%x)",
+            what, d.name, d.vendorId, d.productId, d.id, d.sources))
+    }
+
     private fun updateOnScreenControls() {
         val forced = File(Environment.getExternalStorageDirectory(), "Download/droiddeck-osc")
             .takeIf { it.isFile }

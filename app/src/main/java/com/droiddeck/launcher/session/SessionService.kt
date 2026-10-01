@@ -642,6 +642,7 @@ class SessionService : Service() {
         deckBinds = if (wantsDeck) SteamDeckPad.prepare(this, fakeInputDir.parentFile!!.parentFile!!) else emptyList()
         SessionState.deckPad = deckBinds.isNotEmpty()
         if (wantsDeck && !SessionState.deckPad) Log.w(TAG, "deck pad: not available this session; the pad stays an Xbox 360 controller")
+        logControllersAtStart()
         if (uinput) {
             // /dev/uinput, stood in for by libfakeinput: the virtual pad Steam Input makes for a
             // game becomes a node the game reads, carrying the player's layout, as on a Deck.
@@ -1188,6 +1189,18 @@ class SessionService : Service() {
 
     private fun refreshNotification() {
         getSystemService(NotificationManager::class.java)?.notify(NOTIFICATION_ID, buildNotification())
+    }
+
+    /** The pads attached as the session starts; the activity logs the ones that come and go after. */
+    private fun logControllersAtStart() {
+        val pads = ArrayList<String>()
+        for (id in android.view.InputDevice.getDeviceIds()) {
+            val d = android.view.InputDevice.getDevice(id) ?: continue
+            if (!com.droiddeck.launcher.input.PadBridge.isFromController(d)) continue
+            pads.add(String.format(java.util.Locale.ROOT, "\"%s\" (%04x:%04x)", d.name, d.vendorId, d.productId))
+        }
+        Log.i(TAG, "controllers at start: " + (if (pads.isEmpty()) "none" else pads.joinToString(", ")) +
+            "; presented to the guest as " + if (SessionState.deckPad) "a Steam Deck controller" else "an Xbox 360 controller")
     }
 
     companion object {
