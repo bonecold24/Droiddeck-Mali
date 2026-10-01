@@ -476,6 +476,16 @@ class MainActivity : ComponentActivity() {
                                 }
                             }, "share-logs").start()
                         },
+                        onClearLogs = {
+                            Thread({
+                                val cleared = runCatching { SessionArtifacts.clearAll(this) }.getOrDefault(0)
+                                ui.post {
+                                    android.widget.Toast.makeText(this,
+                                        if (cleared == 0) "No session logs to clear." else "Cleared $cleared session log folder${if (cleared == 1) "" else "s"}.",
+                                        android.widget.Toast.LENGTH_SHORT).show()
+                                }
+                            }, "clear-logs").start()
+                        },
                         onOffline = {
                             OfflineMode.setEnabled(this, !OfflineMode.enabled(this))
                             offline = OfflineMode.enabled(this)
@@ -625,6 +635,7 @@ class MainActivity : ComponentActivity() {
         if (!SessionState.running) Thread({
             SessionArtifacts.finishAbandoned(this)
             SessionArtifacts.scrubOlder(this)
+            SessionArtifacts.prune(this)
         }, "finish-abandoned").start()
     }
 
