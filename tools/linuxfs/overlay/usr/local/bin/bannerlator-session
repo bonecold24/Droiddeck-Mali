@@ -436,6 +436,37 @@ case $mode in
         prev=$app
       done
     ) &
+    # Evidence for touch reports: the touch mode the client asks gamescope for (STEAM_TOUCH_CLICK_MODE,
+    # set once it has a controller, per focused app) and which app has focus, logged as they change.
+    # A finger that clicks but won't scroll, or touch that stops once a pad is used, shows here as
+    # the mode in force at that moment. 4 is touch passed through, 1 a left-click mouse.
+    [ -z "${BL_DESKTOP:-}" ] && (
+      # What follows "=" in an xprop line, or $2 for a property that is missing or has no value
+      # yet ("NAME(CARDINAL) =", which read leaves with nothing after the "=").
+      xprop_value() {
+        case $1 in *'not found'*|*=) echo "$2"; return ;; esac
+        local v=${1#*=}
+        v=${v# }
+        echo "${v:-$2}"
+      }
+      tmode= app=
+      xprop -spy -root STEAM_TOUCH_CLICK_MODE GAMESCOPE_FOCUSED_APP 2>/dev/null | while read -r line; do
+        case $line in
+          STEAM_TOUCH_CLICK_MODE*)
+            v=$(xprop_value "$line" unset)
+            [ "$v" = "$tmode" ] && continue
+            tmode=$v
+            echo "== touch mode: $tmode (focused app ${app:-?}) at $(date +%T)"
+            ;;
+          GAMESCOPE_FOCUSED_APP*)
+            v=$(xprop_value "$line" none)
+            [ "$v" = "$app" ] && continue
+            app=$v
+            echo "== focused app: $app (touch mode ${tmode:-unset}) at $(date +%T)"
+            ;;
+        esac
+      done
+    ) &
     # The library beat. Both helpers are whole programs under proot (the compat one a python
     # start and a parse of the client's config), and nearly every beat has nothing new for them.
     # The seeder marks Proton's prefix template as well as the prefixes, so a new prefix is born
