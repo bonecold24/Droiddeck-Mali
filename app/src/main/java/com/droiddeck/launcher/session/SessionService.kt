@@ -674,7 +674,11 @@ class SessionService : Service() {
         // /sys/class/power_supply/BAT<n>/..., a laptop's or a Deck's naming; Android's supply is
         // called "battery" and its files differ, so the client sees no battery at all. A directory
         // of our own, written from Android's battery API every few seconds, is bound over it.
-        val battery = BatteryComponent(File(filesDir, "session/sys/power_supply"))
+        // Steam's time estimates come from /run/vpower instead, written straight into the rootfs.
+        val battery = BatteryComponent(
+            File(filesDir, "session/sys/power_supply"),
+            File(LinuxRuntime.rootDir(this), "run/vpower"),
+        )
         battery.attach(this)
         components.add(battery)
         binds.add(battery.dir.path + ":/sys/class/power_supply")
