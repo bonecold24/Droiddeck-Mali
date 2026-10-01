@@ -649,31 +649,43 @@ open_fake_input_ring(const char *event, int flags) {
 // does not exist here, so the game was left with no controller at all. With
 // FAKE_EVDEV_STEAM_VIRTUAL set the pad carries the virtual gamepad's identity for every process
 // but the client's own, which must keep seeing the pad as the physical one it reads.
-__attribute__((visibility("hidden"))) static bool presents_steam_virtual() {
+// Whether this process is the Steam client itself. Asked once: a process never becomes another.
+__attribute__((visibility("hidden"))) static bool is_steam_client() {
   static int known;
   if (known == 0) {
-    const char *enabled = getenv("FAKE_EVDEV_STEAM_VIRTUAL");
     char exe[PATH_MAX];
-    ssize_t length = enabled && atoi(enabled) ? readlink("/proc/self/exe", exe, sizeof(exe) - 1) : -1;
+    ssize_t length = readlink("/proc/self/exe", exe, sizeof(exe) - 1);
     bool client = false;
     if (length > 0) {
       exe[length] = '\0';
       const char *name = strrchr(exe, '/');
       client = !strncmp(name ? name + 1 : exe, "steam", 5);
     }
-    known = length > 0 && !client ? 1 : -1;
+    known = client ? 1 : -1;
   }
   return known == 1;
 }
 
-// The virtual gamepad is an X-Box 360 pad, whose triggers are ABS_Z and ABS_RZ. Wine places a
-// gamepad's axes by their position among the ones it advertises, so the triggers have to sit
+__attribute__((visibility("hidden"))) static bool presents_steam_virtual() {
+  static int known;
+  if (known == 0) {
+    const char *enabled = getenv("FAKE_EVDEV_STEAM_VIRTUAL");
+    known = enabled && atoi(enabled) && !is_steam_client() ? 1 : -1;
+  }
+  return known == 1;
+}
+
+// The virtual gamepad is an X-Box 360 pad, whose triggers are ABS_Z and ABS_RZ. Wine and SDL place
+// a gamepad's axes by their position among the ones it advertises, so the triggers have to sit
 // where that pad has them: as ABS_GAS and ABS_BRAKE they follow the sticks, the right stick
-// lands on the left trigger, and a released right trigger reads as the right stick held up.
-// A pad made through /dev/uinput is that pad for real, whoever reads it.
+// lands on the left trigger, and a released right trigger reads as the right stick held up. That
+// is every reader but the Steam client, which maps the pad from what it finds (controller.txt)
+// and has always been shown ABS_GAS/ABS_BRAKE: a game Steam Input is off for reads this pad
+// itself (the Xbox 360 setting), and so do the desktop's programs. A pad made through
+// /dev/uinput is that pad for real, whoever reads it.
 __attribute__((visibility("hidden"))) static bool
 presents_xbox_triggers(const FakeController &fake) {
-  return fake.uinput || presents_steam_virtual();
+  return fake.uinput || !is_steam_client();
 }
 
 __attribute__((visibility("hidden"))) static uint16_t
