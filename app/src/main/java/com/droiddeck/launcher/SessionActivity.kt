@@ -190,6 +190,8 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
     private var pcKeyboardOpen by mutableStateOf(false)
     private var hudOn by mutableStateOf(true)
     private var fillScreen by mutableStateOf(true)
+    private var upscaler by mutableStateOf(0)
+    private var upscaleSharpness by mutableStateOf(75)
     private var lossless by mutableStateOf(Lossless.State.NONE)
     private val pickLossless = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { r ->
         if (r.resultCode == RESULT_OK) InAppFilePicker.pickedFile(r.data)?.let { importLossless(it) }
@@ -417,6 +419,7 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
                     androidApps = androidApps,
                     hudOn = hudOn,
                     fillScreen = if (SessionState.mode == SessionService.MODE_STEAM) fillScreen else null,
+                    upscaler = upscaler, upscaleSharpness = upscaleSharpness,
                     frameGen = frameGen,
                     lossless = lossless,
                     oscMode = oscMode, suspendPolicy = suspendPolicy, touchMode = touchMode,
@@ -427,6 +430,14 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
                     selectedSecondScreenDisplay = selectedSecondScreenDisplay,
                     onHud = { on -> SessionPrefs.setHudEnabled(this@SessionActivity, on); hudOn = on; hud.refresh() },
                     onFillScreen = { on -> SessionPrefs.setForceFullscreen(this@SessionActivity, on); fillScreen = on },
+                    onUpscaler = { m ->
+                        SessionPrefs.setUpscaler(this@SessionActivity, m); upscaler = m
+                        WaylandCompositor.nativeSetUpscaler(m)
+                    },
+                    onUpscaleSharpness = { pct ->
+                        SessionPrefs.setUpscaleSharpness(this@SessionActivity, pct); upscaleSharpness = pct
+                        WaylandCompositor.nativeSetUpscaleSharpness(pct)
+                    },
                     onFrameGenPick = { mode ->
                         FrameGen.set(this@SessionActivity, mode)
                         readPrefs()
@@ -642,6 +653,8 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
     private fun readPrefs() {
         hudOn = SessionPrefs.hudEnabled(this)
         fillScreen = SessionPrefs.forceFullscreen(this)
+        upscaler = SessionPrefs.upscaler(this)
+        upscaleSharpness = SessionPrefs.upscaleSharpness(this)
         touchMode = SessionPrefs.touchMode(this)
         frameGen = FrameGen.mode(this)
         fexPreset = SessionPrefs.fexPreset(this)
