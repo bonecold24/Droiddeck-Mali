@@ -74,6 +74,7 @@ public final class PadBridge {
     private String statDevice;
     private boolean statsScheduled;
     private final java.util.Set<Integer> seenDevices = new java.util.HashSet<>();
+    private int lastDeviceId = Integer.MIN_VALUE;
 
     public PadBridge(File fakeInputDir) {
         writer = new FakeInputWriter(fakeInputDir.getAbsolutePath(), SLOT);
@@ -296,7 +297,10 @@ public final class PadBridge {
         publish();
     }
 
+    /** Per event, so the common case - the same pad as last time - is a single compare. */
     private void noteDevice(InputDevice device) {
+        if (device.getId() == lastDeviceId) return;
+        lastDeviceId = device.getId();
         statDevice = device.getName();
         if (seenDevices.add(device.getId())) {
             Log.i(TAG, String.format(java.util.Locale.ROOT, "first input from \"%s\" (%04x:%04x, id %d, sources 0x%x); ring %s, deck pad %b",
@@ -319,7 +323,6 @@ public final class PadBridge {
                 + (statDropped > 0 ? ", " + statDropped + " NOT delivered (ring closed)" : "")
                 + "; ring " + (open ? "open" : "closed") + ", deck pad " + SessionState.getDeckPad());
         statButtons = statAxes = statOnScreen = statDropped = 0;
-        statDevice = null;
     }
 
     private void publish() {
