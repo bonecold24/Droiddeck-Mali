@@ -540,6 +540,7 @@ class SessionService : Service() {
         if (steamHere) guest.add("BL_STEAM_CHANNEL=" + SessionPrefs.steamChannel(this))
         if (SessionState.mode == MODE_STEAM) {
             guest.add("BL_GAMESCOPE_FORCE_FULLSCREEN=" + (if (SessionPrefs.forceFullscreen(this)) "1" else "0"))
+            guest.add("BL_GAMESCOPE_STRETCH_16X9=" + (if (SessionPrefs.stretch16x9(this)) "1" else "0"))
             SessionPrefs.writeForceFullscreenFlag(this)
         }
         // Proton's own gate for its xalia helper (its `proton` script reads this, and sets
