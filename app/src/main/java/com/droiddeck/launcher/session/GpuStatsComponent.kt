@@ -1,6 +1,5 @@
 package com.droiddeck.launcher.session
 
-import android.system.Os
 import android.util.Log
 import com.droiddeck.launcher.core.SessionPart
 import com.droiddeck.launcher.runtime.LinuxRuntime
@@ -10,35 +9,39 @@ import java.io.RandomAccessFile
 /**
  * The Adreno's stats as mangoapp (Deck mode's performance overlay) reads them.
  *
- * MangoHud takes an Adreno's load and temperature from `/sys/class/kgsl/kgsl-3d0` and ends the
- * process on a file there it may not read - not a file that is missing, which it skips. Under an
- * enforcing SELinux policy (every retail phone) KGSL's sysfs is refused to apps, so mangoapp died
- * on start and the session ran with no overlay. Where that is so, a directory of our own is bound
- * there instead: `gpu_busy_percentage` and `clock_mhz` from Qualcomm's `/sys/kernel/gpu` (load
- * and MHz, under the plain sysfs label - where other Android overlays read them), else from KGSL's
- * `gpubusy` (busy and total cycles of the last sample) and `gpuclk` (Hz), files with labels of
- * their own that policies often leave to apps for GPU profilers; and `temp` linked to the GPU's
- * thermal zone when there is one. What is not readable is left out, and the overlay shows no line
- * for it. Where KGSL's own files are readable, nothing is done.
+ * MangoHud takes an Adreno's load, clock and temperature from `gpu_busy_percentage`, `clock_mhz`
+ * and `temp` in `/sys/class/kgsl/kgsl-3d0`, and ends the process on one of them it may not read -
+ * not on one that is missing, which it skips. An enforcing SELinux policy (every retail phone)
+ * refuses apps some or all of KGSL's sysfs, each vendor differently, so mangoapp died on start and
+ * the session ran with no overlay. Where any of the three is refused, a directory of our own is
+ * bound there instead, each value fed twice a second from the first source this device lets the
+ * app read - the places other Android overlays (GameNative, WinNative, Bannerlator) read an
+ * Adreno's numbers from, across Snapdragon generations and vendor kernels. A value with no
+ * readable source is left out, and the overlay shows no line for it. Where all three are
+ * readable, nothing is done.
  */
 class GpuStatsComponent(val dir: File) : SessionPart() {
     @Volatile private var running = false
     private var thread: Thread? = null
-    private val load = File(dir, "gpu_busy_percentage")
-    private val clock = File(dir, "clock_mhz")
+    private val feeds = ArrayList<Feed>()
+
+    /** One of MangoHud's files and where its value comes from. */
+    private class Feed(val file: File, val source: String, val read: () -> Long?, val format: String)
 
     /** Writes the directory; true when it should be bound over [KGSL]. */
     fun prepare(): Boolean {
-        if (!File(KGSL).exists() || File(KGSL, "gpu_busy_percentage").canRead()) return false
+        if (!File(KGSL).exists() || MANGOHUD_FILES.none { File(KGSL, it).let { f -> f.exists() && !f.canRead() } }) return false
         return try {
             dir.mkdirs()
             dir.listFiles()?.forEach { java.nio.file.Files.deleteIfExists(it.toPath()) }
-            val busy = readBusy()?.also { writeLoad(it) } != null
-            val clk = readClock()?.also { write(clock, String.format("%5d\n", it)) } != null
-            val temp = LinuxRuntime.gpuTempSource()
-            if (temp != null) Os.symlink(temp, File(dir, "temp").path)
-            Log.i(TAG, "hud: kgsl stats from the session's own: load " + (if (busy) loadFrom else "none") +
-                ", clock " + (if (clk) clockFrom else "none") + ", temp " + (temp ?: "none"))
+            feeds.clear()
+            loadFeed()?.let { feeds.add(it) }
+            pick("clock_mhz", clockSources(), "%5d\n") { mhz(it) }?.let { feeds.add(it) }
+            pick("temp", tempSources(), "%6d\n") { milliCelsius(it) }?.let { feeds.add(it) }
+            feeds.forEach { feed -> feed.read()?.let { write(feed, it) } }
+            Log.i(TAG, "hud: kgsl stats from the session's own: " + MANGOHUD_FILES.joinToString { name ->
+                "$name " + (feeds.firstOrNull { it.file.name == name }?.source ?: "none")
+            })
             true
         } catch (e: Exception) {
             Log.w(TAG, "hud: could not stand in for kgsl stats: $e")
@@ -47,14 +50,13 @@ class GpuStatsComponent(val dir: File) : SessionPart() {
     }
 
     override fun start() {
-        if (!load.exists() && !clock.exists()) return
+        if (feeds.isEmpty()) return
         running = true
         thread = Thread({
             while (running) {
                 try { Thread.sleep(PERIOD_MS) } catch (e: InterruptedException) { break }
                 if (!running) break
-                if (load.exists()) readBusy()?.let { writeLoad(it) }
-                if (clock.exists()) readClock()?.let { write(clock, String.format("%5d\n", it)) }
+                for (feed in feeds) feed.read()?.let { write(feed, it) }
             }
         }, "gpu-stats").apply { isDaemon = true; start() }
     }
@@ -65,38 +67,33 @@ class GpuStatsComponent(val dir: File) : SessionPart() {
         thread = null
     }
 
-    private var loadFrom = ""
-    private var clockFrom = ""
-
-    /** GPU load in percent: /sys/kernel/gpu's "NN %", else KGSL's busy and total cycles. */
-    private fun readBusy(): Int? {
-        runCatching { File(QCOM_GPU, "gpu_busy").readText().trim().removeSuffix("%").trim().toInt() }.getOrNull()?.let {
-            loadFrom = "$QCOM_GPU/gpu_busy"
-            return it.coerceIn(0, 100)
+    /** Load: a file that states it in percent, else KGSL's busy and total of the last sample. */
+    private fun loadFeed(): Feed? {
+        pick("gpu_busy_percentage", LOAD_SOURCES, "%3d %%\n") { it.coerceIn(0, 100) }?.let { return it }
+        val gpubusy = "$KGSL/gpubusy"
+        val read = {
+            runCatching {
+                val parts = File(gpubusy).readText().trim().split(Regex("\\s+"))
+                val total = parts[1].toLong()
+                if (total > 0) (parts[0].toLong() * 100 / total).coerceIn(0, 100) else 0L
+            }.getOrNull()
         }
-        return runCatching {
-            val parts = File(KGSL, "gpubusy").readText().trim().split(Regex("\\s+"))
-            val total = parts[1].toLong()
-            if (total > 0) (parts[0].toLong() * 100 / total).toInt().coerceIn(0, 100) else 0
-        }.getOrNull()?.also { loadFrom = "$KGSL/gpubusy" }
+        return if (read() != null) Feed(File(dir, "gpu_busy_percentage"), gpubusy, read, "%3d %%\n") else null
     }
 
-    /** GPU clock in MHz: /sys/kernel/gpu's, else KGSL's gpuclk in Hz. */
-    private fun readClock(): Int? {
-        runCatching { File(QCOM_GPU, "gpu_clock").readText().trim().toInt() }.getOrNull()?.let {
-            clockFrom = "$QCOM_GPU/gpu_clock"
-            return it
+    /** The first of [sources] that reads as a number, its value put in MangoHud's unit by [unit]. */
+    private fun pick(name: String, sources: List<String>, format: String, unit: (Long) -> Long?): Feed? {
+        for (source in sources) {
+            val read = { firstNumber(source)?.let(unit) }
+            if (read() != null) return Feed(File(dir, name), source, read, format)
         }
-        return runCatching { (File(KGSL, "gpuclk").readText().trim().toLong() / 1_000_000).toInt() }.getOrNull()
-            ?.also { clockFrom = "$KGSL/gpuclk" }
+        return null
     }
-
-    private fun writeLoad(percent: Int) = write(load, String.format("%3d %%\n", percent))
 
     /** In place and at one length, so a reader that keeps the file open sees each value whole. */
-    private fun write(file: File, text: String) {
+    private fun write(feed: Feed, value: Long) {
         try {
-            RandomAccessFile(file, "rw").use { it.seek(0); it.write(text.toByteArray()) }
+            RandomAccessFile(feed.file, "rw").use { it.seek(0); it.write(String.format(feed.format, value).toByteArray()) }
         } catch (e: Exception) {
         }
     }
@@ -104,8 +101,49 @@ class GpuStatsComponent(val dir: File) : SessionPart() {
     companion object {
         private const val TAG = "SessionService"
         const val KGSL = "/sys/class/kgsl/kgsl-3d0"
-        /** Qualcomm's own GPU summary, beside KGSL in vendor kernels. */
-        private const val QCOM_GPU = "/sys/kernel/gpu"
         private const val PERIOD_MS = 500L
+        private val MANGOHUD_FILES = listOf("gpu_busy_percentage", "clock_mhz", "temp")
+        /** Qualcomm's own GPU summary, beside KGSL in vendor kernels, under the plain sysfs label. */
+        private const val QCOM_GPU = "/sys/kernel/gpu"
+        private val LOAD_SOURCES = listOf(
+            "$KGSL/gpu_busy_percentage", "$KGSL/devfreq/gpu_load", "$KGSL/gpuload", "$QCOM_GPU/gpu_busy",
+        )
+        /** The GPU's devfreq node is named by its register address, which differs between Snapdragons. */
+        private val DEVFREQ_NODES = listOf(
+            "kgsl-3d0", "3d00000.qcom,kgsl-3d0", "2c00000.qcom,kgsl-3d0", "5000000.qcom,kgsl-3d0", "5900000.qcom,kgsl-3d0",
+        )
+
+        private fun clockSources(): List<String> {
+            val sources = mutableListOf(
+                "$KGSL/clock_mhz", "$KGSL/gpu_clock", "$KGSL/gpuclk", "$KGSL/devfreq/cur_freq", "$QCOM_GPU/gpu_clock",
+            )
+            DEVFREQ_NODES.forEach { sources.add("/sys/class/devfreq/$it/cur_freq") }
+            File("/sys/class/devfreq").list()?.sorted()?.forEach { node ->
+                if (node.contains("kgsl") || node.contains("gpu")) sources.add("/sys/class/devfreq/$node/cur_freq")
+            }
+            return sources.distinct()
+        }
+
+        private fun tempSources(): List<String> =
+            listOfNotNull("$KGSL/temp", "$KGSL/devfreq/temp", "$QCOM_GPU/temp", LinuxRuntime.gpuTempSource()).distinct()
+
+        /** The first integer in the file ("550", "37 %", "550000000"), or null. */
+        private fun firstNumber(path: String): Long? =
+            runCatching { Regex("-?\\d+").find(File(path).readText())?.value?.toLong() }.getOrNull()
+
+        /** Hz, kHz or MHz to MHz, as the files differ; a stopped clock reads 0. */
+        private fun mhz(raw: Long): Long? = when {
+            raw < 0 -> null
+            raw > 10_000_000 -> raw / 1_000_000
+            raw > 10_000 -> raw / 1_000
+            else -> raw
+        }
+
+        /** °C or m°C to MangoHud's m°C; nothing a GPU reads at is below 1 °C or above 1000. */
+        private fun milliCelsius(raw: Long): Long? = when {
+            raw <= 0 -> null
+            raw < 1000 -> raw * 1000
+            else -> raw
+        }
     }
 }
