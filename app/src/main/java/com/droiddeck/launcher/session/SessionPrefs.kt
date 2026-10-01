@@ -112,15 +112,52 @@ object SessionPrefs {
     }
 
     /**
-     * The imported glibc Turnip a mode draws with inside the runtime, keyed by
-     * SessionService.MODE_STEAM / MODE_DESKTOP so Steam and the desktop can differ; "" = the
-     * driver built into the runtime. Resolved by LinuxVulkanDriver at session start.
+     * The imported glibc Turnip every session draws with inside the runtime - Steam, its games and
+     * the desktop alike, as they run on the same GPU; "" = the driver built into the runtime.
+     * Resolved by LinuxVulkanDriver at session start. It was once chosen per mode: the Steam
+     * session's choice, the one nearly everyone set, carries over.
      */
-    fun linuxDriver(context: Context, mode: String): String =
-        prefs(context).getString("linuxDriver.$mode", "") ?: ""
+    fun linuxDriver(context: Context): String =
+        prefs(context).getString("linuxDriver", null)
+            ?: prefs(context).getString("linuxDriver.steam", null)
+            ?: prefs(context).getString("linuxDriver.desktop", "") ?: ""
 
-    fun setLinuxDriver(context: Context, mode: String, id: String) {
-        prefs(context).edit().putString("linuxDriver.$mode", id).apply()
+    fun setLinuxDriver(context: Context, id: String) {
+        prefs(context).edit().putString("linuxDriver", id).apply()
+    }
+
+    const val GPU_DRIVERS_AUTO = "auto"
+    const val GPU_DRIVERS_MANUAL = "manual"
+
+    /**
+     * Who picks the GPU drivers: [GPU_DRIVERS_AUTO] (the app, the matched pair recommended for
+     * this GPU, kept current - DriverPairs) or [GPU_DRIVERS_MANUAL] (the user). Auto for new
+     * installs; see settleGpuDriverMode.
+     */
+    fun gpuDriverMode(context: Context): String =
+        prefs(context).getString("gpuDriverMode", GPU_DRIVERS_AUTO) ?: GPU_DRIVERS_AUTO
+
+    fun setGpuDriverMode(context: Context, mode: String) {
+        prefs(context).edit().putString("gpuDriverMode", mode).apply()
+    }
+
+    /**
+     * Auto arrived after people had picked drivers by hand: an install that chose either driver
+     * keeps its choice (Manual), everyone else is Auto. Decided once, at process start.
+     */
+    fun settleGpuDriverMode(context: Context) {
+        val p = prefs(context)
+        if (p.contains("gpuDriverMode")) return
+        val chosen = androidDriver(context).isNotEmpty() || linuxDriver(context).isNotEmpty()
+        p.edit().putString("gpuDriverMode", if (chosen) GPU_DRIVERS_MANUAL else GPU_DRIVERS_AUTO).apply()
+    }
+
+    /** Drivers Auto downloaded: the only ones it removes when a newer pair replaces them. */
+    fun gpuAutoInstalled(context: Context): Set<String> =
+        prefs(context).getStringSet("gpuAutoInstalled", emptySet()).orEmpty()
+
+    fun setGpuAutoInstalled(context: Context, ids: Set<String>) {
+        prefs(context).edit().putStringSet("gpuAutoInstalled", ids.toSet()).apply()
     }
 
     /**
@@ -246,6 +283,13 @@ object SessionPrefs {
      * plainly exist is the signature - and the fallback is to trace everything instead: slower,
      * but correct. Max's advice for devices whose kernels "don't work well with it".
      */
+    /** Hold the GPU at its top clock during a session (GpuClockPin). Off by default: power and heat. */
+    fun gpuClockPin(context: Context): Boolean = prefs(context).getBoolean("gpuClockPin", false)
+
+    fun setGpuClockPin(context: Context, on: Boolean) {
+        prefs(context).edit().putBoolean("gpuClockPin", on).apply()
+    }
+
     fun prootNoSeccomp(context: Context): Boolean = prefs(context).getBoolean("prootNoSeccomp", false)
 
     fun setProotNoSeccomp(context: Context, on: Boolean) {
@@ -520,6 +564,22 @@ object SessionPrefs {
     }
 
     /**
+     * The session's frame cap, 0 for none. One number used everywhere a frame is paced: gamescope's
+     * -r (what the client and its games see as the display's rate), the compositor's buffer release
+     * pacer, the rate the display layer votes for, and the panel mode picked, which is the fastest
+     * one the cap divides evenly (40 on a 120 Hz panel, not on a 144 Hz one). A 60 fps cap on a
+     * 144 Hz panel with nothing else changed judders; this is what WinNative's per-shortcut limit
+     * does. Applies next session.
+     */
+    fun fpsLimit(context: Context, mode: String): Int = prefs(context).getInt("fpsLimit.$mode", 0)
+
+    fun setFpsLimit(context: Context, mode: String, fps: Int) {
+        prefs(context).edit().putInt("fpsLimit.$mode", fps.coerceAtLeast(0)).apply()
+    }
+
+    val fpsLimitChoices = listOf(0 to "Off", 30 to "30", 40 to "40", 45 to "45", 60 to "60", 90 to "90", 120 to "120")
+
+    /**
      * The mode whose per-mode settings apply: a program run under gamescope (MODE_RUN) is a
      * fullscreen session like Steam's, so it takes Steam's display, driver and HDR choices.
      */
@@ -539,7 +599,7 @@ object SessionPrefs {
     // ── Game storage ────────────────────────────────────────────────────────────────────────
 
     /**
-     * A second Steam library on this device: the folder bound at /mnt/bannerlator-sd and
+     * A second Steam library on this device: the folder bound at /mnt/droiddeck-sd and
      * registered with the client, which then asks where to install every game and shows both
      * on its Storage page. "" = automatic: the SD card when one is in the phone (the default,
      * so the choice is made inside the client like anywhere else); GAME_STORAGE_OFF = internal

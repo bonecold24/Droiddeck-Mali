@@ -113,9 +113,11 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.platform.LocalContext
 import com.droiddeck.launcher.R
 import com.droiddeck.launcher.core.FexPreset
 import com.droiddeck.launcher.gpu.FrameGen
+import com.droiddeck.launcher.gpu.Lossless
 import com.droiddeck.launcher.session.SessionPrefs
 import com.droiddeck.launcher.session.ComponentsManager
 import com.droiddeck.launcher.input.SecondScreenDisplay
@@ -157,9 +159,8 @@ class DrawerActions(
     val isHomeApp: Boolean,
     val androidApps: List<HomeApp.LaunchableApp>,
     val hudOn: Boolean,
-    val frameGenEngine: String,
-    val frameGenMultiplier: Int,
-    val lsfgReady: Boolean,
+    val frameGen: FrameGen.Mode,
+    val lossless: Lossless.State,
     val oscMode: String,
     val suspendPolicy: String,
     val backActionsInverted: Boolean,
@@ -173,7 +174,8 @@ class DrawerActions(
     val secondScreenDisplays: List<SecondScreenDisplay>,
     val selectedSecondScreenDisplay: Int,
     val onHud: (Boolean) -> Unit,
-    val onFrameGenPick: (engine: String, multiplier: Int) -> Unit,
+    val onFrameGenPick: (FrameGen.Mode) -> Unit,
+    val onImportLossless: () -> Unit,
     /** The Android keyboard (text, turned into key presses). */
     val onKeyboard: () -> Unit,
     /** The on-screen PC keyboard: real keys, Esc, F1-F12, Ctrl, Alt... */
@@ -345,11 +347,11 @@ fun SessionDrawer(open: Boolean, page: Int, controllerActive: Boolean, onPageCha
                                 chipModifier = focus.track(page, "fill"), onChange = a.onFillScreen,
                             )
                             val fgOpen = host.open == "fg"
-                            val fgLabel = FrameGen.label(a.frameGenEngine, a.frameGenMultiplier)
-                            SettingsRow("Frame generation", null, highlighted = fgOpen) {
+                            val fgLabel = FrameGen.label(LocalContext.current, a.frameGen)
+                            SettingsRow(stringResource(R.string.frame_gen_title), null, highlighted = fgOpen) {
                                 Box {
                                     ValueChip(fgLabel, fgOpen, modifier = focus.track(page, "fg")) { host.open = if (fgOpen) null else "fg" }
-                                    FrameGenMenu(host, a.frameGenEngine, a.frameGenMultiplier, a.lsfgReady, a.onFrameGenPick)
+                                    FrameGenMenu(host, a.frameGen, a.lossless, a.onFrameGenPick, a.onImportLossless)
                                 }
                             }
                         }

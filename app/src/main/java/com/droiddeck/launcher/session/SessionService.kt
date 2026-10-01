@@ -36,6 +36,7 @@ import com.droiddeck.launcher.core.HostProcess
 import com.droiddeck.launcher.input.FakeInputWriter
 import com.droiddeck.launcher.runtime.LinuxNetworkLinkComponent
 import com.droiddeck.launcher.runtime.LinuxRuntime
+import com.droiddeck.launcher.wayland.WaylandCompositor
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -269,6 +270,8 @@ class SessionService : Service() {
         val sessionDir = openSessionFolder()
         val sessionLog = File(sessionDir, "session.log")
 
+        Log.i(TAG, GpuClockPin.start(this))
+
         val size = SessionState.outputSize
         val guest = ArrayList<String>()
         // The desktop's Steam launchers start the client there (bannerlator-steam-launch), through the
@@ -287,7 +290,7 @@ class SessionService : Service() {
             guest.add("DXVK_HDR=1")
             Log.i(TAG, "hdr: gamescope --hdr-enabled, DXVK_HDR=1")
         }
-        guest.add("BL_FPS=0")
+        guest.add("BL_FPS=" + SessionState.fpsLimit)
         guest.add("BL_REFRESH=" + Math.round(SessionState.refreshHz))
         guest.add("BL_LOG=" + sessionLog.path)
         guest.add("BL_DEBUG_DIR=" + sessionDir.path)
@@ -314,6 +317,7 @@ class SessionService : Service() {
             val listing = com.droiddeck.launcher.frontend.AddedGames.writeListing(this, added)
             guest.add("BL_ADDED_GAMES=" + listing.path)
             if (OfflineMode.enabled(this)) guest.add("BL_STEAM_OFFLINE=1")
+            if (com.droiddeck.launcher.gpu.Lossless.owned(this)) guest.add("BL_LOSSLESS_OWNED=1")
             if (added.isNotEmpty()) Log.i(TAG, "added games: " + added.joinToString { "${it.name} (${it.exe.name})" })
         }
         // Where the guest leaves a request for another session (the desktop's Steam launchers).
@@ -435,6 +439,7 @@ class SessionService : Service() {
         }
         sessionPid = pid
         if (pid > 1) {
+            raiseTracer(pid, gen)
             SessionEvents.guestStarted(pid)
         } else {
             SessionEvents.record("guest.start_failed", mapOf("pid" to pid))
@@ -498,15 +503,12 @@ class SessionService : Service() {
         guest.add("GALLIUM_DRIVER=zink")
         guest.add("LIBGL_KOPPER_DRI2=true")
         LinuxRuntime.vulkanIcd(this)?.let { guest.add("VK_ICD_FILENAMES=" + it.path) }
-        // An imported glibc Turnip for this mode, when the user chose one: the session script checks
-        // the manifest and its library from inside and points the loader at it with VK_DRIVER_FILES,
-        // so the runtime's own driver above stays untouched and is what a bad import falls back to.
-        // A program from the rail is one of the desktop's emulators, so it draws with the desktop's
-        // Linux driver, not the Steam session's: the driver's shader cache is keyed on the driver
-        // build, and with two drivers every emulator compiled its shaders twice - once per way of
-        // starting it (RPCS3's 6650 interpreter variants on each first boot).
-        val driverMode = if (SessionState.mode == MODE_RUN) MODE_DESKTOP else SessionPrefs.prefMode(SessionState.mode)
-        val linuxDriverId = SessionPrefs.linuxDriver(this, driverMode)
+        // An imported glibc Turnip, when one is set (by the user, or by Auto): the session script
+        // checks the manifest and its library from inside and points the loader at it with
+        // VK_DRIVER_FILES, so the runtime's own driver above stays untouched and is what a bad
+        // import falls back to. One driver for every session: the driver's shader cache is keyed on
+        // its build, and with one per mode every emulator compiled its shaders twice.
+        val linuxDriverId = SessionPrefs.linuxDriver(this)
         LinuxVulkanDriver.resolveIcdPath(this, linuxDriverId)
             ?.let { guest.add(LinuxVulkanDriver.ENV + "=" + it) }
         // Turnip's own debug switches, for the runtime's driver and everything on it. The file in
@@ -527,6 +529,12 @@ class SessionService : Service() {
         // BL_STEAMDECK; it is the one that builds the command line).
         if (SessionPrefs.glThread(this)) guest.add("mesa_glthread=true")
         if (SessionPrefs.noGlError(this)) guest.add("MESA_NO_ERROR=1")
+        // Mesa's shader cache as one database instead of a file per entry. Every lookup in the
+        // file cache is an open and every store an open and a rename, each a proot stop (a rename
+        // two), for every pipeline DXVK, vkd3d-proton and Zink compile or find; the database is
+        // opened once and read and written with pread/pwrite, which proot never sees. Mesa removes
+        // the old folder itself once it has gone a week untouched.
+        guest.add("MESA_DISK_CACHE_DATABASE=1")
         if (SessionState.mode == MODE_STEAM) guest.add("BL_STEAMDECK=" + (if (SessionPrefs.steamDeckMode(this)) "1" else "0"))
         if (SessionState.mode == MODE_STEAM) guest.add("BL_MANGOAPP=" + (if (SessionPrefs.mangoapp(this)) "1" else "0"))
         if (steamHere) guest.add("BL_STEAM_CHANNEL=" + SessionPrefs.steamChannel(this))
@@ -689,9 +697,12 @@ class SessionService : Service() {
         if (library != null) {
             val problem = GameStorage.prepare(library.path)
             if (problem == null) {
+                File(LinuxRuntime.rootDir(this), "mnt/droiddeck-sd").mkdirs()
+                binds.add("${library.path}:/mnt/droiddeck-sd")
+                // Links, prefixes and Steam entries made before the rename still name the old path.
                 File(LinuxRuntime.rootDir(this), "mnt/bannerlator-sd").mkdirs()
                 binds.add("${library.path}:/mnt/bannerlator-sd")
-                Log.i(TAG, "game storage: ${library.path} -> /mnt/bannerlator-sd (\"${library.label}\")")
+                Log.i(TAG, "game storage: ${library.path} -> /mnt/droiddeck-sd (\"${library.label}\")")
             } else {
                 Log.w(TAG, "game storage: $problem; internal only this session")
             }
@@ -967,6 +978,31 @@ class SessionService : Service() {
         }
     }
 
+    /**
+     * proot is one thread, and every syscall it traps anywhere in the session - a path lookup in
+     * Proton's python, Wine's file opens, the Steam client's /proc scans - waits for that thread to
+     * be scheduled, at nice 0 beside a game that keeps the big cores busy. It is raised to nice -6,
+     * under the compositor's -8. After a moment, not at once: the first guest process is forked by
+     * proot itself and would inherit the value, and with it everything the session starts.
+     */
+    private fun raiseTracer(pid: Int, gen: Int) {
+        Thread({
+            try {
+                Thread.sleep(2000)
+            } catch (e: InterruptedException) {
+                return@Thread
+            }
+            if (gen != sessionGen || sessionPid != pid) return@Thread
+            val nice = try {
+                WaylandCompositor.nativeRaisePriority(pid, TRACER_NICE)
+            } catch (t: Throwable) {
+                Log.w(TAG, "tracer priority", t)
+                return@Thread
+            }
+            Log.i(TAG, "proot tracer $pid: nice $nice (asked for $TRACER_NICE)")
+        }, "tracer-priority").start()
+    }
+
     private fun stopSession(status: Int) {
         synchronized(stopLock) {
             if (!SessionState.running) return
@@ -975,6 +1011,7 @@ class SessionService : Service() {
         val stoppedGen = sessionGen
         SessionState.stopRequested = false
         SessionEvents.record("guest.exited", mapOf("status" to status))
+        GpuClockPin.stop(this)
         SessionEvents.transition(SessionPhase.STOPPING, "session.stopping", mapOf("status" to status))
         suspendOperationPending = false
         launchWatcher?.stopWatching()
@@ -1151,6 +1188,8 @@ class SessionService : Service() {
 
     companion object {
         private const val TAG = "SessionService"
+        /** proot's tracer: above everything in the guest, under the compositor thread's -8. */
+        private const val TRACER_NICE = -6
         /** Downloads file whose contents become TU_DEBUG inside the session, e.g. "sysmem". */
         private const val TU_DEBUG_SWITCH = "Download/droiddeck-tu-debug"
         /** Downloads file of KEY=VALUE lines added to the session environment verbatim. */

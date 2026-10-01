@@ -1,6 +1,8 @@
 package com.droiddeck.launcher.update
 
 import android.content.Context
+import android.content.pm.PackageManager
+import android.os.Build
 import com.droiddeck.launcher.BuildConfig
 import com.droiddeck.launcher.core.Hashes
 import org.json.JSONArray
@@ -8,6 +10,7 @@ import org.json.JSONObject
 import java.io.IOException
 import java.net.HttpURLConnection
 import java.net.URL
+import java.security.MessageDigest
 import java.time.Instant
 
 /**
@@ -47,8 +50,11 @@ object AppUpdates {
 
     class Catalog(val stable: Release?, val nightly: Release?, val tests: List<Release>, val checkedAt: Long)
 
-    /** What is running: the commit it was built from, its PR (0 for none), whether CI made it, and when it was committed. */
-    class Installed(val commit: String, val pr: Int, val version: String, val ci: Boolean, val committedAt: Long = 0L)
+    /**
+     * What is running: the commit it was built from, its PR (0 for none), whether the builds here
+     * install over it (it is signed with the release key), and when it was committed.
+     */
+    class Installed(val commit: String, val pr: Int, val version: String, val updatable: Boolean, val committedAt: Long = 0L)
 
     enum class Offer {
         /** This is the build the channel has. */
@@ -63,7 +69,28 @@ object AppUpdates {
         GONE,
     }
 
-    fun installed(): Installed = Installed(BuildConfig.SOURCE_COMMIT, BuildConfig.PR_NUMBER, BuildConfig.VERSION_NAME, BuildConfig.CI_BUILD, BuildConfig.COMMIT_TIME)
+    @Volatile private var releaseSigned = BuildConfig.CI_BUILD
+
+    /** From App.onCreate: whether this copy is signed with the release key, which a local build may be too. */
+    fun init(context: Context) {
+        releaseSigned = runCatching { signers(context).any { it.equals(BuildConfig.RELEASE_SIGNER, ignoreCase = true) } }
+            .getOrDefault(BuildConfig.CI_BUILD)
+    }
+
+    /** SHA-256 of each certificate the package is signed with, including the ones a rotated key vouches for. */
+    private fun signers(context: Context): List<String> {
+        val pm = context.packageManager
+        @Suppress("DEPRECATION")
+        val certs = if (Build.VERSION.SDK_INT >= 28) {
+            val info = pm.getPackageInfo(context.packageName, PackageManager.GET_SIGNING_CERTIFICATES).signingInfo ?: return emptyList()
+            if (info.hasMultipleSigners()) info.apkContentsSigners else info.signingCertificateHistory
+        } else {
+            pm.getPackageInfo(context.packageName, PackageManager.GET_SIGNATURES).signatures
+        } ?: return emptyList()
+        return certs.map { cert -> MessageDigest.getInstance("SHA-256").digest(cert.toByteArray()).joinToString("") { "%02x".format(it) } }
+    }
+
+    fun installed(): Installed = Installed(BuildConfig.SOURCE_COMMIT, BuildConfig.PR_NUMBER, BuildConfig.VERSION_NAME, releaseSigned, BuildConfig.COMMIT_TIME)
 
     fun release(catalog: Catalog, follow: Follow): Release? = when (follow.channel) {
         Channel.STABLE -> catalog.stable
@@ -87,7 +114,7 @@ object AppUpdates {
 
     /** The dot on the rail: the followed channel has a newer build of what is running. */
     fun hasUpdate(catalog: Catalog?, follow: Follow): Boolean =
-        catalog != null && installed().ci && offer(catalog, follow) == Offer.UPDATE
+        catalog != null && installed().updatable && offer(catalog, follow) == Offer.UPDATE
 
     fun isRunning(r: Release, me: Installed = installed()): Boolean {
         if (me.commit.length < 7 || r.commit.length < 7 || r.pr != me.pr) return false
@@ -105,7 +132,7 @@ object AppUpdates {
             me.pr != 0 -> Follow(Channel.TEST, me.pr)
             catalog == null -> return Follow(Channel.STABLE)
             catalog.stable != null && isRunning(catalog.stable, me) -> Follow(Channel.STABLE)
-            me.ci -> Follow(Channel.NIGHTLY)
+            me.updatable -> Follow(Channel.NIGHTLY)
             else -> Follow(Channel.STABLE)
         }
         setFollow(context, inferred)
