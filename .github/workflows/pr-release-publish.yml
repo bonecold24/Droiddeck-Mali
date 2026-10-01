@@ -28,6 +28,7 @@ jobs:
       (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') ||
       (github.event_name == 'pull_request_target' && github.event.label.name == 'publish-test')
     runs-on: ubuntu-24.04
+    timeout-minutes: 45
     outputs:
       pr_number: ${{ steps.gate.outputs.pr_number }}
       run_id: ${{ steps.gate.outputs.run_id }}
@@ -66,13 +67,28 @@ jobs:
           head=$(jq -r '.head.sha' <<<"$pr")
           base=$(jq -r '.base.sha' <<<"$pr")
 
-          run_id=$(gh run list -R "$GITHUB_REPOSITORY" --workflow build.yml \
-            --event pull_request --commit "$head" \
-            --json databaseId,headSha,status,conclusion,createdAt,attempt -L 100 |
-            jq -r --arg head "$head" '[.[] | select(.headSha == $head)] |
-              sort_by([.createdAt, .attempt]) | last |
-              select(.status == "completed" and .conclusion == "success") | .databaseId // empty')
-          [[ -n "$run_id" ]] || { echo '::error::The latest PR build is not green'; exit 1; }
+          # The label is often added while the PR's build is still running, or just after a push
+          # before it has started: wait for the latest build of the head commit to finish (a PR
+          # build takes about 4 minutes) rather than fail and need the label added again.
+          run_id=
+          for attempt in $(seq 1 60); do
+            latest=$(gh run list -R "$GITHUB_REPOSITORY" --workflow build.yml \
+              --event pull_request --commit "$head" \
+              --json databaseId,headSha,status,conclusion,createdAt,attempt -L 100 |
+              jq -c --arg head "$head" '[.[] | select(.headSha == $head)] |
+                sort_by([.createdAt, .attempt]) | last // empty')
+            if [[ -n "$latest" && $(jq -r .status <<<"$latest") == completed ]]; then
+              conclusion=$(jq -r .conclusion <<<"$latest")
+              [[ "$conclusion" == success ]] || { echo "::error::The latest PR build is not green ($conclusion)"; exit 1; }
+              run_id=$(jq -r .databaseId <<<"$latest")
+              break
+            fi
+            status=not-started
+            [[ -z "$latest" ]] || status=$(jq -r .status <<<"$latest")
+            echo "Waiting for the PR build of ${head:0:7} to finish ($status)"
+            sleep 30
+          done
+          [[ -n "$run_id" ]] || { echo '::error::The PR build did not finish within 30 minutes'; exit 1; }
           run=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$run_id")
           jq -e --arg head "$head" --arg base "$base" --argjson number "$PR_NUMBER" '
             .event == "pull_request" and .head_sha == $head and .conclusion == "success" and
