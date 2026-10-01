@@ -17,10 +17,7 @@ import java.util.zip.ZipOutputStream
  */
 object SessionLogShare {
     /** The newest session folder in either place logs are written, or null if there is none. */
-    fun latest(context: Context): File? =
-        listOf(LinuxRuntime.debugLogDir(), File(context.filesDir, "logs"))
-            .flatMap { dir -> dir.listFiles { f -> f.isDirectory && f.name.startsWith("session-") }?.toList() ?: emptyList() }
-            .maxByOrNull { it.name }
+    fun latest(context: Context): File? = SessionPaths.sessionFolders(context).lastOrNull()
 
     /** Builds the zip (blocking). Returns null when there is no session to share. */
     fun zipLatest(context: Context): File? = latest(context)?.let { zipFolder(context, it) }

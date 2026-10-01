@@ -227,7 +227,10 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         if (!SessionState.running && SessionState.phase in setOf(SessionPhase.IDLE, SessionPhase.FAILED)) {
-            SessionEvents.begin(this, intent.getStringExtra(SessionService.EXTRA_MODE) ?: SessionService.MODE_STEAM)
+            val mode = intent.getStringExtra(SessionService.EXTRA_MODE) ?: SessionService.MODE_STEAM
+            // A Flatpak app or AppImage is named by its arguments, which the name lookup reads here.
+            SessionState.programArgs = intent.getStringArrayExtra(SessionService.EXTRA_PROGRAM_ARGS)?.toList().orEmpty()
+            SessionEvents.begin(this, mode, SessionPaths.label(mode, intent.getStringExtra(SessionService.EXTRA_PROGRAM)))
         }
         SessionState.program = intent.getStringExtra(SessionService.EXTRA_PROGRAM)
         SessionState.programArgs = intent.getStringArrayExtra(SessionService.EXTRA_PROGRAM_ARGS)?.toList().orEmpty()
@@ -586,7 +589,9 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
     }
 
     private fun shareCurrentSessionLogs() {
-        val folder = SessionPaths.current()
+        // Once a session has ended its folder has been handed on (SessionPaths.take), and the
+        // ended screen's Share logs is for that one.
+        val folder = SessionPaths.current() ?: SessionPaths.lastEnded()
         if (folder == null || !folder.isDirectory) {
             Toast.makeText(this, "No logs for this session.", Toast.LENGTH_LONG).show()
             return
