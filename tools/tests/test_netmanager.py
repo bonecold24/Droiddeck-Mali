@@ -101,6 +101,27 @@ class NetworkObjectsTest(unittest.TestCase):
             self.assertEqual(found[nm.device_path(state)][nm.NAME + ".Device"]["DeviceType"].unpack(), device_type)
             self.assertNotIn(nm.AP, found)
 
+    def test_named_current_and_nearby_access_points(self):
+        current = {"ssid": "Current Wi-Fi", "bssid": "00:11:22:33:44:55", "strength": 75,
+                   "capabilities": "[WPA2-PSK-CCMP][RSN-PSK+SAE-CCMP][ESS]"}
+        other = {"ssid": "Other Wi-Fi", "bssid": "00:11:22:33:44:66", "strength": 42,
+                 "capabilities": "[ESS]"}
+        state = dict(WIFI, ssid=current["ssid"], bssid=current["bssid"], accessPoints=[current, other], lastScan=123456)
+        found = nm.objects(state)
+        wireless = found[nm.device_path(state)][nm.NAME + ".Device.Wireless"]
+        self.assertEqual(wireless["ActiveAccessPoint"].unpack(), nm.ap_path(current["bssid"]))
+        self.assertEqual(set(wireless["AccessPoints"].unpack()), {nm.ap_path(current["bssid"]), nm.ap_path(other["bssid"])})
+        self.assertEqual(wireless["LastScan"].unpack(), 123456)
+        secured = found[nm.ap_path(current["bssid"])][nm.NAME + ".AccessPoint"]
+        self.assertEqual(secured["Flags"].unpack(), 1)
+        self.assertTrue(secured["RsnFlags"].unpack() & 0x100)
+        self.assertTrue(secured["RsnFlags"].unpack() & 0x400)
+        self.assertEqual(found[nm.ap_path(other["bssid"])][nm.NAME + ".AccessPoint"]["Flags"].unpack(), 0)
+        # Keep nearby-network discovery while a cellular connection provides the default route.
+        cellular = nm.objects(dict(CELLULAR, accessPoints=[other]))
+        self.assertIn(nm.ap_path(other["bssid"]), cellular)
+        self.assertEqual(cellular[nm.ROOT + "/Devices/Wifi"][nm.NAME + ".Device.Wireless"]["ActiveAccessPoint"].unpack(), "/")
+
 
 @unittest.skipUnless(Gio and os.environ.get("DBUS_SESSION_BUS_ADDRESS"), "requires dbus-run-session and PyGObject")
 class NetworkBusTest(unittest.TestCase):
@@ -111,7 +132,7 @@ class NetworkBusTest(unittest.TestCase):
         self.bus = Gio.bus_get_sync(Gio.BusType.SESSION, None)
         env = dict(os.environ, DBUS_SYSTEM_BUS_ADDRESS=os.environ["DBUS_SESSION_BUS_ADDRESS"])
         # Use the production service and only redirect its input file for the fixture.
-        launch = "import runpy,sys; from pathlib import Path; n=runpy.run_path(sys.argv[1]); n['main'].__globals__['SNAPSHOT']=Path(sys.argv[2]); n['main']()"
+        launch = "import runpy,sys; from pathlib import Path; n=runpy.run_path(sys.argv[1]); g=n['main'].__globals__; g['SNAPSHOT']=Path(sys.argv[2]); g['SCAN_REQUEST']=Path(sys.argv[2]).with_suffix('.request'); n['main']()"
         self.process = subprocess.Popen([sys.executable, "-c", launch, str(SCRIPT), str(self.snapshot)], env=env,
                                         stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         self.await_type("802-11-wireless")
@@ -171,16 +192,16 @@ class NetworkBusTest(unittest.TestCase):
         self.write(CELLULAR)
         self.await_type("gsm")
         cell_path = nm.device_path(CELLULAR)
-        self.assertEqual(self.call(nm.ROOT, nm.NAME, "GetDevices"), ([cell_path],))
+        self.assertEqual(self.call(nm.ROOT, nm.NAME, "GetDevices"), ([cell_path, nm.ROOT + "/Devices/Wifi"],))
         self.assertEqual(self.prop(cell_path, nm.NAME + ".Device", "DeviceType"), 8)
         self.assertEqual(self.prop(nm.ROOT, nm.NAME, "Metered"), 1)
         managed = self.call(nm.ROOT, nm.OBJECT_MANAGER, "GetManagedObjects")[0]
-        self.assertNotIn(wifi_path, managed)
+        self.assertIn(wifi_path, managed)
+        self.assertEqual(managed[wifi_path][nm.NAME + ".Device"]["State"], 30)
         self.assertNotIn(nm.AP, managed)
         self.assertNotIn(nm.IP4, managed)
         self.assertIn(nm.IP6, managed)
-        with self.assertRaises(GLib.Error):
-            self.prop(wifi_path, nm.NAME + ".Device", "DeviceType")
+        self.assertEqual(self.prop(wifi_path, nm.NAME + ".Device.Wireless", "ActiveAccessPoint"), "/")
         self.write(OFFLINE)
         self.await_type("")
         self.assertEqual(self.call(nm.ROOT, nm.NAME, "CheckConnectivity"), (1,))
@@ -193,13 +214,35 @@ class NetworkBusTest(unittest.TestCase):
         self.assertTrue(any(interface == nm.PROPERTIES and member == "PropertiesChanged" and
                             args[1].get("PrimaryConnectionType") == "gsm"
                             for _, interface, member, args in signals))
-        self.assertTrue(any(interface == nm.OBJECT_MANAGER and member == "InterfacesRemoved" and args[0] == wifi_path
+        self.assertTrue(any(interface == nm.OBJECT_MANAGER and member == "InterfacesRemoved" and args[0] == nm.AP
                             for _, interface, member, args in signals))
         self.assertTrue(any(member == "AccessPointAdded" for _, _, member, _ in signals))
         # A missing/invalid snapshot is a transient input error, never a fake Ethernet handover.
         self.snapshot.write_text("{")
         time.sleep(1.2)
         self.assertEqual(self.prop(nm.ROOT, nm.NAME, "PrimaryConnectionType"), "802-11-wireless")
+
+    def test_scan_requests_and_live_results(self):
+        wifi_path = nm.device_path(WIFI)
+        self.call(wifi_path, nm.NAME + ".Device.Wireless", "RequestScan", GLib.Variant("(a{sv})", ({},)))
+        self.assertTrue(self.snapshot.with_suffix(".request").is_file())
+        current = {"ssid": "Named Current", "bssid": "00:11:22:33:44:55", "capabilities": "[WPA2-PSK-CCMP]"}
+        other = {"ssid": "Nearby", "bssid": "00:11:22:33:44:66", "strength": 37, "capabilities": "[ESS]"}
+        self.write(dict(WIFI, ssid=current["ssid"], bssid=current["bssid"], accessPoints=[current, other], scanAllowed=True))
+        deadline = time.monotonic() + 4
+        while time.monotonic() < deadline:
+            aps = self.call(wifi_path, nm.NAME + ".Device.Wireless", "GetAllAccessPoints")[0]
+            if nm.ap_path(other["bssid"]) in aps:
+                break
+            time.sleep(0.05)
+        self.assertIn(nm.ap_path(other["bssid"]), aps)
+        self.assertEqual(self.prop(wifi_path, nm.NAME + ".Device.Wireless", "ActiveAccessPoint"), nm.ap_path(current["bssid"]))
+        self.assertEqual(bytes(self.prop(nm.ap_path(other["bssid"]), nm.NAME + ".AccessPoint", "Ssid")).decode(), "Nearby")
+        self.assertEqual(self.call(nm.PROFILE, nm.NAME + ".Settings.Connection", "GetSettings")[0]["connection"]["id"], "Named Current")
+        self.write(dict(WIFI, scanAllowed=False))
+        time.sleep(1.2)
+        with self.assertRaises(GLib.Error):
+            self.call(wifi_path, nm.NAME + ".Device.Wireless", "RequestScan", GLib.Variant("(a{sv})", ({},)))
 
     def test_libnm_client(self):
         try:

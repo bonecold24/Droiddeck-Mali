@@ -1,10 +1,12 @@
 #!/usr/bin/python3
 # Based on WinNative (maxjivi05, feature/wayland-gamescope e7a224ae), GPL-3.0.
 # Steam speaks NetworkManager; Android owns the radios, routes and connection. Export the
-# app's live snapshot through that API, including the connected Wi-Fi access point. Android
-# settings still handle scanning/joining networks; this service never changes the host link.
+# app's live snapshot through that API, including nearby Wi-Fi access points. Requests to
+# scan are handed to Android; Android settings still handle joining networks.
 import ipaddress
 import json
+import re
+import time
 import socket
 import struct
 import sys
@@ -26,6 +28,7 @@ AP = ROOT + "/AccessPoint/1"
 PROFILE = SETTINGS + "/1"
 UUID = "b1d0c8e4-57f0-4c0e-9d60-77696e6e6174"
 SNAPSHOT = Path("/etc/bannerlator-network.json")
+SCAN_REQUEST = Path("/etc/bannerlator-wifi-scan-request")
 OBJECT_MANAGER = "org.freedesktop.DBus.ObjectManager"
 PROPERTIES = "org.freedesktop.DBus.Properties"
 
@@ -141,8 +144,67 @@ def ip_config(state, version):
     return props
 
 
+def ap_path(bssid):
+    if bssid and re.fullmatch(r"(?:[0-9a-fA-F]{2}:){5}[0-9a-fA-F]{2}", bssid):
+        return ROOT + "/AccessPoint/" + bssid.replace(":", "").lower()
+    return AP
+
+
+def active_ap(state):
+    return ap_path(state.get("bssid")) if state["connected"] and state.get("transport") == "wifi" else "/"
+
+
+def ap_security(capabilities):
+    # NetworkManager's cipher/key-management flags, from Android's beacon capabilities.
+    wpa = rsn = 0
+    for group in re.findall(r"\[([^]]+)\]", capabilities.upper()):
+        flags = 0
+        if "CCMP" in group:
+            flags |= 0x08 | 0x80
+        if "TKIP" in group:
+            flags |= 0x04 | 0x40
+        if "PSK" in group:
+            flags |= 0x100
+        if "EAP" in group:
+            flags |= 0x200
+        if "SAE" in group:
+            flags |= 0x400
+        if "OWE" in group:
+            flags |= 0x800
+        if "WPA2" in group or "RSN" in group or "SAE" in group or "OWE" in group:
+            rsn |= flags
+        elif "WPA" in group:
+            wpa |= flags
+    privacy = int(bool(wpa or rsn or "WEP" in capabilities.upper()))
+    return privacy, wpa, rsn
+
+
+def access_points(state):
+    result = {ap_path(ap.get("bssid")): dict(ap) for ap in state.get("accessPoints", []) if ap.get("ssid")}
+    if active_ap(state) != "/":
+        current = result.setdefault(active_ap(state), {})
+        for key in ("ssid", "bssid", "strength", "frequency", "bitrate"):
+            if key in state:
+                current[key] = state[key]
+        current.setdefault("ssid", "Wi-Fi")
+    return result
+
+
+def ap_properties(ap):
+    privacy, wpa, rsn = ap_security(ap.get("capabilities", ""))
+    return {
+        "Flags": v("u", privacy), "WpaFlags": v("u", wpa), "RsnFlags": v("u", rsn),
+        "Ssid": v("ay", list(ap["ssid"].encode("utf-8"))),
+        "Frequency": v("u", ap.get("frequency", 0)), "HwAddress": v("s", ap.get("bssid", "")), "Mode": v("u", 2),
+        "MaxBitrate": v("u", ap.get("bitrate", 0)),
+        "Strength": v("y", max(0, min(100, ap.get("strength", 0)))), "LastSeen": v("i", ap.get("lastSeen", -1)),
+    }
+
+
 def objects(state):
     device = device_path(state)
+    aps = access_points(state)
+    current_ap = active_ap(state)
     up = state["connected"]
     transport = state.get("transport", "none")
     wifi = transport == "wifi" or (not up and state.get("wifiEnabled", False))
@@ -191,17 +253,11 @@ def objects(state):
         found[device][NAME + ".Device.Wireless"] = {
             "HwAddress": v("s", ""), "PermHwAddress": v("s", ""), "Mode": v("u", 2),
             "Bitrate": v("u", state.get("bitrate", 0)), "WirelessCapabilities": v("u", 0),
-            "AccessPoints": v("ao", [AP] if up else []), "ActiveAccessPoint": v("o", AP if up else "/"),
-            "LastScan": v("x", -1),
+            "AccessPoints": v("ao", list(aps)), "ActiveAccessPoint": v("o", current_ap),
+            "LastScan": v("x", state.get("lastScan", -1)),
         }
-        if up:
-            found[AP] = {NAME + ".AccessPoint": {
-                "Flags": v("u", 0), "WpaFlags": v("u", 0), "RsnFlags": v("u", 0),
-                "Ssid": v("ay", list((state.get("ssid") or "Wi-Fi").encode("utf-8"))),
-                "Frequency": v("u", state.get("frequency", 0)), "HwAddress": v("s", ""), "Mode": v("u", 2),
-                "MaxBitrate": v("u", state.get("bitrate", 0)),
-                "Strength": v("y", max(0, min(100, state.get("strength", 0)))), "LastSeen": v("i", -1),
-            }}
+        for path, ap in aps.items():
+            found[path] = {NAME + ".AccessPoint": ap_properties(ap)}
     elif cellular:
         found[device][NAME + ".Device.Modem"] = {
             "ModemCapabilities": v("u", 4), "CurrentCapabilities": v("u", 4),
@@ -213,7 +269,7 @@ def objects(state):
         }
     if up:
         found[ACTIVE] = {NAME + ".Connection.Active": {
-            "Connection": v("o", PROFILE), "SpecificObject": v("o", AP if wifi else "/"),
+            "Connection": v("o", PROFILE), "SpecificObject": v("o", current_ap),
             "Id": v("s", connection_name(state)), "Uuid": v("s", UUID), "Type": v("s", kind),
             "Devices": v("ao", [device]), "State": v("u", 2), "StateFlags": v("u", 0),
             "Default": v("b", ip4), "Default6": v("b", ip6),
@@ -223,6 +279,18 @@ def objects(state):
         for version, present, path in ((4, ip4, IP4), (6, ip6, IP6)):
             if present:
                 found[path] = {NAME + f".IP{version}Config": ip_config(state, version)}
+    if up and not wifi and state.get("wifiEnabled"):
+        # Android can keep its Wi-Fi radio available while cellular/VPN is the default route.
+        wireless = objects(dict(state, connected=False, transport="none",
+                                interface=state.get("wifiInterface", "wlan0"), metered=None))
+        wifi_device = ROOT + "/Devices/Wifi"
+        found[wifi_device] = wireless[wifi_device]
+        found[wifi_device][NAME + ".Device"]["AvailableConnections"] = v("ao", [])
+        for path, interfaces in wireless.items():
+            if NAME + ".AccessPoint" in interfaces:
+                found[path] = interfaces
+        found[ROOT][NAME]["Devices"] = v("ao", [device, wifi_device])
+        found[ROOT][NAME]["AllDevices"] = v("ao", [device, wifi_device])
     return found
 
 
@@ -284,14 +352,20 @@ class NetworkManager:
         elif method == "ListConnections":
             invocation.return_value(v("(ao)", ([PROFILE],)))
         elif method in ("GetAccessPoints", "GetAllAccessPoints"):
-            invocation.return_value(v("(ao)", ([AP] if AP in self.objects else [],)))
+            invocation.return_value(v("(ao)", (self.objects[path][NAME + ".Device.Wireless"]["AccessPoints"].unpack(),)))
         elif method == "RequestScan":
-            # Only the AP Android is already using is available. Refresh that view; do not
-            # pretend to scan the host's radio or disrupt its connection.
+            if self.state.get("scanAllowed") is False:
+                invocation.return_dbus_error(NAME + ".Device.NotAllowed", "Wi-Fi discovery requires Android Location permission and enabled Location services")
+                return
+            try:
+                SCAN_REQUEST.write_text(str(time.monotonic_ns()))
+            except OSError:
+                invocation.return_dbus_error(NAME + ".Device.Failed", "Could not request an Android Wi-Fi scan")
+                return
             self.check()
             invocation.return_value(v("()", ()))
         elif method in ("GetDevices", "GetAllDevices"):
-            invocation.return_value(v("(ao)", ([device_path(self.state)],)))
+            invocation.return_value(v("(ao)", (self.objects[ROOT][NAME]["Devices"].unpack(),)))
         else:
             invocation.return_dbus_error(NAME + ".NotSupported", "Manage this connection in Android settings")
 
@@ -316,13 +390,15 @@ class NetworkManager:
                 changed = {k: value for k, value in after[path][interface].items() if value != before[path][interface].get(k)}
                 if changed:
                     self.bus.emit_signal(None, path, PROPERTIES, "PropertiesChanged", v("(sa{sv}as)", (interface, changed, [])))
-        was_ap, has_ap = AP in before, AP in after
-        if was_ap != has_ap:
-            # Wireless consumers subscribe to these as well as ObjectManager.
-            device = device_path(state)
-            if NAME + ".Device.Wireless" in after[device]:
-                self.bus.emit_signal(None, device, NAME + ".Device.Wireless",
-                                     "AccessPointAdded" if has_ap else "AccessPointRemoved", v("(o)", (AP,)))
+        wifi_device = ROOT + "/Devices/Wifi"
+        wireless = NAME + ".Device.Wireless"
+        old_aps = before.get(wifi_device, {}).get(wireless, {}).get("AccessPoints", v("ao", [])).unpack()
+        new_aps = after.get(wifi_device, {}).get(wireless, {}).get("AccessPoints", v("ao", [])).unpack()
+        if wifi_device in after:
+            for path in set(old_aps) - set(new_aps):
+                self.bus.emit_signal(None, wifi_device, wireless, "AccessPointRemoved", v("(o)", (path,)))
+            for path in set(new_aps) - set(old_aps):
+                self.bus.emit_signal(None, wifi_device, wireless, "AccessPointAdded", v("(o)", (path,)))
         was = before[ROOT][NAME]["State"]
         now = after[ROOT][NAME]["State"]
         if now != was:
