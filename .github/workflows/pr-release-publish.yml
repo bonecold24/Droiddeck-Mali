@@ -88,7 +88,8 @@ jobs:
             esac
           fi
           pr=$(gh api "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER")
-          jq -e '.state == "open" and .draft == false and .base.ref == "main"' <<<"$pr" >/dev/null
+          jq -e '.state == "open" and .draft == false and .base.ref == "main"' <<<"$pr" >/dev/null ||
+            { echo "::error::PR #$PR_NUMBER must be open, ready for review, and target main"; exit 1; }
           head=$(jq -r '.head.sha' <<<"$pr")
           base=$(jq -r '.base.sha' <<<"$pr")
 
@@ -114,15 +115,24 @@ jobs:
             sleep 30
           done
           [[ -n "$run_id" ]] || { echo '::error::The PR build did not finish within 30 minutes'; exit 1; }
+          # GitHub leaves a run's pull_requests empty when its head is in a fork, so the build is
+          # tied to this PR by its head repository, branch and commit instead.
           run=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$run_id")
-          jq -e --arg head "$head" --arg base "$base" --argjson number "$PR_NUMBER" '
+          jq -e --arg head "$head" --arg repo "$(jq -r .head.repo.full_name <<<"$pr")" --arg ref "$(jq -r .head.ref <<<"$pr")" '
             .event == "pull_request" and .head_sha == $head and .conclusion == "success" and
-            any(.pull_requests[]?; .number == $number and .head.sha == $head and .base.sha == $base)
-          ' <<<"$run" >/dev/null
+            .head_repository.full_name == $repo and .head_branch == $ref
+          ' <<<"$run" >/dev/null ||
+            { echo "::error::Build run $run_id is not a green build of PR #$PR_NUMBER at ${head:0:7}"; exit 1; }
 
           sdk=${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}
           tools=$(find "$sdk/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -1)
-          stable_tag=$(gh api "repos/$GITHUB_REPOSITORY/releases/latest" --jq .tag_name)
+          # Not releases/latest: gamescope and wlroots releases can hold that mark. The stable app
+          # release is the newest published one that ships DroidDeck-<tag>.apk.
+          stable_tag=$(gh api "repos/$GITHUB_REPOSITORY/releases?per_page=100" --jq '
+            [.[] | select((.draft | not) and (.prerelease | not)) | .tag_name as $t |
+              select(any(.assets[]; .name == "DroidDeck-\($t).apk"))] |
+            sort_by(.published_at) | last | .tag_name // empty')
+          [[ -n "$stable_tag" ]] || { echo "::error::No published DroidDeck release to compare against"; exit 1; }
           mkdir -p "$RUNNER_TEMP/stable" "$RUNNER_TEMP/pr"
           gh release download "$stable_tag" -R "$GITHUB_REPOSITORY" \
             -p "DroidDeck-$stable_tag.apk" -D "$RUNNER_TEMP/stable"
@@ -143,7 +153,8 @@ jobs:
           jq -e --arg head "$head" --arg base "$base" '
             .state == "open" and .draft == false and .base.ref == "main" and
             .head.sha == $head and .base.sha == $base
-          ' <<<"$current" >/dev/null
+          ' <<<"$current" >/dev/null ||
+            { echo "::error::PR #$PR_NUMBER moved on while its build was checked; publish again"; exit 1; }
           {
             echo "pr_number=$PR_NUMBER"
             echo "run_id=$run_id"
