@@ -608,6 +608,7 @@
     <string name="upd_signed_headline">Can\'t update in place</string>
     <string name="upd_signed_detail">This copy isn\'t signed with DroidDeck\'s release key, so updates can\'t install over it. Uninstall it to switch.</string>
     <string name="upd_available">Update available</string>
+    <string name="upd_blocked_status">Can\'t install</string>
     <string name="upd_switch">Ready to switch</string>
     <string name="upd_ahead_status">Ahead of Stable</string>
     <string name="upd_ahead_headline">You\'re ahead of Stable</string>

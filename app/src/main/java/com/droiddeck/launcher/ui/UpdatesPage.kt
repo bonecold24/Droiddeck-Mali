@@ -156,6 +156,7 @@ private fun StatusPanel(s: FrontEndState, u: UpdatesState, ua: UpdatesActions, m
         !me.updatable -> Look(colors.onSurfaceVariant, stringResource(R.string.upd_signed_status), stringResource(R.string.upd_signed_headline),
             stringResource(R.string.upd_signed_detail))
         catalog == null -> Look(colors.onSurfaceVariant, if (u.checking) stringResource(R.string.common_checking) else stringResource(R.string.upd_not_checked), stringResource(R.string.upd_title), null)
+        offered && installBlock != null -> Look(colors.onSurfaceVariant, stringResource(R.string.upd_blocked_status), newBuild(u.follow, release!!), null)
         offer == Offer.UPDATE -> Look(AttentionAmber, stringResource(R.string.upd_available), newBuild(u.follow, release!!), null)
         offer == Offer.SWITCH -> Look(pal.signal, stringResource(R.string.upd_switch), newBuild(u.follow, release!!), null)
         offer == Offer.AHEAD -> Look(pal.signal, stringResource(R.string.upd_ahead_status), stringResource(R.string.upd_ahead_headline),
@@ -177,7 +178,7 @@ private fun StatusPanel(s: FrontEndState, u: UpdatesState, ua: UpdatesActions, m
             ReleaseNotes(changeTitle(release!!.title.ifBlank { release.tag }), release.summary, release.tag)
         }
         if (look.detail != null) Text(look.detail, fontSize = 14.sp, color = colors.onSurfaceVariant, modifier = Modifier.padding(top = 10.dp))
-        if (installBlock != null && (offered || offer == Offer.AHEAD)) {
+        if (installBlock != null && offered) {
             Text(installBlock, fontSize = 13.sp, color = AttentionAmber, modifier = Modifier.padding(top = 10.dp))
         }
         if (u.error != null) Text(u.error, fontSize = 13.sp, color = pal.error, modifier = Modifier.padding(top = 12.dp))
@@ -190,6 +191,7 @@ private fun StatusPanel(s: FrontEndState, u: UpdatesState, ua: UpdatesActions, m
                     if (u.percent >= 0) LinearProgressIndicator(progress = { u.percent / 100f }, modifier = Modifier.fillMaxWidth().height(6.dp).clip(CircleShape))
                     else LinearProgressIndicator(modifier = Modifier.fillMaxWidth().height(6.dp).clip(CircleShape))
                 }
+                offered && installBlock != null -> Unit
                 offer == Offer.UPDATE -> PrimaryButton(stringResource(R.string.upd_update_button, button), enabled = installable, main = true) { ua.onInstall(release!!) }
                 offer == Offer.SWITCH -> PrimaryButton(stringResource(R.string.upd_install_button, button), enabled = installable, main = true) { ua.onInstall(release!!) }
                 offer == Offer.AHEAD && installBlock == null ->
