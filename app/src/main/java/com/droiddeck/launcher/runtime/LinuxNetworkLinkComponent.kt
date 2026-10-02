@@ -4,6 +4,9 @@ import android.content.Context
 import android.net.ConnectivityManager
 import android.net.LinkProperties
 import android.net.Network
+import android.net.NetworkCapabilities
+import android.net.wifi.WifiInfo
+import android.net.wifi.WifiManager
 import android.os.Build
 import android.provider.Settings
 import android.util.Log
@@ -12,6 +15,8 @@ import java.io.File
 import java.io.IOException
 import java.net.Inet4Address
 import java.net.Inet6Address
+import org.json.JSONArray
+import org.json.JSONObject
 
 /**
  * The device's network link, published for the Linux runtime's processes.
@@ -34,14 +39,49 @@ class LinuxNetworkLinkComponent(
         appContext.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
     private val lock = Any()
     private var callback: ConnectivityManager.NetworkCallback? = null
+    private var currentNetwork: Network? = null
+    private var currentProperties: LinkProperties? = null
+    private var currentCapabilities: NetworkCapabilities? = null
 
     /** Called before the session starts, so its first process already sees the link. */
-    fun publish() = write(connectivity.activeNetwork?.let(connectivity::getLinkProperties))
+    fun publish() = synchronized(lock) {
+        currentNetwork = connectivity.activeNetwork
+        currentProperties = currentNetwork?.let(connectivity::getLinkProperties)
+        currentCapabilities = currentNetwork?.let(connectivity::getNetworkCapabilities)
+        write(currentProperties, currentCapabilities)
+    }
 
     override fun start() {
         val registered = object : ConnectivityManager.NetworkCallback() {
-            override fun onLinkPropertiesChanged(network: Network, properties: LinkProperties) = write(properties)
-            override fun onLost(network: Network) = write(null)
+            override fun onAvailable(network: Network) = synchronized(lock) {
+                currentNetwork = network
+                currentProperties = null
+                currentCapabilities = null
+            }
+
+            override fun onCapabilitiesChanged(network: Network, capabilities: NetworkCapabilities) = synchronized(lock) {
+                if (network == currentNetwork) {
+                    currentCapabilities = capabilities
+                    if (currentProperties != null) write(currentProperties, capabilities)
+                }
+            }
+
+            override fun onLinkPropertiesChanged(network: Network, properties: LinkProperties) = synchronized(lock) {
+                if (network == currentNetwork) {
+                    currentProperties = properties
+                    write(properties, currentCapabilities)
+                }
+            }
+
+            override fun onLost(network: Network) = synchronized(lock) {
+                // A handover can report the old link lost after the new default arrived.
+                if (network == currentNetwork) {
+                    currentNetwork = null
+                    currentProperties = null
+                    currentCapabilities = null
+                    write(null, null)
+                }
+            }
         }
         synchronized(lock) { callback = registered }
         connectivity.registerDefaultNetworkCallback(registered)
@@ -56,7 +96,7 @@ class LinuxNetworkLinkComponent(
         }
     }
 
-    private fun write(properties: LinkProperties?) {
+    private fun write(properties: LinkProperties?, capabilities: NetworkCapabilities?) {
         val file = File(rootDir, LINK_FILE)
         synchronized(lock) {
             try {
@@ -67,7 +107,73 @@ class LinuxNetworkLinkComponent(
             } catch (e: IOException) {
                 Log.w(TAG, "Could not publish the network link", e)
             }
+            writeNetworkState(properties, capabilities)
             writeResolver(properties)
+        }
+    }
+
+    /** NetworkManager's view of Android. Kept separate from netif.c's legacy adapter format. */
+    @Suppress("DEPRECATION")
+    private fun writeNetworkState(properties: LinkProperties?, capabilities: NetworkCapabilities?) {
+        val wifiManager = appContext.getSystemService(Context.WIFI_SERVICE) as? WifiManager
+        val transport = when {
+            capabilities == null -> "none"
+            capabilities.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) -> "wifi"
+            capabilities.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR) -> "cellular"
+            capabilities.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET) -> "ethernet"
+            capabilities.hasTransport(NetworkCapabilities.TRANSPORT_VPN) -> "vpn"
+            else -> "other"
+        }
+        val state = JSONObject().apply {
+            put("transport", transport)
+            put("interface", properties?.interfaceName ?: "android")
+            put("mtu", properties?.mtu?.takeIf { it > 0 } ?: DEFAULT_MTU)
+            put("connected", properties != null && capabilities != null)
+            put("validated", capabilities?.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED) == true)
+            put("captivePortal", capabilities?.hasCapability(NetworkCapabilities.NET_CAPABILITY_CAPTIVE_PORTAL) == true)
+            put("metered", capabilities?.let { !it.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_METERED) })
+            put("wifiEnabled", wifiManager?.isWifiEnabled == true)
+            put("addresses", JSONArray().apply {
+                properties?.linkAddresses.orEmpty().forEach {
+                    put(JSONObject().put("address", it.address.hostAddress?.substringBefore('%')).put("prefix", it.prefixLength))
+                }
+            })
+            put("gateways", JSONArray().apply {
+                properties?.routes.orEmpty().filter { it.isDefaultRoute }.forEach {
+                    it.gateway?.takeUnless { address -> address.isAnyLocalAddress }?.let { address ->
+                        put(address.hostAddress?.substringBefore('%'))
+                    }
+                }
+            })
+            put("dns", JSONArray().apply {
+                properties?.dnsServers.orEmpty().filter { !it.isLinkLocalAddress }.forEach {
+                    put(it.hostAddress?.substringBefore('%'))
+                }
+            })
+            if (transport == "wifi") {
+                val info = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    (capabilities?.transportInfo as? WifiInfo) ?: wifiManager?.connectionInfo
+                } else {
+                    wifiManager?.connectionInfo
+                }
+                if (info != null) {
+                    // SSIDs can be redacted by Android. No location permission is needed to
+                    // report the transport; a hidden name simply displays as Wi-Fi in Steam.
+                    info.ssid?.takeUnless { it == WifiManager.UNKNOWN_SSID || it.isEmpty() }
+                        ?.removeSurrounding("\"")?.let { put("ssid", it) }
+                    put("strength", WifiManager.calculateSignalLevel(info.rssi, 101))
+                    put("frequency", info.frequency.coerceAtLeast(0))
+                    put("bitrate", info.linkSpeed.coerceAtLeast(0) * 1000)
+                }
+            }
+        }
+        try {
+            val file = File(rootDir, "etc/bannerlator-network.json")
+            val staged = File(file.path + ".staged")
+            staged.writeText(state.toString())
+            if (!staged.renameTo(file)) throw IOException("Could not replace network state")
+        } catch (e: IOException) {
+            Log.w(TAG, "Could not publish the network state", e)
         }
     }
 
