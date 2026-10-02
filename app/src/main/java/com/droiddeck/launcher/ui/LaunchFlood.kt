@@ -48,6 +48,8 @@ import kotlin.math.sin
 // loading screen opens on that blue and gathers it into the ball of the throbber.
 // Stopping one from the drawer runs it the other way: Stop grows until the page is blue, and the
 // front end opens on that blue and draws it back down into the button the session came from.
+// Any other way out (backing out of the loading screen, closing the ended screen, the session
+// ending) spreads the blue back out of the throbber's ball instead (FloodSpread).
 
 /** Carries the flood's colour to the session, which opens on it. */
 const val EXTRA_FLOOD = "com.droiddeck.launcher.FLOOD"
@@ -275,5 +277,33 @@ internal fun FloodGather(flood: Color, ball: Pair<Offset, Float>?, onLanded: () 
         val (c, r) = b
         val far = maxOf(hypot(c.x, c.y), hypot(size.width - c.x, c.y), hypot(c.x, size.height - c.y), hypot(size.width - c.x, size.height - c.y))
         drawCircle(flood, radius = lerp(far, r, gather.value), center = c)
+    }
+}
+
+/** Where the loading screen's throbber ball sits now (centre and radius, root px), for a flood leaving from it. */
+internal object ThrobberSpot {
+    var ball: Pair<Offset, Float>? = null
+}
+
+private val Spread = CubicBezierEasing(0.7f, 0f, 0.4f, 1f)
+
+/**
+ * Leaving a session: [flood] spreading out of [ball] (centre and radius in root px; the middle of
+ * the screen when there is none) until it covers the screen, the way FloodGather drew it in. Calls
+ * [onCovered] then, for the front end to open on the same blue. Swallows touches while it runs.
+ */
+@Composable
+internal fun FloodSpread(flood: Color, ball: Pair<Offset, Float>?, onCovered: () -> Unit) {
+    VeilRing()
+    val grow = remember { Animatable(0f) }
+    val covered by rememberUpdatedState(onCovered)
+    LaunchedEffect(Unit) {
+        grow.animateTo(1f, Motion.tw(520, easing = Spread))
+        covered()
+    }
+    Canvas(Modifier.fillMaxSize().pointerInput(Unit) { awaitEachGesture { while (true) awaitPointerEvent().changes.forEach { it.consume() } } }) {
+        val (c, r) = ball ?: (Offset(size.width / 2f, size.height / 2f) to 0f)
+        val far = maxOf(hypot(c.x, c.y), hypot(size.width - c.x, c.y), hypot(c.x, size.height - c.y), hypot(size.width - c.x, size.height - c.y))
+        drawCircle(flood, radius = lerp(r, far, grow.value), center = c)
     }
 }

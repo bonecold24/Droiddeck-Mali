@@ -182,7 +182,7 @@ fun LoadingOverlay(
             // Held on the plain D while the flood gathers, and started fresh when it lands.
             key(flood == null) {
                 LogoThrobber(
-                    Modifier.width(if (ended) 88.dp else 110.dp).onGloballyPositioned { ball = throbberBall(it.boundsInRoot()) },
+                    Modifier.width(if (ended) 88.dp else 110.dp).onGloballyPositioned { ball = throbberBall(it.boundsInRoot()).also { b -> ThrobberSpot.ball = b } },
                     running = !ended && flood == null,
                 )
             }
