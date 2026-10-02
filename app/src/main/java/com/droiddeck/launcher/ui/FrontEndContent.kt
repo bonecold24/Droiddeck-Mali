@@ -124,6 +124,10 @@ internal fun Pane(
         val livePage by rememberUpdatedState(s.pageKey)
         // Picking another game changes the detail beside the list, not the whole page.
         val target = if (page != null && s.pageKey != null) s.pageKey else if (selected.startsWith("app:")) "games" else selected
+        // The game the Games page shows. It must outlive the selection: while the page animates out,
+        // drawing it with what is selected now (another rail item) turned it into a copy of that page.
+        val gameShown = remember { arrayOf("games") }
+        if (selected == "games" || selected.startsWith("app:")) gameShown[0] = selected
         if (page != null && s.pageKey != null) {
             pages[s.pageKey] = page
             if (s.pageKey !in origins) PageOrigin.take()?.let { origins[s.pageKey] = it.translate(-paneAt[0]) }
@@ -162,7 +166,7 @@ internal fun Pane(
                     PageFlood(from, leaving = transition.targetState == EnterExitState.PostExit) { shown() }
                 }
             }
-            else Content(s, if (key == "games") selected else key, a, Modifier.fillMaxSize(), onSelect, onAndroidAppClick, onOpenDeveloperOptions, onRequestWirelessAdb)
+            else Content(s, if (key == "games") gameShown[0] else key, a, Modifier.fillMaxSize(), onSelect, onAndroidAppClick, onOpenDeveloperOptions, onRequestWirelessAdb)
         }
       }
     }
