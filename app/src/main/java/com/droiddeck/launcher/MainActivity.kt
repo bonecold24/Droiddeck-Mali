@@ -337,6 +337,8 @@ class MainActivity : ComponentActivity() {
         displayManager = getSystemService(DISPLAY_SERVICE) as DisplayManager
         refreshPhantomStatus()
         theme = SessionPrefs.theme(this)
+        // Last start's game list, so the Steam wall is up on the first frame; refresh() replaces it.
+        steamGames = com.droiddeck.launcher.frontend.LibraryCache.load(this)
         backActionsInverted = SessionPrefs.backActionsInverted(this)
         launcherFullscreen = SessionPrefs.launcherFullscreen(this)
         storeEnabled = SessionPrefs.storeEnabled(this)
@@ -1068,9 +1070,12 @@ class MainActivity : ComponentActivity() {
     }
 
     /** The added games as the settings page lists them; a scan of the folder, on this thread (one level, small). */
+    /** The added games for the session settings: a folder walk, so off the main thread. */
     private fun refreshAddedGames() {
-        addedGames = scanAddedGames()
-        fetchAddedGameArt()
+        Thread({
+            val games = scanAddedGames()
+            ui.post { addedGames = games; fetchAddedGameArt() }
+        }, "added-games").start()
     }
 
     /** Walks the added-games folders, which can sit on slow shared storage or an SD card. */
@@ -1195,6 +1200,9 @@ class MainActivity : ComponentActivity() {
         } else null
         // The libraries, off the main thread: manifests and a folder scan.
         Thread({
+            // One update with the whole list: the wall places games by their position in it, so a
+            // partial list first would shuffle every capsule when the rest arrived. LibraryCache
+            // covers the wait.
             val games = if (ready) Library.steamGames(this) + com.droiddeck.launcher.frontend.AddedGames.scan(this).map { g ->
                 com.droiddeck.launcher.frontend.AddedGameArt.resolve(this, g).let { art ->
                     Library.SteamGame(
@@ -1205,7 +1213,9 @@ class MainActivity : ComponentActivity() {
                 }
             } else emptyList()
             val emus = Library.emulators(this) { id -> DesktopCatalog.installed(this, id) != null }
-            ui.post { steamGames = games.distinctBy { it.gameId }; emulatorList = emus }
+            val all = games.distinctBy { it.gameId }
+            if (ready) com.droiddeck.launcher.frontend.LibraryCache.save(this, all)
+            ui.post { steamGames = all; emulatorList = emus }
             // Box art for the games that have none, fetched after the list is up; the list is
             // rebuilt once if any was found.
             if (!OfflineMode.enabled(this) && CoverArt.fetchMissing(this, emus.flatMap { it.games })) {

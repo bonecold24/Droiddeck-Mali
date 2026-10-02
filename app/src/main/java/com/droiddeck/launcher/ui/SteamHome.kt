@@ -59,7 +59,9 @@ private const val WALL_MIN_GAMES = 4
  */
 @Composable
 internal fun SteamHome(s: FrontEndState, a: FrontEndActions, modifier: Modifier) {
-    val games = remember(s.steamGames) { s.steamGames.sortedByDescending { it.lastPlayed } }
+    // A fixed order, ties included: the wall places each game by its position, so an order that
+    // came out differently from one read of the library to the next moved every capsule.
+    val games = remember(s.steamGames) { s.steamGames.sortedWith(compareByDescending<Library.SteamGame> { it.lastPlayed }.thenBy { it.gameId }) }
     val narrow = LocalNarrowPane.current
     val colors = MaterialTheme.colorScheme
     val pal = LocalPalette.current
