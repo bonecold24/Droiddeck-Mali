@@ -1,11 +1,9 @@
 package com.droiddeck.launcher.runtime
 
-import android.Manifest
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
-import android.content.pm.PackageManager
 import android.location.LocationManager
 import android.net.ConnectivityManager
 import android.net.LinkProperties
@@ -20,6 +18,7 @@ import android.os.SystemClock
 import android.provider.Settings
 import android.util.Log
 import com.droiddeck.launcher.core.SessionPart
+import com.droiddeck.launcher.core.WifiDiscovery
 import java.io.File
 import java.io.IOException
 import java.net.Inet4Address
@@ -56,8 +55,13 @@ class LinuxNetworkLinkComponent(
     private var wifiReceiver: BroadcastReceiver? = null
     private var scanRequestStamp = 0L
     private var lastScanRequest = -SCAN_INTERVAL_MS
+    @Volatile private var lastNamesAllowed = false
     private val scanRequests = object : Runnable {
         override fun run() {
+            if (canReadWifiNames() != lastNamesAllowed) {
+                synchronized(lock) { writeNetworkState(currentProperties, currentCapabilities) }
+                requestWifiScan()
+            }
             val stamp = File(rootDir, "etc/bannerlator-wifi-scan-request").lastModified()
             if (stamp != 0L && stamp != scanRequestStamp) {
                 scanRequestStamp = stamp
@@ -139,12 +143,7 @@ class LinuxNetworkLinkComponent(
         }
     }
 
-    private fun canReadWifiNames(): Boolean {
-        val allowed = listOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION)
-            .any { appContext.checkSelfPermission(it) == PackageManager.PERMISSION_GRANTED }
-        val location = appContext.getSystemService(Context.LOCATION_SERVICE) as? LocationManager
-        return allowed && (Build.VERSION.SDK_INT < Build.VERSION_CODES.P || location?.isLocationEnabled == true)
-    }
+    private fun canReadWifiNames(): Boolean = WifiDiscovery.available(appContext)
 
     @Suppress("DEPRECATION")
     private fun requestWifiScan() {
@@ -179,6 +178,7 @@ class LinuxNetworkLinkComponent(
     @Suppress("DEPRECATION")
     private fun writeNetworkState(properties: LinkProperties?, capabilities: NetworkCapabilities?) {
         val namesAllowed = canReadWifiNames()
+        lastNamesAllowed = namesAllowed
         val scans = if (namesAllowed && wifiManager?.isWifiEnabled == true) {
             try { wifiManager.scanResults.orEmpty() } catch (e: SecurityException) { emptyList() }
         } else emptyList()
@@ -231,18 +231,21 @@ class LinuxNetworkLinkComponent(
                 }
             })
             if (transport == "wifi") {
+                val connectionInfo = try { wifiManager?.connectionInfo } catch (e: SecurityException) { null }
                 val info = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                    (capabilities?.transportInfo as? WifiInfo) ?: wifiManager?.connectionInfo
+                    (capabilities?.transportInfo as? WifiInfo) ?: connectionInfo
                 } else {
-                    wifiManager?.connectionInfo
+                    connectionInfo
                 }
                 if (info != null) {
                     // SSIDs can be redacted by Android. No location permission is needed to
                     // report the transport; a hidden name simply displays as Wi-Fi in Steam.
-                    val namedInfo = if (namesAllowed) wifiManager?.connectionInfo ?: info else info
-                    namedInfo.ssid?.takeUnless { it == WifiManager.UNKNOWN_SSID || it.isEmpty() }
-                        ?.removeSurrounding("\"")?.let { put("ssid", it) }
-                    namedInfo.bssid?.takeUnless { it == "02:00:00:00:00:00" }?.let { put("bssid", it) }
+                    if (namesAllowed) {
+                        val namedInfo = connectionInfo ?: info
+                        namedInfo.ssid?.takeUnless { it == WifiManager.UNKNOWN_SSID || it.isEmpty() }
+                            ?.removeSurrounding("\"")?.let { put("ssid", it) }
+                        namedInfo.bssid?.takeUnless { it == "02:00:00:00:00:00" }?.let { put("bssid", it) }
+                    }
                     put("strength", WifiManager.calculateSignalLevel(info.rssi, 101))
                     put("frequency", info.frequency.coerceAtLeast(0))
                     put("bitrate", info.linkSpeed.coerceAtLeast(0) * 1000)
