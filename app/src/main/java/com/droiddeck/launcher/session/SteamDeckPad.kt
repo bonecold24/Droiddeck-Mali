@@ -27,7 +27,8 @@ import java.io.File
  * - [listingDir] - a merged `/sys/class` listing, with the host's class names plus `hidraw`.
  *   A proot bind is reachable by path but does not add its name to the parent's directory listing;
  *   a kernel without a native `hidraw` class therefore hid our bound class from libudev. The
- *   libfakeinput routes relative opens back to the real guest paths. `/sys` and `/sys/bus` also have minimal
+ *   libfakeinput uses this only when `hidraw` is missing or the native listing is denied, and routes
+ *   relative opens back to the real guest paths. `/sys` and `/sys/bus` also have minimal
  *   stand-ins for a client whose SELinux policy refuses those listings.
  *
  * Symlinks are absolute guest paths; proot resolves them inside the session.
@@ -111,8 +112,8 @@ object SteamDeckPad {
                 File(listing, "class/$name").mkdirs()
             }
             Log.i(TAG, "deck pad: native /sys/class " + when (nativeClasses) {
-                null -> "not listable; merged listing contains hidraw only"
-                else -> "${nativeClasses.size} classes, hidraw ${if ("hidraw" in nativeClasses) "present" else "absent"}; merged listing includes hidraw"
+                null -> "not listable; hidraw listing fallback prepared"
+                else -> "${nativeClasses.size} classes, hidraw ${if ("hidraw" in nativeClasses) "present; native listing retained" else "absent; merged listing prepared"}"
             })
             // The runtime binds this directory over /sys/dev/char for the GPU (LinuxRuntime.bindGpuNode).
             link(File(context.cacheDir, "drm/sys/$MAJOR:$MINOR"), HIDRAW)
