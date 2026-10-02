@@ -4,6 +4,7 @@ import android.view.View
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.AnimationSpec
+import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Box
 import androidx.compose.runtime.Composable
@@ -165,6 +166,8 @@ internal fun FocusGlideHost(modifier: Modifier = Modifier, content: @Composable 
     val glide = remember(view) { FocusGlide(view) }
     val edges = remember { List(4) { Animatable(0f) } } // left, top, right, bottom
     val corner = remember { Animatable(0f) }
+    /** How solid the ring is: 1 while it travels as a drop, 0 (an outline) on a control. */
+    val solid = remember { Animatable(0f) }
     val alpha = remember { Animatable(0f) }
     val scope = rememberCoroutineScope()
     // An edge each, the corner, and a droplet carrying all of them.
@@ -183,6 +186,8 @@ internal fun FocusGlideHost(modifier: Modifier = Modifier, content: @Composable 
         var delays = LongArray(4)
         var lastMove = 0L
         fun go(i: Int, v: Float, spec: AnimationSpec<Float>, wait: Long) {
+            // A drop cut short by another move turns back into an outline on the way.
+            if (jobs[5]?.isActive == true || solid.targetValue > 0f) scope.launch { solid.animateTo(0f, Motion.tw(120)) }
             jobs[5]?.cancel()
             // Picks up the speed it is going at: restarting from rest on every step of a held
             // direction is what made it stutter.
@@ -193,30 +198,33 @@ internal fun FocusGlideHost(modifier: Modifier = Modifier, content: @Composable 
                 edges[i].animateTo(v, spec, initialVelocity = if (wait > 0) 0f else speed)
             }
         }
-        /** Pinch into a drop where it is, carry it over leading edge first, open it onto [b]. */
-        fun droplet(s: GlideSource, b: Rect, leadIdx: Int) {
+        /** Pinch into a solid dot where it is, carry it over, and open it into [b] as it arrives. */
+        fun droplet(s: GlideSource, b: Rect) {
             jobs.forEach { it?.cancel() }
             val size = s.coords?.size?.let { Size(it.width.toFloat(), it.height.toFloat()) } ?: b.size
             val endCorner = cornerOf(s.shape, size, dir, density)
             jobs[5] = scope.launch {
-                val r = with(density) { 7.dp.toPx() }
+                val r = with(density) { 6.dp.toPx() }
                 fun dot(c: Offset) = listOf(c.x - r, c.y - r, c.x + r, c.y + r)
                 val here = Offset((edges[0].value + edges[2].value) / 2f, (edges[1].value + edges[3].value) / 2f)
+                // Pinch into a solid drop where it is.
                 coroutineScope {
-                    launch { corner.animateTo(r, Motion.tw(130)) }
-                    dot(here).forEachIndexed { i, v -> launch { edges[i].animateTo(v, Motion.tw(130)) } }
+                    launch { solid.animateTo(1f, Motion.tw(80)) }
+                    launch { corner.animateTo(r, Motion.tw(90)) }
+                    dot(here).forEachIndexed { i, v -> launch { edges[i].animateTo(v, Motion.tw(90)) } }
                 }
-                // Leading edge a touch quicker, so the drop pulls out a little on the way without
-                // turning into a streak (the box can only stretch square to the screen).
-                val trailIdx = (leadIdx + 2) % 4
-                coroutineScope {
-                    dot(b.center).forEachIndexed { i, v ->
-                        launch { edges[i].animateTo(v, when (i) { leadIdx -> Motion.sp(0.85f, 360f); trailIdx -> Motion.sp(0.85f, 290f); else -> Motion.sp(0.85f, 320f) }) }
-                    }
+                // Across as a dot, every edge together, on a timed ease.
+                val distance = hypot(b.center.x - here.x, b.center.y - here.y) / density.density
+                val travel = (180 + distance * 0.12f).toInt().coerceIn(220, 380)
+                dot(b.center).forEachIndexed { i, v ->
+                    jobs[i] = launch { edges[i].animateTo(v, Motion.tw(travel, easing = FastOutSlowInEasing)) }
                 }
-                coroutineScope {
-                    launch { corner.animateTo(endCorner, Motion.sp(0.8f, 500f)) }
-                    listOf(b.left, b.top, b.right, b.bottom).forEachIndexed { i, v -> launch { edges[i].animateTo(v, Motion.sp(0.62f, 700f)) } }
+                // Takes the control's shape as it arrives, not after: no resting as a dot.
+                delay(Motion.ms((travel * 0.78f).toInt()).toLong())
+                launch { solid.animateTo(0f, Motion.tw(150)) }
+                launch { corner.animateTo(endCorner, Motion.sp(0.8f, 600f)) }
+                listOf(b.left, b.top, b.right, b.bottom).forEachIndexed { i, v ->
+                    jobs[i] = launch { edges[i].animateTo(v, Motion.sp(0.7f, 750f)) }
                 }
             }
         }
@@ -230,6 +238,7 @@ internal fun FocusGlideHost(modifier: Modifier = Modifier, content: @Composable 
             if (hidden) {
                 jobs.forEach { it?.cancel() }
                 alpha.snapTo(0f)
+                solid.snapTo(0f)
                 shown = null
                 return@collectLatest
             }
@@ -259,7 +268,7 @@ internal fun FocusGlideHost(modifier: Modifier = Modifier, content: @Composable 
                         val out = with(density) { 3.dp.toPx() }
                         val grown = listOf(b.left - out, b.top - out, b.right + out, b.bottom + out)
                         jobs.forEach { it?.cancel() }
-                        scope.launch { edges.forEachIndexed { i, e -> e.snapTo(grown[i]) } }.join()
+                        scope.launch { solid.snapTo(0f); edges.forEachIndexed { i, e -> e.snapTo(grown[i]) } }.join()
                         dirSpecs = List(4) { Motion.sp(0.6f, 700f) }
                         delays = LongArray(4)
                         cornerTo(src, b, snap = true)
@@ -276,7 +285,7 @@ internal fun FocusGlideHost(modifier: Modifier = Modifier, content: @Composable 
                         lastMove = now
                         scope.launch { alpha.animateTo(1f, Motion.tw(120)) }
                         dropped = !held && hypot(dx, dy) > with(density) { FAR.toPx() }
-                        if (dropped) droplet(src, b, leadIdx)
+                        if (dropped) droplet(src, b)
                         else {
                             // A held direction runs along as one piece; a single press stretches.
                             dirSpecs = if (held) List(4) { Motion.sp(0.9f, 900f) }
@@ -315,7 +324,12 @@ internal fun FocusGlideHost(modifier: Modifier = Modifier, content: @Composable 
                 val sw = (r - l - w).coerceAtLeast(0f)
                 val sh = (b - t - w).coerceAtLeast(0f)
                 val rad = (corner.value - w / 2f).coerceIn(0f, minOf(sw, sh) / 2f)
-                drawRoundRect(
+                val f = solid.value
+                if (f > 0.01f) drawRoundRect(
+                    color, topLeft = Offset(l, t), size = Size(r - l, b - t),
+                    cornerRadius = CornerRadius(corner.value), alpha = a * f,
+                )
+                if (f < 0.99f) drawRoundRect(
                     color, topLeft = Offset(l + w / 2f, t + w / 2f), size = Size(sw, sh),
                     cornerRadius = CornerRadius(rad), style = Stroke(w), alpha = a,
                 )
