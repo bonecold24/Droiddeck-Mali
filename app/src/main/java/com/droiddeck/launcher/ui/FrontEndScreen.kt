@@ -50,6 +50,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.snapshotFlow
+import androidx.compose.runtime.withFrameNanos
 import kotlinx.coroutines.flow.first
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -418,6 +419,16 @@ private fun FrontEndScreenBody(s: FrontEndState, a: FrontEndActions, page: (@Com
         // A tile or button that opens a page goes away with the page it was on, and focus with it;
         // the pad then had nothing to move from (a press landed back on the rail's first item). So
         // once the new page is in, a controller lands on its main button.
+        // Closing a page: it stays on screen while it leaves (and holds focus there), so hand focus
+        // back now to the control it was opened from, and the ring folds back onto that.
+        var openPage by remember { mutableStateOf<String?>(null) }
+        LaunchedEffect(s.pageKey) {
+            val closed = openPage != null && s.pageKey == null
+            openPage = s.pageKey
+            if (!closed || processSettingsPageVisible || inputModeManager.inputMode != InputMode.Keyboard) return@LaunchedEffect
+            withFrameNanos { }
+            runCatching { frontFocus.paneEntry().requestFocus() }
+        }
         LaunchedEffect(selected, s.pageKey, processSettingsPageVisible) {
             if (processSettingsPageVisible) return@LaunchedEffect
             // Past the old page's exit (170ms), then the first frame the new page takes focus.

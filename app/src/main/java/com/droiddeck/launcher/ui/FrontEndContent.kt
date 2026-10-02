@@ -4,6 +4,9 @@ import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.runtime.CompositionLocalProvider
 import android.os.Build
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.runtime.snapshotFlow
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.geometry.Size
 import androidx.compose.animation.EnterExitState
 import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.core.FastOutSlowInEasing
@@ -118,7 +121,8 @@ internal fun Pane(
         // Pages keep drawing while they leave, so one can fold away instead of blinking out.
         val pages = remember { HashMap<String, @Composable () -> Unit>() }
         // Pages opened from a control (the cog), with where that control sat, in this pane's coordinates.
-        val origins = remember { HashMap<String, Rect>() }
+        val origins = remember { HashMap<String, Origin>() }
+        val glide = LocalFocusGlide.current
         val paneAt = remember { arrayOf(Offset.Zero) }
         val livePage by rememberUpdatedState(s.pageKey)
         // Picking another game changes the detail beside the list, not the whole page.
@@ -158,7 +162,22 @@ internal fun Pane(
                         transitionSpec = { if (targetState == EnterExitState.Visible) Motion.tw(620, easing = FastOutSlowInEasing) else Motion.tw(440, easing = FastOutSlowInEasing) },
                         label = "bloom",
                     ) { if (it == EnterExitState.Visible) 1f else 0f }
-                    Box(Modifier.fillMaxSize().bloom({ open }, from.center, from.minDimension / 2f, pal.background, pal.signal)) { shown() }
+                    var boxSize by remember { mutableStateOf(Size.Zero) }
+                    if (glide != null) {
+                        // A controller's focus ring rides the bloom's edge while it runs.
+                        LaunchedEffect(Unit) {
+                            snapshotFlow { open to (transition.currentState == transition.targetState) }.collect { (p, settled) ->
+                                val hostAt = glide.host?.takeIf { it.isAttached }?.positionInRoot() ?: Offset.Zero
+                                glide.transit = if (settled || boxSize == Size.Zero || !glide.ringShown()) null
+                                    else bloomBox(boxSize, from, p, paneAt[0] - hostAt)
+                            }
+                        }
+                        DisposableEffect(Unit) { onDispose { glide.transit = null } }
+                    }
+                    Box(
+                        Modifier.fillMaxSize().onSizeChanged { boxSize = Size(it.width.toFloat(), it.height.toFloat()) }
+                            .bloom({ open }, from, pal.background) { if (glide?.ringShown() == true) null else pal.signal },
+                    ) { shown() }
                 }
             }
             else Content(s, if (key == "games") selected else key, a, Modifier.fillMaxSize(), onSelect, onAndroidAppClick, onOpenDeveloperOptions, onRequestWirelessAdb)
