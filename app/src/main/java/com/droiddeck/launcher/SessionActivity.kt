@@ -41,6 +41,7 @@ import com.droiddeck.launcher.gpu.Lossless
 import com.droiddeck.launcher.gpu.TurnipDriver
 import com.droiddeck.launcher.input.EvdevKeys
 import com.droiddeck.launcher.input.KeyboardHost
+import com.droiddeck.launcher.input.SessionClipboard
 import com.droiddeck.launcher.input.OnScreenControls
 import com.droiddeck.launcher.input.PadBridge
 import com.droiddeck.launcher.input.PointerGestures
@@ -125,6 +126,11 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
     }
     private var onScreenControls: OnScreenControls? = null
     private var keyboard: KeyboardHost? = null
+    private val sessionClipboard by lazy {
+        SessionClipboard(this) {
+            window.decorView.hasWindowFocus() || secondScreenPresentation?.window?.decorView?.hasWindowFocus() == true
+        }
+    }
     private var watching = true
     private lateinit var touchpad: TouchpadGestures
     private var touchMode by mutableStateOf(SessionPrefs.TOUCH_AUTO)
@@ -1657,12 +1663,14 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
         onScreenControls?.reload()
         updateOnScreenControls()
         resumed = true
+        sessionClipboard.start()
         updatePadMotion()
         readPrefs()
         if (CompositorHost.isStarted) applyFrameGen()
     }
 
     override fun onPause() {
+        sessionClipboard.stop()
         // Do not carry transient session UI across an app/display transition. In particular, the
         // drawer's dim layer can otherwise remain over Steam when this activity returns.
         drawerOpen = false
@@ -1687,7 +1695,15 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
 
     override fun onWindowFocusChanged(hasFocus: Boolean) {
         super.onWindowFocusChanged(hasFocus)
-        if (hasFocus) goFullscreen()
+        if (hasFocus) {
+            goFullscreen()
+            refreshClipboard()
+        }
+    }
+
+    /** The keyboard/trackpad presentation can own focus instead of the main display. */
+    fun refreshClipboard() {
+        if (resumed) sessionClipboard.refresh()
     }
 
     private fun goFullscreen() {

@@ -32,6 +32,7 @@ object SessionFiles {
             "libfakeinput.so" to "usr/local/lib/libfakeinput.so",
             "libblfastpath.so" to "usr/local/lib/libblfastpath.so",
             "usr/local/bin/bannerlator-session" to "usr/local/bin/bannerlator-session",
+            "usr/local/bin/droiddeck-clipboard" to "usr/local/bin/droiddeck-clipboard",
             "usr/local/bin/bannerlator-steam-compat" to "usr/local/bin/bannerlator-steam-compat",
             "usr/local/bin/bannerlator-steam-install" to "usr/local/bin/bannerlator-steam-install",
             "usr/local/bin/bannerlator-steam-library" to "usr/local/bin/bannerlator-steam-library",

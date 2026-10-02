@@ -216,6 +216,12 @@ reap_orphans() {
   done
 }
 
+# Gamescope's Wayland backend does not forward the outer clipboard into Xwayland.
+# This helper owns only Android text selections and exits with this guest session.
+if [ -n "${BL_ANDROID_CLIPBOARD:-}" ] && [ -x /usr/local/bin/droiddeck-clipboard ]; then
+  /usr/local/bin/droiddeck-clipboard "$BL_ANDROID_CLIPBOARD" &
+fi
+
 case $mode in
   desktop)
     exec pcmanfm
