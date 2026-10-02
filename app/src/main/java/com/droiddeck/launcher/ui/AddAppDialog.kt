@@ -272,7 +272,7 @@ internal fun EditAppDialog(app: UserApps.App, onDismiss: () -> Unit, onSave: (St
 
 /** Open from the first frame; [onDismiss] once the closing animation has run. */
 @Composable
-private fun rememberShown(onDismiss: () -> Unit): MutableTransitionState<Boolean> {
+internal fun rememberShown(onDismiss: () -> Unit): MutableTransitionState<Boolean> {
     val shown = remember { MutableTransitionState(false).apply { targetState = true } }
     LaunchedEffect(shown.currentState, shown.isIdle) { if (shown.isIdle && !shown.currentState && !shown.targetState) onDismiss() }
     return shown
@@ -283,7 +283,7 @@ private fun rememberShown(onDismiss: () -> Unit): MutableTransitionState<Boolean
  * like the app's menus, rises above the keyboard, and closes on a tap outside or B.
  */
 @Composable
-private fun AppDialog(
+internal fun AppDialog(
     shown: MutableTransitionState<Boolean>, close: () -> Unit, label: String, wide: Boolean,
     modifier: Modifier = Modifier, content: @Composable ColumnScope.() -> Unit,
 ) {
@@ -328,7 +328,7 @@ private fun AppDialog(
 
 /** The eyebrow and title, with [trailing] (the tabs) beside them when there is room, else under them. */
 @Composable
-private fun DialogHeader(eyebrow: String, title: String, trailing: (@Composable () -> Unit)? = null) {
+internal fun DialogHeader(eyebrow: String, title: String, trailing: (@Composable () -> Unit)? = null) {
     val heading = @Composable {
         Column {
             Eyebrow(eyebrow)
@@ -381,7 +381,7 @@ private fun Panel(title: String, content: @Composable ColumnScope.() -> Unit) {
 
 /** Why the main button is off (or nothing), then Cancel and the main button, at the card's foot. */
 @Composable
-private fun DialogFooter(note: String?, confirm: String, enabled: Boolean, onCancel: () -> Unit, onConfirm: () -> Unit) {
+internal fun DialogFooter(note: String?, confirm: String, enabled: Boolean, onCancel: () -> Unit, onConfirm: () -> Unit) {
     val lineColor = LocalPalette.current.line
     Rise(2) {
         Row(
@@ -396,7 +396,7 @@ private fun DialogFooter(note: String?, confirm: String, enabled: Boolean, onCan
 }
 
 @Composable
-private fun Small(text: String, error: Boolean = false) =
+internal fun Small(text: String, error: Boolean = false) =
     Text(text, fontSize = 12.sp, lineHeight = 16.sp, color = if (error) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant)
 
 private fun hideKeyboard(view: View) {
