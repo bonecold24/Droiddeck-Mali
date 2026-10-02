@@ -508,8 +508,13 @@ class OnScreenControls(context: Context, private val pad: PadBridge?, private va
             }
             MotionEvent.ACTION_UP, MotionEvent.ACTION_POINTER_UP, MotionEvent.ACTION_CANCEL -> {
                 val pointer = event.getPointerId(event.actionIndex)
-                if (quickPressedBy == pointer || event.actionMasked == MotionEvent.ACTION_CANCEL) {
-                    val toggled = quickPressedBy == pointer && event.actionMasked == MotionEvent.ACTION_UP && quickContains(event.x, event.y)
+                if (event.actionMasked == MotionEvent.ACTION_CANCEL) {
+                    quickPressedBy = -1
+                    releaseAll()
+                    return true
+                }
+                if (quickPressedBy == pointer) {
+                    val toggled = event.actionMasked == MotionEvent.ACTION_UP && quickContains(event.x, event.y)
                     quickPressedBy = -1
                     if (toggled) setQuickHidden(!quickHidden)
                     return true
