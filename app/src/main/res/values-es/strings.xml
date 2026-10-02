@@ -576,6 +576,7 @@
     <string name="upd_signed_headline">No se puede actualizar sobre la instalada</string>
     <string name="upd_signed_detail">Esta copia no está firmada con la clave de publicación de DroidDeck, así que las actualizaciones no se pueden instalar sobre ella. Desinstálala para cambiar.</string>
     <string name="upd_available">Actualización disponible</string>
+    <string name="upd_blocked_status">No se puede instalar</string>
     <string name="upd_switch">Lista para cambiar</string>
     <string name="upd_ahead_status">Por delante de Stable</string>
     <string name="upd_ahead_headline">Vas por delante de Stable</string>
