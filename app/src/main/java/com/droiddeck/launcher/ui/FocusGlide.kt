@@ -44,6 +44,8 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import kotlin.math.abs
+import kotlin.math.hypot
+import kotlinx.coroutines.coroutineScope
 
 // One focus ring for a whole screen that slides from control to control. When focus moves, the
 // edge on the side it is heading springs ahead and the trailing edge catches up a beat later, so
@@ -83,6 +85,20 @@ internal class FocusGlide(val view: View) {
 }
 
 internal val LocalFocusGlide = staticCompositionLocalOf<FocusGlide?> { null }
+
+/** Floods on screen (a launch, a stop, the return from one): every ring keeps out of the way of them. */
+internal object RingVeil {
+    var count by mutableIntStateOf(0)
+}
+
+/** Keeps the focus ring off while this is in the composition. */
+@Composable
+internal fun VeilRing() {
+    DisposableEffect(Unit) {
+        RingVeil.count++
+        onDispose { RingVeil.count-- }
+    }
+}
 
 private fun cornerOf(shape: Shape, size: Size, dir: LayoutDirection, density: Density): Float =
     when (val o = shape.createOutline(size, dir, density)) {
@@ -131,6 +147,12 @@ private fun follow(): AnimationSpec<Float> = Motion.sp(1f, 2400f)
 /** How long after a focus move the ring keeps its stretchy springs and keeps checking where it is. */
 private const val SETTLE_MS = 450L
 
+/** Moves closer together than this are a held direction: the ring runs along as one, no stretch. */
+private const val REPEAT_MS = 180L
+
+/** A move further than this goes as a droplet: pinched to a drop, carried across, opened onto the control. */
+private val FAR = 360.dp
+
 /**
  * Hosts the sliding focus ring for everything inside it. The ring is drawn over [content], in the
  * host's space, so put the host inside anything that moves as a whole (a sheet that slides in).
@@ -145,7 +167,8 @@ internal fun FocusGlideHost(modifier: Modifier = Modifier, content: @Composable 
     val corner = remember { Animatable(0f) }
     val alpha = remember { Animatable(0f) }
     val scope = rememberCoroutineScope()
-    val jobs = remember { arrayOfNulls<Job>(5) }
+    // An edge each, the corner, and a droplet carrying all of them.
+    val jobs = remember { arrayOfNulls<Job>(6) }
     val cur = glide.current
     var lastColor by remember { mutableStateOf(Color.Transparent) }
     if (cur != null) lastColor = cur.color
@@ -158,11 +181,43 @@ internal fun FocusGlideHost(modifier: Modifier = Modifier, content: @Composable 
         var movedAt = 0L
         var dirSpecs: List<AnimationSpec<Float>> = List(4) { follow() }
         var delays = LongArray(4)
+        var lastMove = 0L
         fun go(i: Int, v: Float, spec: AnimationSpec<Float>, wait: Long) {
+            jobs[5]?.cancel()
+            // Picks up the speed it is going at: restarting from rest on every step of a held
+            // direction is what made it stutter.
+            val speed = edges[i].velocity
             jobs[i]?.cancel()
             jobs[i] = scope.launch {
                 if (wait > 0) delay(Motion.ms(wait.toInt()).toLong())
-                edges[i].animateTo(v, spec)
+                edges[i].animateTo(v, spec, initialVelocity = if (wait > 0) 0f else speed)
+            }
+        }
+        /** Pinch into a drop where it is, carry it over leading edge first, open it onto [b]. */
+        fun droplet(s: GlideSource, b: Rect, leadIdx: Int) {
+            jobs.forEach { it?.cancel() }
+            val size = s.coords?.size?.let { Size(it.width.toFloat(), it.height.toFloat()) } ?: b.size
+            val endCorner = cornerOf(s.shape, size, dir, density)
+            jobs[5] = scope.launch {
+                val r = with(density) { 7.dp.toPx() }
+                fun dot(c: Offset) = listOf(c.x - r, c.y - r, c.x + r, c.y + r)
+                val here = Offset((edges[0].value + edges[2].value) / 2f, (edges[1].value + edges[3].value) / 2f)
+                coroutineScope {
+                    launch { corner.animateTo(r, Motion.tw(130)) }
+                    dot(here).forEachIndexed { i, v -> launch { edges[i].animateTo(v, Motion.tw(130)) } }
+                }
+                // Leading edge a touch quicker, so the drop pulls out a little on the way without
+                // turning into a streak (the box can only stretch square to the screen).
+                val trailIdx = (leadIdx + 2) % 4
+                coroutineScope {
+                    dot(b.center).forEachIndexed { i, v ->
+                        launch { edges[i].animateTo(v, when (i) { leadIdx -> Motion.sp(0.85f, 360f); trailIdx -> Motion.sp(0.85f, 290f); else -> Motion.sp(0.85f, 320f) }) }
+                    }
+                }
+                coroutineScope {
+                    launch { corner.animateTo(endCorner, Motion.sp(0.8f, 500f)) }
+                    listOf(b.left, b.top, b.right, b.bottom).forEachIndexed { i, v -> launch { edges[i].animateTo(v, Motion.sp(0.62f, 700f)) } }
+                }
             }
         }
         fun cornerTo(s: GlideSource, b: Rect, snap: Boolean) {
@@ -171,7 +226,7 @@ internal fun FocusGlideHost(modifier: Modifier = Modifier, content: @Composable 
             jobs[4]?.cancel()
             jobs[4] = scope.launch { if (snap) corner.snapTo(r) else corner.animateTo(r, Motion.sp(0.8f, 500f)) }
         }
-        snapshotFlow { Triple(glide.current, glide.moves, glide.hidden) }.collectLatest { (src, _, hidden) ->
+        snapshotFlow { Triple(glide.current, glide.moves, glide.hidden || RingVeil.count > 0) }.collectLatest { (src, _, hidden) ->
             if (hidden) {
                 jobs.forEach { it?.cancel() }
                 alpha.snapTo(0f)
@@ -194,6 +249,7 @@ internal fun FocusGlideHost(modifier: Modifier = Modifier, content: @Composable 
                 if (b == null) {
                     if (first) scope.launch { alpha.animateTo(0f, Motion.tw(140)) }
                 } else if (first) {
+                    var dropped = false
                     val prev = shown
                     val wasShowing = prev != null && alpha.targetValue > 0f
                     shown = src
@@ -215,15 +271,24 @@ internal fun FocusGlideHost(modifier: Modifier = Modifier, content: @Composable 
                         val horizontal = abs(dx) >= abs(dy)
                         val leadIdx = if (horizontal) (if (dx >= 0) 2 else 0) else (if (dy >= 0) 3 else 1)
                         val trailIdx = (leadIdx + 2) % 4
-                        dirSpecs = List(4) { i -> when (i) { leadIdx -> lead(); trailIdx -> trail(); else -> Motion.sp(0.7f, 520f) } }
-                        delays = LongArray(4) { i -> if (i == trailIdx) 30L else 0L }
-                        cornerTo(src, b, snap = false)
+                        val now = System.nanoTime()
+                        val held = (now - lastMove) / 1_000_000 < REPEAT_MS
+                        lastMove = now
                         scope.launch { alpha.animateTo(1f, Motion.tw(120)) }
+                        dropped = !held && hypot(dx, dy) > with(density) { FAR.toPx() }
+                        if (dropped) droplet(src, b, leadIdx)
+                        else {
+                            // A held direction runs along as one piece; a single press stretches.
+                            dirSpecs = if (held) List(4) { Motion.sp(0.9f, 900f) }
+                                else List(4) { i -> when (i) { leadIdx -> lead(); trailIdx -> trail(); else -> Motion.sp(0.7f, 520f) } }
+                            delays = LongArray(4) { i -> if (i == trailIdx && !held) 30L else 0L }
+                            cornerTo(src, b, snap = false)
+                        }
                     }
                     movedAt = System.nanoTime()
-                    listOf(b.left, b.top, b.right, b.bottom).forEachIndexed { i, v -> go(i, v, dirSpecs[i], delays[i]) }
+                    if (!dropped) listOf(b.left, b.top, b.right, b.bottom).forEachIndexed { i, v -> go(i, v, dirSpecs[i], delays[i]) }
                     last = b
-                } else if (b != last) {
+                } else if (b != last && jobs[5]?.isActive != true) {
                     // It moved under the ring: keep the stretch while the move is fresh, else follow.
                     val fresh = (System.nanoTime() - movedAt) / 1_000_000 < SETTLE_MS
                     listOf(b.left, b.top, b.right, b.bottom).forEachIndexed { i, v -> go(i, v, if (fresh) dirSpecs[i] else follow(), 0L) }

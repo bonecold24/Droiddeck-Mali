@@ -293,13 +293,14 @@ private fun ChannelCard(
     val pal = LocalPalette.current
     val src = remember { MutableInteractionSource() }
     val hot = rememberHot(src)
-    // Focus shows at once, as on the Components page: no ripple, no fade.
-    val fill = if (hot) pal.signal.copy(alpha = 0.14f) else if (selected) pal.signal.copy(alpha = 0.08f) else Color.Transparent
+    // Focus shows at once, as on the Components page: no ripple, no fade. Selection is the radio
+    // dot, never a ring of its own: the ring is only ever focus.
+    val fill = if (hot) pal.signal.copy(alpha = 0.14f) else Color.Transparent
     Row(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(14.dp),
         modifier = Modifier.fillMaxWidth().paneItem("channel:$title")
-            .clip(Shape14).background(colors.surface).background(fill).glideBorder(hot, Shape14, pal.signal, if (selected) pal.signal else pal.line)
+            .clip(Shape14).background(colors.surface).background(fill).glideBorder(hot, Shape14, pal.signal, pal.line)
             .alpha(if (enabled) 1f else 0.55f)
             .hoverable(src)
             .clickable(interactionSource = src, indication = null, enabled = enabled, role = Role.RadioButton, onClick = onClick)
@@ -316,9 +317,16 @@ private fun ChannelCard(
             }
             Text(hint, fontSize = 12.5.sp, color = colors.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
-        Box(contentAlignment = Alignment.Center, modifier = Modifier.size(22.dp).clip(CircleShape).border(2.dp, if (selected) pal.signal else pal.line2, CircleShape)) {
-            if (selected) Box(Modifier.size(11.dp).clip(CircleShape).background(pal.signal))
-        }
+        RadioDot(selected)
+    }
+}
+
+/** The one mark of a chosen option: a filled dot in a ring, beside it. */
+@Composable
+private fun RadioDot(selected: Boolean, size: androidx.compose.ui.unit.Dp = 22.dp) {
+    val pal = LocalPalette.current
+    Box(contentAlignment = Alignment.Center, modifier = Modifier.size(size).clip(CircleShape).border(2.dp, if (selected) pal.signal else pal.line2, CircleShape)) {
+        if (selected) Box(Modifier.size(size / 2).clip(CircleShape).background(pal.signal))
     }
 }
 
@@ -335,8 +343,8 @@ private fun TestRow(t: Release, selected: Boolean, onClick: () -> Unit) {
         modifier = Modifier.fillMaxWidth().paneItem("test:${t.pr}")
             .heightIn(min = 52.dp)
             .clip(Shape12)
-            .background(colors.surface).background(if (hot) pal.signal.copy(alpha = 0.14f) else if (selected) pal.signal.copy(alpha = 0.08f) else Color.Transparent)
-            .glideBorder(hot, Shape12, pal.signal, if (selected) pal.signal else pal.line)
+            .background(colors.surface).background(if (hot) pal.signal.copy(alpha = 0.14f) else Color.Transparent)
+            .glideBorder(hot, Shape12, pal.signal, pal.line)
             .hoverable(src)
             .clickable(interactionSource = src, indication = null, role = Role.RadioButton, onClick = onClick)
             .controllerConfirm(onClick = onClick)
@@ -347,6 +355,7 @@ private fun TestRow(t: Release, selected: Boolean, onClick: () -> Unit) {
             Text(t.title.ifBlank { stringResource(R.string.upd_pr, t.pr) }, fontSize = 13.5.sp, fontWeight = FontWeight.SemiBold, color = colors.onBackground, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Text(if (t.apk == null) stringResource(R.string.upd_not_built) else stringResource(R.string.upd_updated, ago(t.publishedAt)), fontSize = 12.sp, color = colors.onSurfaceVariant)
         }
+        RadioDot(selected, 20.dp)
     }
 }
 

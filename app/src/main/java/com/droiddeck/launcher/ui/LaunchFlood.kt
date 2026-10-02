@@ -139,6 +139,7 @@ internal fun LaunchFlood(
     val colors = MaterialTheme.colorScheme
     val pal = LocalPalette.current
     val start = fromColors ?: (colors.primary to pal.primary2)
+    VeilRing()
     // Left, top, right, bottom: 0 on the button, 1 on the page's edge. Springs overshoot past the
     // edge, off the page, so the wobble is felt in the pull and never seen as a shrink.
     val edges = remember { List(4) { Animatable(0f) } }
@@ -211,6 +212,7 @@ internal fun FloodReturn(flood: Color, to: Rect?, onProgress: (Float) -> Unit, o
     val colors = MaterialTheme.colorScheme
     val pal = LocalPalette.current
     val edges = remember { List(4) { Animatable(1f) } }
+    VeilRing()
     val fade = remember { Animatable(1f) }
     val landed by rememberUpdatedState(onLanded)
     val progress by rememberUpdatedState(onProgress)
@@ -253,6 +255,7 @@ internal fun FloodReturn(flood: Color, to: Rect?, onProgress: (Float) -> Unit, o
 @Composable
 internal fun FloodGather(flood: Color, ball: Pair<Offset, Float>?, onLanded: () -> Unit) {
     val gather = remember { Animatable(0f) }
+    VeilRing()
     var started by remember { mutableStateOf(false) }
     val landed by rememberUpdatedState(onLanded)
     LaunchedEffect(ball != null) {

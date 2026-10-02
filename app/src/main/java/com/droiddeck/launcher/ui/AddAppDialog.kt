@@ -46,6 +46,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.outlined.Apps
 import androidx.compose.material.icons.outlined.Terminal
 import androidx.compose.material3.Icon
@@ -489,10 +490,17 @@ private fun SuggestedIcon(url: String, selected: Boolean, onClick: () -> Unit) {
     Box(
         contentAlignment = Alignment.Center,
         modifier = Modifier.size(44.dp).graphicsLayer { scaleX = scale; scaleY = scale }.clip(Shape12).background(colors.surface)
-            .glideBorder(hot || selected, Shape12, pal.signal, pal.line2)
+            .glideBorder(hot, Shape12, pal.signal, pal.line2)
             .hoverable(src).clickable(interactionSource = src, indication = LocalIndication.current, onClick = onClick)
             .controllerConfirm(onClick = onClick),
-    ) { AsyncImage(model = ImageRequest.Builder(LocalContext.current).data(url).crossfade(true).build(), contentDescription = stringResource(R.string.add_app_icon), contentScale = ContentScale.Fit, modifier = Modifier.size(34.dp)) }
+    ) {
+        AsyncImage(model = ImageRequest.Builder(LocalContext.current).data(url).crossfade(true).build(), contentDescription = stringResource(R.string.add_app_icon), contentScale = ContentScale.Fit, modifier = Modifier.size(34.dp))
+        // The chosen one is ticked; the ring stays with focus.
+        if (selected) Box(
+            contentAlignment = Alignment.Center,
+            modifier = Modifier.align(Alignment.TopEnd).padding(2.dp).size(14.dp).clip(androidx.compose.foundation.shape.CircleShape).background(pal.signal),
+        ) { Icon(Icons.Filled.Check, contentDescription = null, tint = pal.onSignal, modifier = Modifier.size(10.dp)) }
+    }
 }
 
 /** The chosen file, or none yet, laid out like the app's text fields, with the button that picks it. */

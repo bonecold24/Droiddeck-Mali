@@ -419,13 +419,14 @@ private fun FrontEndScreenBody(s: FrontEndState, a: FrontEndActions, page: (@Com
         // A tile or button that opens a page goes away with the page it was on, and focus with it;
         // the pad then had nothing to move from (a press landed back on the rail's first item). So
         // once the new page is in, a controller lands on its main button.
-        // Closing a page: it stays on screen while it leaves (and holds focus there), so hand focus
-        // back now to the control it was opened from, and the ring folds back onto that.
+        // Backing out of a page: it stays on screen while it leaves (and holds focus there), so hand
+        // focus back now to the control it was opened from. Not when the page closed because
+        // another rail item was picked: focus is on the rail then, and stays there.
         var openPage by remember { mutableStateOf<String?>(null) }
         LaunchedEffect(s.pageKey) {
             val closed = openPage != null && s.pageKey == null
             openPage = s.pageKey
-            if (!closed || processSettingsPageVisible || inputModeManager.inputMode != InputMode.Keyboard) return@LaunchedEffect
+            if (!closed || frontFocus.focusedRail != null || processSettingsPageVisible || inputModeManager.inputMode != InputMode.Keyboard) return@LaunchedEffect
             withFrameNanos { }
             runCatching { frontFocus.paneEntry().requestFocus() }
         }

@@ -244,12 +244,13 @@ private fun ModeCard(icon: ImageVector, title: String, hint: String, selected: B
     val pal = LocalPalette.current
     val src = remember { MutableInteractionSource() }
     val hot = rememberHot(src)
-    val fill = if (hot) pal.signal.copy(alpha = 0.14f) else if (selected) pal.signal.copy(alpha = 0.08f) else Color.Transparent
+    // Selection is the radio; the ring is only ever focus.
+    val fill = if (hot) pal.signal.copy(alpha = 0.14f) else Color.Transparent
     Row(
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp),
         modifier = modifier.paneItem("gpu-mode:$title").heightIn(min = 56.dp)
             .clip(Shape14).background(colors.surface).background(fill)
-            .border(if (hot) 2.dp else 1.dp, if (hot || selected) pal.signal else pal.line, Shape14)
+            .glideBorder(hot, Shape14, pal.signal, pal.line)
             .hoverable(src).clickable(interactionSource = src, indication = null, role = Role.RadioButton, onClick = onClick)
             .controllerConfirm(onClick = onClick)
             .padding(horizontal = 14.dp, vertical = 10.dp),
@@ -270,12 +271,12 @@ private fun PairLine(p: PairRow, busy: Boolean, percent: Int, enabled: Boolean, 
     val src = remember { MutableInteractionSource() }
     val hot = rememberHot(src)
     val usable = enabled && p.complete && !p.active
-    val fill = if (hot) pal.signal.copy(alpha = 0.14f) else if (p.active) pal.signal.copy(alpha = 0.08f) else Color.Transparent
+    val fill = if (hot) pal.signal.copy(alpha = 0.14f) else Color.Transparent
     Row(
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp),
         modifier = Modifier.fillMaxWidth().paneItem("pair:${p.key}").heightIn(min = 56.dp)
             .clip(Shape12).background(colors.surface).background(fill)
-            .border(if (hot) 2.dp else 1.dp, if (hot || p.active) pal.signal else pal.line, Shape12)
+            .glideBorder(hot, Shape12, pal.signal, pal.line)
             .hoverable(src).clickable(interactionSource = src, indication = null, enabled = usable, role = Role.RadioButton, onClick = onClick)
             .controllerConfirm(enabled = usable, onClick = onClick)
             .padding(horizontal = 14.dp, vertical = 8.dp),
