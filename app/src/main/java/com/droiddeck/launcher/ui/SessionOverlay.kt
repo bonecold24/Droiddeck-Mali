@@ -92,6 +92,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -145,7 +146,8 @@ private class DrawerFocus {
         } else if (focused == key) focused = null
     }
 
-    fun target(page: Int) = last[page] ?: drawerPageEntries[page]
+    /** Where focus was last on [page], if anywhere. */
+    fun target(page: Int) = last[page]
     fun request(key: String) = runCatching { requester(key).requestFocus() }
     fun forget(page: Int) { last[page] = null }
 }
@@ -232,6 +234,9 @@ fun SessionDrawer(open: Boolean, page: Int, controllerActive: Boolean, onPageCha
     LaunchedEffect(open, controllerActive) {
         if (open && !controllerActive) focusManager.clearFocus(force = true)
     }
+    // The page focus was last put on: turning to another (LB, RB, a tab) starts it at its first
+    // option; anything else (a menu closing, the drawer opening again) goes back where it was.
+    var focusedPage by remember { mutableIntStateOf(page) }
     LaunchedEffect(open, page, controllerActive, host.open, appToChooseDisplay, confirmStop) {
         if (!open) {
             host.open = null
@@ -239,14 +244,19 @@ fun SessionDrawer(open: Boolean, page: Int, controllerActive: Boolean, onPageCha
         } else if (controllerActive) {
             inputModeManager.requestInputMode(InputMode.Keyboard)
             if (host.open != null || appToChooseDisplay != null || confirmStop) return@LaunchedEffect
-            val target = focus.target(page)
+            val turned = page != focusedPage
+            focusedPage = page
+            // The page's top control: on Settings that is Android apps, when it is shown.
+            val first = if (page == drawerPageEntries.lastIndex && a.isHomeApp) "apps" else drawerPageEntries[page]
+            if (turned) focus.forget(page)
+            val target = focus.target(page) ?: first
             repeat(24) {
                 androidx.compose.runtime.withFrameNanos { }
                 focus.request(target)
                 if (focus.focused == target) return@LaunchedEffect
             }
             focus.forget(page)
-            focus.request(drawerPageEntries[page])
+            focus.request(first)
         }
     }
     if (open || veil > 0.01f) Box(
