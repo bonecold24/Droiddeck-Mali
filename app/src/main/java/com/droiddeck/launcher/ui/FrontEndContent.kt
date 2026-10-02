@@ -4,6 +4,17 @@ import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.runtime.CompositionLocalProvider
 import android.os.Build
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.EnterExitState
+import androidx.compose.animation.ExitTransition
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
@@ -86,6 +97,7 @@ import java.io.File
 
 // The front end's right-hand pane and the page it shows: backdrop, desktop card and emulators.
 
+@OptIn(androidx.compose.animation.ExperimentalAnimationApi::class)
 @Composable
 internal fun Pane(
     s: FrontEndState, selected: String, a: FrontEndActions, page: (@Composable () -> Unit)?, modifier: Modifier,
@@ -102,17 +114,53 @@ internal fun Pane(
             else -> null
         }
         Backdrop(backdropArt)
+        val pal = LocalPalette.current
+        // Pages keep drawing while they leave, so one can fold away instead of blinking out.
+        val pages = remember { HashMap<String, @Composable () -> Unit>() }
+        // Pages opened from a control (the cog), with where that control sat, in this pane's coordinates.
+        val origins = remember { HashMap<String, Rect>() }
+        val paneAt = remember { arrayOf(Offset.Zero) }
+        val livePage by rememberUpdatedState(s.pageKey)
+        // Picking another game changes the detail beside the list, not the whole page.
+        val target = if (page != null && s.pageKey != null) s.pageKey else if (selected.startsWith("app:")) "games" else selected
+        if (page != null && s.pageKey != null) {
+            pages[s.pageKey] = page
+            if (s.pageKey !in origins) PageOrigin.take()?.let { origins[s.pageKey] = it.translate(-paneAt[0]) }
+        }
         AnimatedContent(
-            // Picking another game changes the detail beside the list, not the whole page.
-            targetState = if (page != null && s.pageKey != null) s.pageKey else if (selected.startsWith("app:")) "games" else selected,
+            targetState = target,
+            modifier = Modifier.onGloballyPositioned { paneAt[0] = it.positionInRoot() },
             transitionSpec = {
-                (fadeIn(Motion.tw(300, 80)) + slideInVertically(Motion.tw(420, 80)) { it / 24 })
-                    .togetherWith(fadeOut(Motion.tw(170)) + slideOutVertically(Motion.tw(170)) { -it / 40 })
-                    .apply { targetContentZIndex = 1f }
+                when {
+                    // Into a page from its control: the page blooms over a pane that sinks back.
+                    targetState in origins -> (fadeIn(Motion.tw(120)))
+                        .togetherWith(fadeOut(Motion.tw(320, 80)) + scaleOut(Motion.tw(480), targetScale = 0.95f))
+                        .apply { targetContentZIndex = 1f }
+                    // Back out of it: the page folds into the control as the pane comes forward again.
+                    initialState in origins -> (fadeIn(Motion.tw(300, 100)) + scaleIn(Motion.tw(460, 40), initialScale = 0.95f))
+                        .togetherWith(ExitTransition.None)
+                        .apply { targetContentZIndex = -1f }
+                    else -> (fadeIn(Motion.tw(300, 80)) + slideInVertically(Motion.tw(420, 80)) { it / 24 })
+                        .togetherWith(fadeOut(Motion.tw(170)) + slideOutVertically(Motion.tw(170)) { -it / 40 })
+                        .apply { targetContentZIndex = 1f }
+                }
             },
             label = "pane",
         ) { key ->
-            if (page != null && key == s.pageKey) page()
+            val shown = if (page != null && key == s.pageKey) page else pages[key]
+            if (shown != null) {
+                DisposableEffect(key) { onDispose { if (key != livePage) { pages.remove(key); origins.remove(key) } } }
+                val from = origins[key]
+                if (from == null) shown()
+                else {
+                    val open by transition.animateFloat(
+                        // An even ease, not Motion.Ease: that one covers most of the pane in its first tenth.
+                        transitionSpec = { if (targetState == EnterExitState.Visible) Motion.tw(620, easing = FastOutSlowInEasing) else Motion.tw(440, easing = FastOutSlowInEasing) },
+                        label = "bloom",
+                    ) { if (it == EnterExitState.Visible) 1f else 0f }
+                    Box(Modifier.fillMaxSize().bloom({ open }, from.center, from.minDimension / 2f, pal.background, pal.signal)) { shown() }
+                }
+            }
             else Content(s, if (key == "games") selected else key, a, Modifier.fillMaxSize(), onSelect, onAndroidAppClick, onOpenDeveloperOptions, onRequestWirelessAdb)
         }
       }

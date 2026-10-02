@@ -1069,9 +1069,16 @@ class MainActivity : ComponentActivity() {
 
     /** The added games as the settings page lists them; a scan of the folder, on this thread (one level, small). */
     private fun refreshAddedGames() {
-        addedGames = com.droiddeck.launcher.frontend.AddedGames.scan(this).map { g ->
-            com.droiddeck.launcher.ui.AddedGameRow(g.folder.path, g.folderName(), g.exe.path, g.exe.name, g.candidates.map { c -> c.path to c.name }.distinctBy { it.first })
-        }
+        addedGames = scanAddedGames()
+        fetchAddedGameArt()
+    }
+
+    /** Walks the added-games folders, which can sit on slow shared storage or an SD card. */
+    private fun scanAddedGames() = com.droiddeck.launcher.frontend.AddedGames.scan(this).map { g ->
+        com.droiddeck.launcher.ui.AddedGameRow(g.folder.path, g.folderName(), g.exe.path, g.exe.name, g.candidates.map { c -> c.path to c.name }.distinctBy { it.first })
+    }
+
+    private fun fetchAddedGameArt() {
         // Art the games do not have yet, from Steam's store, off the main thread; the rail
         // redraws when something arrives.
         if (SessionPrefs.addedGamesArt(this) && !artFetchRunning) {
@@ -1092,7 +1099,6 @@ class MainActivity : ComponentActivity() {
         showProtons = false
         showComponents = false
         showMapping = false
-        drivers.refreshDrivers()
         resolutionCap = SessionPrefs.resolutionCap(this, mode)
         customResolution = SessionPrefs.customResolution(this, mode)
         fexPreset = SessionPrefs.fexPreset(this)
@@ -1102,7 +1108,6 @@ class MainActivity : ComponentActivity() {
         steamController = SessionPrefs.steamController(this)
         runSteamAtStartup = SessionPrefs.runSteamAtStartup(this)
         addedGamesDirs = SessionPrefs.addedGamesDirs(this)
-        refreshAddedGames()
         shapeMode = SessionPrefs.shapeMode(this)
         hdrOn = SessionPrefs.hdr(this, mode)
         fpsLimit = SessionPrefs.fpsLimit(this, mode)
@@ -1118,13 +1123,26 @@ class MainActivity : ComponentActivity() {
         mic = SessionPrefs.micEnabled(this)
         renderer = SessionPrefs.desktopRenderer(this)
         gameStorage = SessionPrefs.gameStorage(this)
-        storageOptions = GameStorage.options(this).map { it.label to it.path }
-        if (mode == SessionService.MODE_STEAM) {
-            decky.deckyInstalled = DeckyManager.installed(this)
-            decky.deckySupervisor = DeckyManager.supervisorEnabled(this)
-            decky.refreshDecky()
-        }
         settingsMode = mode
+        // The page opens at once, on what was last read; the slow part (driver files, a walk of the
+        // added-games folders, the storage volumes) lands while it animates in.
+        Thread({
+            drivers.refreshDrivers()
+            val games = scanAddedGames()
+            val storage = GameStorage.options(this).map { it.label to it.path }
+            val deckyInstalled = if (mode == SessionService.MODE_STEAM) DeckyManager.installed(this) else null
+            val deckySupervisor = mode == SessionService.MODE_STEAM && DeckyManager.supervisorEnabled(this)
+            ui.post {
+                addedGames = games
+                storageOptions = storage
+                if (mode == SessionService.MODE_STEAM) {
+                    decky.deckyInstalled = deckyInstalled
+                    decky.deckySupervisor = deckySupervisor
+                    decky.refreshDecky()
+                }
+                fetchAddedGameArt()
+            }
+        }, "mode-settings").start()
     }
 
     /** A second Steam library, proven writable first; "" = internal only. */
