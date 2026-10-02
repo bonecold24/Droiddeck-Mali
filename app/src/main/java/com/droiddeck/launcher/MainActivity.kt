@@ -47,6 +47,7 @@ import com.droiddeck.launcher.core.CpuCores
 import com.droiddeck.launcher.core.PhantomProcessLimit
 import com.droiddeck.launcher.core.PhantomProcessStatus
 import com.droiddeck.launcher.core.WirelessAdbFix
+import com.droiddeck.launcher.core.WifiDiscovery
 import com.droiddeck.launcher.core.WirelessAdbPairingService
 import com.droiddeck.launcher.ui.CoreRow
 import com.droiddeck.launcher.ui.PerformancePage
@@ -149,6 +150,24 @@ class MainActivity : ComponentActivity() {
     private var launcherFullscreen by mutableStateOf(true)
     private var storeEnabled by mutableStateOf(false)
     private var mic by mutableStateOf(false)
+    private var wifiDiscovery by mutableStateOf(false)
+    private var wifiDiscoveryPermission by mutableStateOf(false)
+    private var wifiDiscoveryLocation by mutableStateOf(false)
+    private var wifiDiscoveryAsked by mutableStateOf(false)
+    private var wifiDiscoveryBlocked by mutableStateOf(false)
+    private val wifiLocationReceiver = object : android.content.BroadcastReceiver() {
+        override fun onReceive(context: android.content.Context?, intent: Intent?) {
+            refreshWifiDiscovery()
+        }
+    }
+    private val wifiLocationPermission = registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
+        SessionPrefs.setWifiDiscoveryEnabled(this, WifiDiscovery.permissionGranted(this))
+        refreshWifiDiscovery()
+    }
+    private val wifiPermissionSettings = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) {
+        SessionPrefs.setWifiDiscoveryEnabled(this, WifiDiscovery.permissionGranted(this))
+        refreshWifiDiscovery()
+    }
 
     // The app's own picker (files/), once per kind of pick: the two driver lists validate
     // differently, and the reason a zip is refused names the list it belongs in.
@@ -174,6 +193,28 @@ class MainActivity : ComponentActivity() {
     private val pickSaveDir = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { r ->
         val then = onSavePicked.also { onSavePicked = null } ?: return@registerForActivityResult
         if (r.resultCode == RESULT_OK) InAppFilePicker.pickedFile(r.data)?.let(then)
+    }
+
+    private fun refreshWifiDiscovery() {
+        wifiDiscoveryPermission = WifiDiscovery.permissionGranted(this)
+        wifiDiscoveryLocation = WifiDiscovery.locationEnabled(this)
+        wifiDiscoveryAsked = SessionPrefs.wifiDiscoveryAsked(this)
+        wifiDiscoveryBlocked = !wifiDiscoveryPermission && wifiDiscoveryAsked &&
+            WifiDiscovery.permissions.none { shouldShowRequestPermissionRationale(it) }
+        // A revoked grant must not leave an enabled switch behind.
+        if (!wifiDiscoveryPermission && SessionPrefs.wifiDiscoveryEnabled(this)) {
+            SessionPrefs.setWifiDiscoveryEnabled(this, false)
+        }
+        wifiDiscovery = SessionPrefs.wifiDiscoveryEnabled(this)
+    }
+
+    private fun openWifiDiscoverySettings() {
+        if (!WifiDiscovery.permissionGranted(this)) {
+            wifiPermissionSettings.launch(Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                Uri.parse("package:$packageName")))
+        } else {
+            startActivity(Intent(android.provider.Settings.ACTION_LOCATION_SOURCE_SETTINGS))
+        }
     }
 
     /** Takes a new or updated Lossless Scaling from Steam and shows what LSFG can use. */
@@ -680,6 +721,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
+        refreshWifiDiscovery()
         com.droiddeck.launcher.ui.Motion.refresh(this)
         // Back from a session stopped behind a flood: open on its blue, before the first frame.
         com.droiddeck.launcher.ui.QuitFlood.take()?.let { c ->
@@ -717,6 +759,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onStart() {
         super.onStart()
+        registerReceiver(wifiLocationReceiver, android.content.IntentFilter(android.location.LocationManager.MODE_CHANGED_ACTION))
         displayManager.registerDisplayListener(secondScreenDisplayListener, ui)
         refreshSecondScreenDisplays()
     }
@@ -727,6 +770,7 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onStop() {
+        unregisterReceiver(wifiLocationReceiver)
         displayManager.unregisterDisplayListener(secondScreenDisplayListener)
         // The session covers the page by now; coming back finds it as it was.
         flood = null
@@ -963,6 +1007,11 @@ class MainActivity : ComponentActivity() {
                 mangoapp = mangoapp,
                 steamController = if (mode == SessionService.MODE_STEAM) steamController else null,
                 runSteamAtStartup = mode == SessionService.MODE_STEAM && runSteamAtStartup,
+                wifiDiscovery = if (mode == SessionService.MODE_STEAM) wifiDiscovery else null,
+                wifiDiscoveryPermission = wifiDiscoveryPermission,
+                wifiDiscoveryLocation = wifiDiscoveryLocation,
+                wifiDiscoveryAsked = wifiDiscoveryAsked,
+                wifiDiscoveryBlocked = wifiDiscoveryBlocked,
                 addedGamesDirs = if (mode == SessionService.MODE_STEAM) addedGamesDirs else null,
                 addedGames = if (mode == SessionService.MODE_STEAM) addedGames else emptyList(),
                 addedGamesArt = addedGamesArt,
@@ -972,6 +1021,21 @@ class MainActivity : ComponentActivity() {
                 deckyEnabled = decky.deckySupervisor, deckySessionRunning = SessionState.running,
             ),
             ModeSettingsActions(
+                onWifiDiscovery = { on ->
+                    if (!on) {
+                        SessionPrefs.setWifiDiscoveryEnabled(this, false)
+                        refreshWifiDiscovery()
+                    } else if (WifiDiscovery.permissionGranted(this)) {
+                        SessionPrefs.setWifiDiscoveryEnabled(this, true)
+                        refreshWifiDiscovery()
+                    } else if (wifiDiscoveryBlocked) {
+                        openWifiDiscoverySettings()
+                    } else {
+                        SessionPrefs.setWifiDiscoveryAsked(this)
+                        wifiLocationPermission.launch(WifiDiscovery.permissions)
+                    }
+                },
+                onWifiDiscoverySettings = { openWifiDiscoverySettings() },
                 onResolution = { cap -> SessionPrefs.setResolutionCap(this, mode, cap); resolutionCap = cap },
                 onCustomResolution = { size -> SessionPrefs.setCustomResolution(this, mode, size); customResolution = size },
                 onShape = { shape -> SessionPrefs.setShapeMode(this, shape); shapeMode = shape },
@@ -1126,6 +1190,7 @@ class MainActivity : ComponentActivity() {
         forceFullscreen = SessionPrefs.forceFullscreen(this)
         stretch16x9 = SessionPrefs.stretch16x9(this)
         mic = SessionPrefs.micEnabled(this)
+        refreshWifiDiscovery()
         renderer = SessionPrefs.desktopRenderer(this)
         gameStorage = SessionPrefs.gameStorage(this)
         settingsMode = mode
