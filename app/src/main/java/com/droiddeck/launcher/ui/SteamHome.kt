@@ -1,5 +1,7 @@
 package com.droiddeck.launcher.ui
 
+import com.droiddeck.launcher.R
+import androidx.compose.ui.res.stringResource
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
@@ -94,7 +96,7 @@ internal fun SteamHome(s: FrontEndState, a: FrontEndActions, modifier: Modifier)
         ) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text(
-                    "Steam", fontSize = if (narrow) 34.sp else 44.sp, lineHeight = if (narrow) 40.sp else 50.sp,
+                    stringResource(R.string.rail_steam), fontSize = if (narrow) 34.sp else 44.sp, lineHeight = if (narrow) 40.sp else 50.sp,
                     fontWeight = FontWeight.Bold, color = colors.onBackground, maxLines = 1,
                 )
                 // Said only when something stands between Play and Steam; a ready runtime needs no words.
@@ -103,7 +105,7 @@ internal fun SteamHome(s: FrontEndState, a: FrontEndActions, modifier: Modifier)
             Spacer(Modifier.height(18.dp))
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 // Enabled without a runtime: the session's loading screen installs it first.
-                PrimaryButton("Play Steam", enabled = !s.busy, main = true, large = true, icon = Icons.Filled.PlayArrow, onClick = a.onPlay)
+                PrimaryButton(stringResource(R.string.games_play_steam), enabled = !s.busy, main = true, large = true, icon = Icons.Filled.PlayArrow, onClick = a.onPlay)
                 Cog(size = 54.dp, onClick = a.onSteamSettings)
             }
         }

@@ -1,6 +1,8 @@
 package com.droiddeck.launcher.ui
 
 import java.io.File
+import androidx.compose.ui.res.stringResource
+import com.droiddeck.launcher.R
 
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.runtime.CompositionLocalProvider
@@ -501,7 +503,7 @@ private fun FrontEndScreenBody(s: FrontEndState, a: FrontEndActions, page: (@Com
         if (showDeveloperDisplayChoice) {
             DeveloperDisplayChoiceDialog(
                 displays = s.secondScreenDisplays.map { display ->
-                    display.id to if (s.secondScreenDisplays.size == 1) "Bottom screen" else display.label
+                    display.id to if (s.secondScreenDisplays.size == 1) stringResource(R.string.screen_bottom) else display.label
                 },
                 onMainScreen = {
                     showDeveloperDisplayChoice = false
