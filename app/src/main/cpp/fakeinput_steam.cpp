@@ -1488,8 +1488,8 @@ __attribute__((visibility("hidden"))) static int open_deck_hidraw(int flags) {
 // into /sys, so those paths are said to be sysfs; nothing else is touched.
 static constexpr long SYSFS_FS_MAGIC = 0x62656572;
 
-// FAKE_DECK_SYSFS_LISTING: stand-ins for the listings of /sys, /sys/class and /sys/bus
-// (SteamDeckPad.listingDir), for a client that is not allowed to list the real ones.
+// FAKE_DECK_SYSFS_LISTING: the merged /sys/class listing and denied-listing stand-ins for
+// /sys and /sys/bus (SteamDeckPad.listingDir).
 __attribute__((visibility("hidden"))) static const char *deck_listing_dir() {
   static const char *dir = getenv("FAKE_DECK_SYSFS_LISTING");
   return dir && *dir ? dir : nullptr;
@@ -1497,46 +1497,58 @@ __attribute__((visibility("hidden"))) static const char *deck_listing_dir() {
 
 __attribute__((visibility("hidden"))) static bool is_deck_sysfs_path(const char *path) {
   if (!path) return false;
-  if (!strncmp(path, "/sys/devices/droiddeck", 22) || !strncmp(path, "/sys/class/hidraw", 17)) return true;
+  auto under = [path](const char *root) {
+    if (!root || !*root) return false;
+    size_t n = strlen(root);
+    return !strncmp(path, root, n) && (path[n] == '\0' || path[n] == '/');
+  };
+  if (under("/sys/devices/droiddeck") || under("/sys/class/hidraw")) return true;
   const char *listing = deck_listing_dir();
-  return listing && !strncmp(path, listing, strlen(listing));
+  // /proc/self/fd can name the canonical Android backing file instead of the guest bind.
+  // Without recognising that alias, sd-device rejects the tree as outside sysfs.
+  static const char *root = getenv("FAKE_DECK_SYSFS_ROOT");
+  return under(listing) || under(root);
 }
 
-__attribute__((visibility("hidden"))) static bool is_deck_sysfs_fd(int fd) {
+__attribute__((visibility("hidden"))) static std::string fd_path(int fd) {
   char link[64], path[PATH_MAX];
   snprintf(link, sizeof(link), "/proc/self/fd/%d", fd);
   ssize_t length = readlink(link, path, sizeof(path) - 1);
-  if (length <= 0) return false;
-  path[length] = '\0';
-  return is_deck_sysfs_path(path);
+  return length > 0 ? std::string(path, length) : std::string();
 }
 
-// Once per process: proof the client's enumeration reached the Deck's sysfs at all. No line here
-// and no open of /dev/hidraw16 means the client never looked; a line here and no open means it
-// looked and turned the device down.
-__attribute__((visibility("hidden"))) static void note_deck_sysfs(const char *how, int result) {
+// Once per process: which guest or backing path sd-device checked and the filesystem it found.
+__attribute__((visibility("hidden"))) static void note_deck_sysfs(const char *path, int result, long type) {
   static std::atomic<bool> noted{false};
   if (!noted.exchange(true))
-    Logger::log("deck: sysfs checked (%s%s)\n", how, result == 0 ? "" : ", failed");
+    Logger::log("deck: sysfs checked %s (%s, type 0x%lx%s)\n", path,
+                result == 0 ? "ok" : "failed", type, result == 0 ? " -> sysfs" : "");
 }
 
 EXPORT int fstatfs(int fd, struct statfs *buf) {
   static auto real = reinterpret_cast<int (*)(int, struct statfs *)>(dlsym(RTLD_NEXT, "fstatfs"));
   int result = real(fd, buf);
-  if (fake_deck_enabled() && is_deck_sysfs_fd(fd)) {
-    note_deck_sysfs("fstatfs", result);
-    if (result == 0) buf->f_type = SYSFS_FS_MAGIC;
+  int saved_errno = errno;
+  if (fake_deck_enabled()) {
+    std::string path = fd_path(fd);
+    if (is_deck_sysfs_path(path.c_str())) {
+      note_deck_sysfs(path.c_str(), result, result == 0 ? buf->f_type : 0);
+      if (result == 0) buf->f_type = SYSFS_FS_MAGIC;
+    }
   }
+  errno = saved_errno;
   return result;
 }
 
 EXPORT int statfs(const char *path, struct statfs *buf) {
   static auto real = reinterpret_cast<int (*)(const char *, struct statfs *)>(dlsym(RTLD_NEXT, "statfs"));
   int result = real(path, buf);
+  int saved_errno = errno;
   if (fake_deck_enabled() && is_deck_sysfs_path(path)) {
-    note_deck_sysfs(path, result);
+    note_deck_sysfs(path, result, result == 0 ? buf->f_type : 0);
     if (result == 0) buf->f_type = SYSFS_FS_MAGIC;
   }
+  errno = saved_errno;
   return result;
 }
 
@@ -1698,31 +1710,68 @@ __attribute__((visibility("hidden"))) static std::string note_sys_failure(int di
   return path;
 }
 
-// An enforcing SELinux policy (every retail phone; the Thor only with it forced on) refuses an app
-// a listing of /sys, /sys/class and /sys/bus. libudev lists /sys/class to find the subsystems to
-// descend into and gives up its whole scan when it cannot, so the client never reached hidraw and
-// found no Deck. The client is listed the stand-ins instead - hidraw under class - and opens
-// /sys/class/hidraw itself, which is ours and readable. Only on that refusal, only for the client.
-__attribute__((visibility("hidden"))) static std::string deck_listing_for(const char *path) {
+// A bind does not add its name to a real parent's listing. Always show Steam the merged class
+// listing, even on a readable kernel whose real /sys/class lacks hidraw. /sys and /sys/bus keep
+// their real listings unless SELinux denies them. Other processes and Xbox mode keep real sysfs.
+__attribute__((visibility("hidden"))) static std::string deck_listing_for(const char *path, bool refused = false) {
   const char *listing = deck_listing_dir();
-  if (!path || !listing || errno != EACCES || !fake_deck_enabled() || !process_is_steam_client()) return {};
+  if (!path || !listing || !fake_deck_enabled() || !process_is_steam_client()) return {};
   std::string p(path);
   while (p.size() > 1 && p.back() == '/') p.pop_back();
+  // Also handle openat on the /sys stand-in's directory fd.
+  if (p.compare(0, strlen(listing) + 5, std::string(listing) + "/sys/") == 0)
+    p = "/sys/" + p.substr(strlen(listing) + 5);
   int which = p == "/sys" ? 0 : p == "/sys/class" ? 1 : p == "/sys/bus" ? 2 : -1;
-  if (which < 0) return {};
+  if (which < 0 || (which != 1 && (!refused || errno != EACCES))) return {};
   static const char *const names[] = {"sys", "class", "bus"};
   static std::atomic<int> logged{0};
   if (!(logged.fetch_or(1 << which) & (1 << which)))
-    Logger::log("sysfs: %s listed from the Deck's stand-in\n", p.c_str());
+    Logger::log("sysfs: %s listed from the Deck's %s\n", p.c_str(),
+                which == 1 ? "merged classes" : "denied-listing stand-in");
   return std::string(listing) + "/" + names[which];
+}
+
+__attribute__((visibility("hidden"))) static std::string path_at(int dirfd, const char *path) {
+  if (!path) return {};
+  if (*path == '/') return path;
+  int saved_errno = errno;
+  std::string dir;
+  if (dirfd == AT_FDCWD) {
+    char cwd[PATH_MAX];
+    if (getcwd(cwd, sizeof(cwd))) dir = cwd;
+  } else {
+    dir = fd_path(dirfd);
+  }
+  std::string resolved = dir.empty() ? std::string() : dir + "/" + path;
+  errno = saved_errno;
+  return resolved;
+}
+
+// The listing supplies names only. A relative open on its fd must descend into real sysfs (or
+// the bound hidraw class), not into an empty placeholder. In particular sd-device's chase uses
+// openat(O_PATH) on each component; symlinks back to /sys/class would loop through this listing.
+__attribute__((visibility("hidden"))) static std::string deck_listing_child(int dirfd, const char *path) {
+  const char *listing = deck_listing_dir();
+  if (!listing || !fake_deck_enabled() || !process_is_steam_client()) return {};
+  std::string p = path_at(dirfd, path);
+  for (const char *name : {"class", "sys"}) {
+    std::string prefix = std::string(listing) + "/" + name + "/";
+    if (p.compare(0, prefix.size(), prefix) == 0)
+      return std::string(!strcmp(name, "class") ? "/sys/class/" : "/sys/") + p.substr(prefix.size());
+  }
+  return {};
 }
 
 EXPORT DIR *opendir(const char *name) {
   static auto real = reinterpret_cast<DIR *(*)(const char *)>(dlsym(RTLD_NEXT, "opendir"));
+  std::string child = deck_listing_child(AT_FDCWD, name);
+  if (!child.empty()) name = child.c_str();
+  std::string listing = deck_listing_for(name);
+  if (!listing.empty()) return real(listing.c_str());
   DIR *dir = real(name);
   if (!dir) {
     note_sys_failure(AT_FDCWD, name);
-    std::string listing = deck_listing_for(name);
+    listing = deck_listing_for(name, true);
     if (!listing.empty()) dir = real(listing.c_str());
   }
   return dir;
@@ -1787,13 +1836,21 @@ EXPORT int open(const char *pathname, int flags, ...) {
     }
   }
 
+  std::string listing;
+  std::string child;
+  if ((flags & O_ACCMODE) == O_RDONLY && !(flags & (O_CREAT | O_TRUNC))) {
+    child = deck_listing_child(AT_FDCWD, pathname);
+    if (!child.empty()) pathname = child.c_str();
+    listing = deck_listing_for(pathname);
+  }
+  if (!listing.empty()) pathname = listing.c_str();
   if (hasMode)
     fd = my_open(pathname, flags, mode);
   else
     fd = my_open(pathname, flags);
   if (fd < 0) {
-    std::string listing = deck_listing_for(note_sys_failure(AT_FDCWD, pathname).c_str());
-    if (!listing.empty()) fd = my_open(listing.c_str(), flags);
+    std::string fallback = deck_listing_for(note_sys_failure(AT_FDCWD, pathname).c_str(), true);
+    if (!fallback.empty()) fd = my_open(fallback.c_str(), flags);
   }
 
   if (fake_path)
@@ -1861,13 +1918,29 @@ EXPORT int openat(int dirfd, const char *pathname, int flags, ...) {
     }
   }
 
+  std::string listing;
+  std::string child;
+  if (fake_deck_enabled() && process_is_steam_client() &&
+      (flags & O_ACCMODE) == O_RDONLY && !(flags & (O_CREAT | O_TRUNC))) {
+    child = deck_listing_child(dirfd, pathname);
+    if (!child.empty()) {
+      dirfd = AT_FDCWD;
+      pathname = child.c_str();
+    }
+    listing = deck_listing_for(path_at(dirfd, pathname).c_str());
+  }
+  if (!listing.empty()) {
+    dirfd = AT_FDCWD;
+    pathname = listing.c_str();
+  }
   if (hasMode)
     fd = my_openat(dirfd, pathname, flags, mode);
   else
     fd = my_openat(dirfd, pathname, flags);
   if (fd < 0) {
-    std::string listing = deck_listing_for(note_sys_failure(dirfd, pathname).c_str());
-    if (!listing.empty()) fd = my_openat(AT_FDCWD, listing.c_str(), flags);
+    note_sys_failure(dirfd, pathname);
+    std::string fallback = deck_listing_for(path_at(dirfd, pathname).c_str(), true);
+    if (!fallback.empty()) fd = my_openat(AT_FDCWD, fallback.c_str(), flags);
   }
 
   if (fake_path)
@@ -2033,7 +2106,17 @@ EXPORT int scandir(const char *dirp, struct dirent ***namelist,
     }
   }
 
-  return my_scandir(dirp, namelist, filter, compar);
+  std::string child = deck_listing_child(AT_FDCWD, dirp);
+  if (!child.empty()) dirp = child.c_str();
+  std::string listing = deck_listing_for(dirp);
+  if (!listing.empty()) return my_scandir(listing.c_str(), namelist, filter, compar);
+  int result = my_scandir(dirp, namelist, filter, compar);
+  if (result < 0) {
+    note_sys_failure(AT_FDCWD, dirp);
+    listing = deck_listing_for(dirp, true);
+    if (!listing.empty()) result = my_scandir(listing.c_str(), namelist, filter, compar);
+  }
+  return result;
 }
 
 EXPORT int inotify_add_watch(int fd, const char *pathname, uint32_t mask) {

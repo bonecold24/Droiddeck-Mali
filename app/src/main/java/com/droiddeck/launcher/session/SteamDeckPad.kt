@@ -24,10 +24,11 @@ import java.io.File
  *   runtime already binds there for the GPU);
  * - `/run/udev/data/c240:16` - the udev database entry that marks the device initialised, without
  *   which libudev's enumeration leaves a device node out;
- * - [listingDir] - stand-ins for the listings of `/sys`, `/sys/class` and `/sys/bus`. An app under
- *   an enforcing SELinux policy (every retail phone) may not list those directories, and libudev
- *   abandons its whole scan when it cannot, so the client never reached `hidraw`; libfakeinput
- *   lists these to the client instead when the real listing is refused (FAKE_DECK_SYSFS_LISTING).
+ * - [listingDir] - a merged `/sys/class` listing, with the host's class names plus `hidraw`.
+ *   A proot bind is reachable by path but does not add its name to the parent's directory listing;
+ *   a kernel without a native `hidraw` class therefore hid our bound class from libudev. The
+ *   libfakeinput routes relative opens back to the real guest paths. `/sys` and `/sys/bus` also have minimal
+ *   stand-ins for a client whose SELinux policy refuses those listings.
  *
  * Symlinks are absolute guest paths; proot resolves them inside the session.
  */
@@ -53,6 +54,9 @@ object SteamDeckPad {
 
     /** Where [prepare] puts the stand-in listings; bound into the guest at the same path. */
     fun listingDir(sessionRoot: File) = File(sessionRoot, "sys/deck/listing")
+
+    /** The canonical backing path, also used when a guest fd resolves to its Android path. */
+    fun sysfsRoot(sessionRoot: File) = File(sessionRoot, "sys/deck").canonicalPath
 
     /** Writes the tree and returns the `host:guest` binds for it, or none if it could not be made. */
     fun prepare(context: Context, sessionRoot: File): List<String> {
@@ -97,10 +101,19 @@ object SteamDeckPad {
             hidrawClass.mkdirs()
             link(File(hidrawClass, NODE), HIDRAW)
 
-            // Only the names matter: libudev reads a listing for the subsystems to descend into and
-            // then opens /sys/class/hidraw itself, which is the bind above.
+            // Snapshot the host's class names at session start. Relative opens on the listing's
+            // fd are routed back to /sys/class/<name>, retaining their real attributes. Use dirs:
+            // a link back to /sys/class/<name> loops when sd-device chases it through this listing.
             val listing = listingDir(sessionRoot)
-            for (name in listOf("sys/bus", "sys/class", "sys/devices", "class/hidraw", "bus")) File(listing, name).mkdirs()
+            for (name in listOf("sys/bus", "sys/class", "sys/devices", "class", "bus")) File(listing, name).mkdirs()
+            val nativeClasses = File("/sys/class").list()
+            for (name in (nativeClasses?.toList().orEmpty() + "hidraw").distinct()) {
+                File(listing, "class/$name").mkdirs()
+            }
+            Log.i(TAG, "deck pad: native /sys/class " + when (nativeClasses) {
+                null -> "not listable; merged listing contains hidraw only"
+                else -> "${nativeClasses.size} classes, hidraw ${if ("hidraw" in nativeClasses) "present" else "absent"}; merged listing includes hidraw"
+            })
             // The runtime binds this directory over /sys/dev/char for the GPU (LinuxRuntime.bindGpuNode).
             link(File(context.cacheDir, "drm/sys/$MAJOR:$MINOR"), HIDRAW)
 
