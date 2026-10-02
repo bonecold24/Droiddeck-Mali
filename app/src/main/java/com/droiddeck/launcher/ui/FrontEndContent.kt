@@ -4,13 +4,11 @@ import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.runtime.CompositionLocalProvider
 import android.os.Build
 import androidx.compose.animation.AnimatedContent
-import androidx.compose.runtime.snapshotFlow
-import androidx.compose.ui.layout.onSizeChanged
-import androidx.compose.ui.geometry.Size
 import androidx.compose.animation.EnterExitState
 import androidx.compose.animation.ExitTransition
-import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.snap
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
 import androidx.compose.runtime.DisposableEffect
@@ -122,7 +120,6 @@ internal fun Pane(
         val pages = remember { HashMap<String, @Composable () -> Unit>() }
         // Pages opened from a control (the cog), with where that control sat, in this pane's coordinates.
         val origins = remember { HashMap<String, Origin>() }
-        val glide = LocalFocusGlide.current
         val paneAt = remember { arrayOf(Offset.Zero) }
         val livePage by rememberUpdatedState(s.pageKey)
         // Picking another game changes the detail beside the list, not the whole page.
@@ -136,11 +133,11 @@ internal fun Pane(
             modifier = Modifier.onGloballyPositioned { paneAt[0] = it.positionInRoot() },
             transitionSpec = {
                 when {
-                    // Into a page from its control: the page blooms over a pane that sinks back.
+                    // Into a page from its control: the control floods the pane (PageFlood) as it sinks back.
                     targetState in origins -> (fadeIn(Motion.tw(120)))
                         .togetherWith(fadeOut(Motion.tw(320, 80)) + scaleOut(Motion.tw(480), targetScale = 0.95f))
                         .apply { targetContentZIndex = 1f }
-                    // Back out of it: the page folds into the control as the pane comes forward again.
+                    // Back out of it: the flood draws back into the control as the pane comes forward again.
                     initialState in origins -> (fadeIn(Motion.tw(300, 100)) + scaleIn(Motion.tw(460, 40), initialScale = 0.95f))
                         .togetherWith(ExitTransition.None)
                         .apply { targetContentZIndex = -1f }
@@ -157,27 +154,12 @@ internal fun Pane(
                 val from = origins[key]
                 if (from == null) shown()
                 else {
-                    val open by transition.animateFloat(
-                        // An even ease, not Motion.Ease: that one covers most of the pane in its first tenth.
-                        transitionSpec = { if (targetState == EnterExitState.Visible) Motion.tw(620, easing = FastOutSlowInEasing) else Motion.tw(440, easing = FastOutSlowInEasing) },
-                        label = "bloom",
-                    ) { if (it == EnterExitState.Visible) 1f else 0f }
-                    var boxSize by remember { mutableStateOf(Size.Zero) }
-                    if (glide != null) {
-                        // A controller's focus ring rides the bloom's edge while it runs.
-                        LaunchedEffect(Unit) {
-                            snapshotFlow { open to (transition.currentState == transition.targetState) }.collect { (p, settled) ->
-                                val hostAt = glide.host?.takeIf { it.isAttached }?.positionInRoot() ?: Offset.Zero
-                                glide.transit = if (settled || boxSize == Size.Zero || !glide.ringShown()) null
-                                    else bloomBox(boxSize, from, p, paneAt[0] - hostAt)
-                            }
-                        }
-                        DisposableEffect(Unit) { onDispose { glide.transit = null } }
-                    }
-                    Box(
-                        Modifier.fillMaxSize().onSizeChanged { boxSize = Size(it.width.toFloat(), it.height.toFloat()) }
-                            .bloom({ open }, from, pal.background) { if (glide?.ringShown() == true) null else pal.signal },
-                    ) { shown() }
+                    // Keeps a leaving page on screen while its flood draws back into the control.
+                    transition.animateFloat(
+                        transitionSpec = { if (targetState == EnterExitState.PostExit) tween(PAGE_RETURN_MS) else snap() },
+                        label = "pageReturn",
+                    ) { if (it == EnterExitState.PostExit) 1f else 0f }
+                    PageFlood(from, leaving = transition.targetState == EnterExitState.PostExit) { shown() }
                 }
             }
             else Content(s, if (key == "games") selected else key, a, Modifier.fillMaxSize(), onSelect, onAndroidAppClick, onOpenDeveloperOptions, onRequestWirelessAdb)

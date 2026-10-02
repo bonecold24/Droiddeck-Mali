@@ -25,7 +25,6 @@ import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
-import androidx.compose.ui.geometry.RoundRect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Outline
@@ -64,14 +63,8 @@ internal class FocusGlide(val view: View) {
     val hot = mutableStateListOf<GlideSource>()
     /** Bumped when the current control moves (a scroll, a relayout). */
     var moves by mutableIntStateOf(0)
-    /**
-     * A box the ring rides instead of the focused control, in host coordinates: the edge of a page
-     * blooming out of the control that opened it (PageBloom). Cleared, the ring springs from there
-     * onto whatever has focus.
-     */
-    var transit by mutableStateOf<RoundRect?>(null)
-    /** Whether the ring is up (a controller is driving): if not, a bloom draws its own edge. */
-    var ringShown: () -> Boolean = { false }
+    /** Off while a page floods in or out (PageFlood); back on, it appears on whatever has focus. */
+    var hidden by mutableStateOf(false)
 
     val current: GlideSource? get() = hot.lastOrNull()
 
@@ -160,11 +153,8 @@ internal fun FocusGlideHost(modifier: Modifier = Modifier, content: @Composable 
     var width by remember { mutableStateOf(2.dp) }
     if (cur != null) width = cur.width
 
-    glide.ringShown = { alpha.targetValue > 0f }
-
     LaunchedEffect(glide) {
         var shown: GlideSource? = null
-        var rode = false
         var movedAt = 0L
         var dirSpecs: List<AnimationSpec<Float>> = List(4) { follow() }
         var delays = LongArray(4)
@@ -181,18 +171,11 @@ internal fun FocusGlideHost(modifier: Modifier = Modifier, content: @Composable 
             jobs[4]?.cancel()
             jobs[4] = scope.launch { if (snap) corner.snapTo(r) else corner.animateTo(r, Motion.sp(0.8f, 500f)) }
         }
-        snapshotFlow { Triple(glide.current, glide.moves, glide.transit != null) }.collectLatest { (src, _, riding) ->
-            if (riding) {
-                // Ride the bloom's edge, frame by frame, for as long as it runs.
-                if (alpha.targetValue <= 0f) return@collectLatest
+        snapshotFlow { Triple(glide.current, glide.moves, glide.hidden) }.collectLatest { (src, _, hidden) ->
+            if (hidden) {
                 jobs.forEach { it?.cancel() }
-                rode = true
-                while (true) {
-                    val t = glide.transit ?: break
-                    edges[0].snapTo(t.left); edges[1].snapTo(t.top); edges[2].snapTo(t.right); edges[3].snapTo(t.bottom)
-                    corner.snapTo(t.topLeftCornerRadius.x)
-                    withFrameNanos { }
-                }
+                alpha.snapTo(0f)
+                shown = null
                 return@collectLatest
             }
             if (src == null) {
@@ -203,9 +186,7 @@ internal fun FocusGlideHost(modifier: Modifier = Modifier, content: @Composable 
                 shown = null
                 return@collectLatest
             }
-            // Off a bloom, it springs in onto the control as it would from another one.
-            var first = src !== shown || rode
-            rode = false
+            var first = src !== shown
             val start = System.nanoTime()
             var last: Rect? = null
             while (true) {
