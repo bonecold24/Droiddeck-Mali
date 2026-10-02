@@ -29,3 +29,21 @@ Installed APK SHA-256 matched the local artifact:
 - The helper exited during APK replacement. The temporary Android test app, guest probe, and local ADB forward were removed.
 
 Local screenshots, field values, build log, and check results: `/tmp/droiddeck-clipboard-evidence`.
+
+## Visible editor-to-Steam test
+
+Typed the supplied launch command into a temporary native Android EditText editor
+using Android keyboard events, selected all, and copied with Android's standard
+Ctrl+C action. Returned to the running DroidDeck Steam session and pasted into
+The Sims Legacy Collection's Launch Options. Steam's persisted value matched the
+complete 126-byte command exactly. No clipboard-setting API was used by the editor.
+
+Repeated with `DroidDeck Thor clipboard test 2026-10-02`, using Steam's on-screen
+keyboard Paste button. The whole value is visible in these unedited Thor screenshots:
+
+![Text selected and copied in the Android editor](android-clipboard/android-copy.png)
+
+![The same text pasted into Steam](android-clipboard/steam-paste.png)
+
+The launch options were restored to their original empty value and verified in
+Steam's configuration. The temporary editor and ADB forward were removed.
