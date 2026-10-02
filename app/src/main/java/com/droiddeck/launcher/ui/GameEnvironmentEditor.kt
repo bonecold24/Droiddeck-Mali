@@ -23,6 +23,11 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.runtime.withFrameNanos
+import androidx.compose.ui.platform.LocalInputModeManager
+import androidx.compose.ui.input.InputMode
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
@@ -49,14 +54,34 @@ import kotlinx.coroutines.withContext
 @Composable
 fun GameEnvironmentRow(modifier: Modifier = Modifier) {
     var open by remember { mutableStateOf(false) }
+    // Opened with a pad, the editor starts with focus in it; the dialog is a window of its own and
+    // would otherwise give the pad nothing to move from.
+    var byPad by remember { mutableStateOf(false) }
+    val inputMode = LocalInputModeManager.current
     SettingsRow(stringResource(R.string.game_env_title), stringResource(R.string.game_env_hint)) {
-        SecondaryButton(stringResource(R.string.game_env_edit), modifier = modifier) { open = true }
+        SecondaryButton(stringResource(R.string.game_env_edit), modifier = modifier) {
+            byPad = inputMode.inputMode == InputMode.Keyboard
+            open = true
+        }
     }
-    if (open) GameEnvironmentEditor { open = false }
+    if (open) GameEnvironmentEditor(byPad) { open = false }
+}
+
+/** With a pad driving, focus [target] once the dialog is laid out, and keep the dialog in pad mode. */
+@OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
+@Composable
+private fun PadFocus(byPad: Boolean, target: FocusRequester) {
+    val inputMode = LocalInputModeManager.current
+    LaunchedEffect(Unit) {
+        if (!byPad) return@LaunchedEffect
+        inputMode.requestInputMode(InputMode.Keyboard)
+        repeat(2) { withFrameNanos { } }
+        runCatching { target.requestFocus() }
+    }
 }
 
 @Composable
-private fun GameEnvironmentEditor(onClose: () -> Unit) {
+private fun GameEnvironmentEditor(byPad: Boolean, onClose: () -> Unit) {
     val context = LocalContext.current
     val coroutine = rememberCoroutineScope()
     val shown = rememberShown(onClose)
@@ -70,6 +95,9 @@ private fun GameEnvironmentEditor(onClose: () -> Unit) {
     var error by remember { mutableStateOf(false) }
     var editing by remember { mutableStateOf<Pair<String, String>?>(null) }
     val preset = SessionPrefs.fexPreset(context)
+    val firstFocus = remember { FocusRequester() }
+    var editByPad by remember { mutableStateOf(false) }
+    val dialogInput = LocalInputModeManager.current
     LaunchedEffect(Unit) {
         runCatching {
             withContext(Dispatchers.IO) {
@@ -92,6 +120,7 @@ private fun GameEnvironmentEditor(onClose: () -> Unit) {
         else games.firstOrNull { it.first == scope }?.second ?: stringResource(R.string.game_env_profile, scope)
 
     AppDialog(shown, close, "gameEnv", wide = false) {
+        PadFocus(byPad, firstFocus)
         DialogHeader(stringResource(R.string.game_env_eyebrow), stringResource(R.string.game_env_title))
         Small(stringResource(R.string.game_env_applies))
         // Which profile: everything shared, or one game's.
@@ -102,7 +131,7 @@ private fun GameEnvironmentEditor(onClose: () -> Unit) {
             ) {
                 Text(stringResource(R.string.game_env_scope), fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onBackground, modifier = Modifier.weight(1f))
                 Box {
-                    ValueChip(profileName, menu == "scope", modifier = Modifier.widthIn(max = 260.dp)) {
+                    ValueChip(profileName, menu == "scope", modifier = Modifier.focusRequester(firstFocus).widthIn(max = 260.dp)) {
                         menu = if (menu == "scope") null else "scope"
                     }
                     AnchoredMenu(menu == "scope", onDismiss = { if (menu == "scope") menu = null }, title = stringResource(R.string.game_env_scope)) { first ->
@@ -138,7 +167,7 @@ private fun GameEnvironmentEditor(onClose: () -> Unit) {
                     VariableRow(
                         name, value, inherited = !own.containsKey(name), open = menu == "var:$name", enabled = !busy,
                         onToggle = { menu = if (menu == "var:$name") null else "var:$name" }, onDismiss = { if (menu == "var:$name") menu = null },
-                        onEdit = { menu = null; editing = name to (value ?: "") },
+                        onEdit = { menu = null; editByPad = dialogInput.inputMode == InputMode.Keyboard; editing = name to (value ?: "") },
                         // A value set here or inherited can be switched off for this profile; one set here can go back to inheriting.
                         onUnset = if (value != null) ({ menu = null; save(current.withEntries(scope, own + (name to null))) }) else null,
                         onRestore = if (own.containsKey(name)) ({ menu = null; save(current.withEntries(scope, own - name)) }) else null,
@@ -150,13 +179,14 @@ private fun GameEnvironmentEditor(onClose: () -> Unit) {
         if (busy) LinearProgressIndicator(Modifier.fillMaxWidth())
         // Footer: add a variable, reset the profile, done.
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.padding(top = 4.dp)) {
-            Box {
-                SecondaryButton(stringResource(R.string.game_env_add), enabled = current != null && !busy) { menu = if (menu == "add") null else "add" }
+            // Only once the settings are in: a button drawn disabled first comes up without its box.
+            if (current != null) Box {
+                SecondaryButton(stringResource(R.string.game_env_add), enabled = !busy) { menu = if (menu == "add") null else "add" }
                 AnchoredMenu(menu == "add", onDismiss = { if (menu == "add") menu = null }, title = stringResource(R.string.game_env_add)) { first ->
                     for ((i, option) in GameEnvironmentOptions.all.withIndex()) MenuItem(option.name, checked = false, focusRequester = if (i == 0) first else null) {
-                        menu = null; editing = option.name to option.value
+                        menu = null; editByPad = dialogInput.inputMode == InputMode.Keyboard; editing = option.name to option.value
                     }
-                    MenuItem(stringResource(R.string.game_env_custom), checked = false) { menu = null; editing = "" to "" }
+                    MenuItem(stringResource(R.string.game_env_custom), checked = false) { menu = null; editByPad = dialogInput.inputMode == InputMode.Keyboard; editing = "" to "" }
                 }
             }
             if (current != null && current.entries(scope).isNotEmpty()) FocusText(stringResource(R.string.game_env_reset), LocalPalette.current.signal) {
@@ -167,7 +197,7 @@ private fun GameEnvironmentEditor(onClose: () -> Unit) {
         }
     }
     editing?.let { (name, value) ->
-        VariableDialog(name, value, profileName, onDismiss = { editing = null }) { key, content ->
+        VariableDialog(name, value, profileName, editByPad, onDismiss = { editing = null }) { key, content ->
             config?.let {
                 val entries = it.entries(scope).toMutableMap()
                 if (name.isNotEmpty() && name != key) entries[name] = null
@@ -211,16 +241,18 @@ private fun VariableRow(
 }
 
 @Composable
-private fun VariableDialog(initialName: String, initialValue: String, profile: String, onDismiss: () -> Unit, onSave: (String, String) -> Unit) {
+private fun VariableDialog(initialName: String, initialValue: String, profile: String, byPad: Boolean, onDismiss: () -> Unit, onSave: (String, String) -> Unit) {
     val shown = rememberShown(onDismiss)
     val close = { shown.targetState = false }
     var name by remember { mutableStateOf(initialName) }
     var value by remember { mutableStateOf(initialValue) }
     val valid = GameEnvironment.validName(name) && GameEnvironment.validValue(value)
     val option = GameEnvironmentOptions.find(name)
+    val nameFocus = remember { FocusRequester() }
     AppDialog(shown, close, "gameEnvVar", wide = false) {
+        PadFocus(byPad, nameFocus)
         DialogHeader(profile, stringResource(if (initialName.isEmpty()) R.string.game_env_add else R.string.game_env_change_title))
-        VariableNamePicker(name) { selected ->
+        VariableNamePicker(name, nameFocus) { selected ->
             name = selected
             value = GameEnvironmentOptions.find(selected)?.value.orEmpty()
         }
@@ -235,12 +267,12 @@ private fun VariableDialog(initialName: String, initialValue: String, profile: S
 }
 
 @Composable
-private fun VariableNamePicker(name: String, onChange: (String) -> Unit) {
+private fun VariableNamePicker(name: String, focus: FocusRequester, onChange: (String) -> Unit) {
     var open by remember { mutableStateOf(false) }
     var custom by remember { mutableStateOf(name.isEmpty() || GameEnvironmentOptions.find(name) == null) }
     SettingsRow(stringResource(R.string.game_env_name), null, highlighted = open) {
         Box {
-            ValueChip(if (custom) stringResource(R.string.game_env_custom) else name, open, modifier = Modifier.widthIn(max = 260.dp)) { open = !open }
+            ValueChip(if (custom) stringResource(R.string.game_env_custom) else name, open, modifier = Modifier.focusRequester(focus).widthIn(max = 260.dp)) { open = !open }
             AnchoredMenu(open, onDismiss = { open = false }, title = stringResource(R.string.game_env_name)) { first ->
                 for ((i, option) in GameEnvironmentOptions.all.sortedBy { it.name.uppercase(java.util.Locale.ROOT) }.withIndex()) {
                     MenuItem(option.name, checked = !custom && option.name == name, focusRequester = if (i == 0) first else null) {
@@ -260,9 +292,7 @@ private fun VariableValueEditor(name: String, value: String, onChange: (String) 
     var open by remember(name) { mutableStateOf(false) }
     var custom by remember(name) { mutableStateOf(option == null || value !in option.choices && option.type != GameEnvironmentOptions.Type.MULTIPLE) }
     when {
-        option?.type == GameEnvironmentOptions.Type.TOGGLE -> SettingsRow(stringResource(R.string.game_env_value), null) {
-            ToggleSwitch(checked = value == option.choices.last()) { onChange(if (it) option.choices.last() else option.choices.first()) }
-        }
+        // On/off variables pick from their two values like any other choice: one way to set a value.
         option != null && option.choices.isNotEmpty() -> {
             SettingsRow(stringResource(R.string.game_env_value), null, highlighted = open) {
                 Box {

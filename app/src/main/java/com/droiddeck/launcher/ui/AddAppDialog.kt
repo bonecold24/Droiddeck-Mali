@@ -288,6 +288,8 @@ internal fun AppDialog(
     modifier: Modifier = Modifier, content: @Composable ColumnScope.() -> Unit,
 ) {
     val pal = LocalPalette.current
+    // The page's ring stays out of sight behind it.
+    VeilRing()
     Dialog(onDismissRequest = close, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
       // The page's focus memory stays the page's: nothing in here is a place to come back to.
       CompositionLocalProvider(LocalFrontFocus provides null) {
