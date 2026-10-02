@@ -235,7 +235,7 @@ private fun LoadSegments(count: Int, active: Int, percent: Int, modifier: Modifi
     val pal = LocalPalette.current
     val track = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.12f)
     val run = rememberInfiniteTransition(label = "segment")
-        .animateFloat(-0.4f, 1f, infiniteRepeatable(tween(Motion.ms(1300).coerceAtLeast(1), easing = FastOutSlowInEasing)), label = "run")
+        .animateFloat(-0.4f, 1f, infiniteRepeatable(tween(1300, easing = FastOutSlowInEasing)), label = "run")
     val still = Motion.scale == 0f
     Row(
         horizontalArrangement = Arrangement.spacedBy(6.dp),

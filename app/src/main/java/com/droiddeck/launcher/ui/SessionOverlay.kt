@@ -24,7 +24,6 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import androidx.compose.animation.core.FastOutSlowInEasing
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.offset
 import androidx.compose.material.icons.Icons
 import androidx.compose.foundation.layout.heightIn
@@ -603,7 +602,7 @@ private fun DrawerPageTabs(page: Int, modifier: Modifier = Modifier, compact: Bo
     val pal = LocalPalette.current
     val count = drawerPageIcons.size
     val middle = (count - 1) / 2f
-    val motion = tween<Float>(durationMillis = 340, easing = FastOutSlowInEasing)
+    val motion = Motion.tw<Float>(340, easing = FastOutSlowInEasing)
     androidx.compose.foundation.layout.BoxWithConstraints(
         contentAlignment = Alignment.Center,
         modifier = modifier.height(if (compact) 44.dp else 64.dp).clipToBounds(),
@@ -623,7 +622,7 @@ private fun DrawerPageTabs(page: Int, modifier: Modifier = Modifier, compact: Bo
             val scale by animateFloatAsState(if (selected) 1f else DRAWER_TAB_SIDE_SCALE, motion, label = "tabScale")
             val alpha by animateFloatAsState(if (selected) 1f else DRAWER_TAB_SIDE_ALPHA, motion, label = "tabAlpha")
             val glow by animateFloatAsState(if (selected) 1f else 0f, motion, label = "tabGlow")
-            val tint by animateColorAsState(if (selected) colors.onBackground else colors.onSurfaceVariant, tween(340), label = "tabTint")
+            val tint by animateColorAsState(if (selected) colors.onBackground else colors.onSurfaceVariant, Motion.tw(340, easing = FastOutSlowInEasing), label = "tabTint")
             val select = { onSelect(index) }
             Box(
                 contentAlignment = Alignment.Center,

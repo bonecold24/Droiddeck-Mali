@@ -3,7 +3,7 @@ package com.droiddeck.launcher.ui
 import android.os.SystemClock
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.CubicBezierEasing
-import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.layout.Box
@@ -221,7 +221,7 @@ internal fun FloodReturn(flood: Color, to: Rect?, onProgress: (Float) -> Unit, o
         // A beat of plain blue first, so the change of screen does not read as a cut.
         delay(Motion.ms(220).toLong())
         if (to == null || Motion.scale == 0f) {
-            fade.animateTo(0f, tween(Motion.ms(240).coerceAtLeast(1)))
+            fade.animateTo(0f, Motion.tw(240, easing = FastOutSlowInEasing))
         } else {
             val travel = listOf(to.left, to.top, page.width - to.right, page.height - to.bottom).map { it.coerceAtLeast(0f) }
             val far = travel.max().coerceAtLeast(1f)
@@ -260,7 +260,7 @@ internal fun FloodGather(flood: Color, ball: Pair<Offset, Float>?, onLanded: () 
         started = true
         // A beat of plain blue first, so the change of screen does not read as a cut.
         delay(Motion.ms(90).toLong())
-        gather.animateTo(1f, tween(Motion.ms(640).coerceAtLeast(1), easing = Gather))
+        gather.animateTo(1f, Motion.tw(640, easing = Gather))
         landed()
     }
     Canvas(Modifier.fillMaxSize().pointerInput(Unit) { awaitEachGesture { while (true) awaitPointerEvent().changes.forEach { it.consume() } } }) {

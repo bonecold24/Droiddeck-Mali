@@ -36,7 +36,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Apps
@@ -55,8 +54,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -77,42 +75,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.droiddeck.launcher.core.PhantomProcessLimit
 
-// The front end's side rail: the page list, the resume entry and the controller hints under it.
-
-/** What the pad's face buttons do here, along the bottom edge as on a console. */
-@Composable
-internal fun ControllerHints(select: String = "Select", tabs: Boolean = false) {
-    val colors = MaterialTheme.colorScheme
-    val pal = LocalPalette.current
-    Column(modifier = Modifier.fillMaxWidth()) {
-        Box(Modifier.fillMaxWidth().height(1.dp).background(pal.line))
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(18.dp, Alignment.End),
-            modifier = Modifier.fillMaxWidth().height(34.dp).background(colors.surface).padding(horizontal = 20.dp),
-        ) {
-            if (tabs) HintGlyph("LB RB", "Tabs")
-            HintGlyph("A", select)
-            HintGlyph("B", "Back")
-        }
-    }
-}
-
-@Composable
-private fun HintGlyph(button: String, action: String) {
-    val colors = MaterialTheme.colorScheme
-    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-        // Face buttons are round; bumpers are a wider keycap.
-        val shape = if (button.length == 1) CircleShape else RoundedCornerShape(6.dp)
-        Box(
-            contentAlignment = Alignment.Center,
-            modifier = Modifier.height(20.dp).widthIn(min = 20.dp).clip(shape).background(colors.onBackground).padding(horizontal = if (button.length == 1) 0.dp else 6.dp),
-        ) {
-            Text(button, fontSize = 12.sp, fontWeight = FontWeight.Bold, color = colors.background)
-        }
-        Text(action, fontSize = 13.sp, color = colors.onSurfaceVariant)
-    }
-}
+// The front end's side rail: the page list and the resume entry under it.
 
 internal val AttentionAmber = Color(0xFFFFB547)
 
@@ -156,7 +119,7 @@ internal fun SideRail(
             RailItem("Updates", Icons.Outlined.SystemUpdate, "updates", selected == "updates", compact, iconOnly, fit, badge = s.updates.hasUpdate, onFocus = { onFocusSelect("updates") }) { onSelect("updates") }
         }
         }
-        AnimatedVisibility(s.busy, enter = expandVertically() + fadeIn(), exit = shrinkVertically() + fadeOut()) {
+        AnimatedVisibility(s.busy, enter = expandVertically(Motion.sp(1f)) + fadeIn(Motion.sp(1f)), exit = shrinkVertically(Motion.sp(1f)) + fadeOut(Motion.sp(1f))) {
             Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(bottom = 8.dp)) {
                 val barWidth = if (iconOnly) 44.dp else 60.dp
                 if (s.percent >= 0) LinearProgressIndicator(progress = { s.percent / 100f }, modifier = Modifier.width(barWidth))
@@ -236,7 +199,7 @@ private fun ResumeRailItem(name: String, compact: Boolean, iconOnly: Boolean, on
     val focused by src.collectIsFocusedAsState()
     val hovered by src.collectIsHoveredAsState()
     val pulse = rememberInfiniteTransition(label = "pulse")
-    val ringScale by pulse.animateFloat(0.4f, 1.6f, infiniteRepeatable(tween(Motion.ms(1600).coerceAtLeast(1), easing = Motion.Ease), RepeatMode.Restart), label = "ring")
+    val ringScale by pulse.animateFloat(0.4f, 1.6f, infiniteRepeatable(tween(1600, easing = Motion.Ease), RepeatMode.Restart), label = "ring")
     // Animations off: the live dot alone, no pulsing ring.
     val still = Motion.scale == 0f
     Column(

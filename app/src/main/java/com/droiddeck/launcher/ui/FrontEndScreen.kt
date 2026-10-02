@@ -16,16 +16,15 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.CubicBezierEasing
+import androidx.compose.animation.core.Easing
 import androidx.compose.animation.core.FiniteAnimationSpec
 import androidx.compose.animation.core.MutableTransitionState
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
-import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
-import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.slideInVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
@@ -182,8 +181,10 @@ internal object Motion {
         scale = Settings.Global.getFloat(context.contentResolver, Settings.Global.ANIMATOR_DURATION_SCALE, 1f)
     }
     val Ease = CubicBezierEasing(0.2f, 0.8f, 0.2f, 1f)
+    /** A wall-clock wait (a coroutine delay) scaled as the animations around it are. Compose already
+     *  scales its own animation clock by the same setting, so animation specs take unscaled times. */
     fun ms(base: Int) = (base * scale).roundToInt()
-    fun <T> tw(base: Int, delay: Int = 0): FiniteAnimationSpec<T> = if (scale == 0f) snap() else tween(ms(base), ms(delay), Ease)
+    fun <T> tw(base: Int, delay: Int = 0, easing: Easing = Ease): FiniteAnimationSpec<T> = if (scale == 0f) snap() else tween(base, delay, easing)
     fun <T> sp(damping: Float = 0.7f, stiffness: Float = Spring.StiffnessMediumLow): FiniteAnimationSpec<T> =
         if (scale == 0f) snap() else spring(damping, stiffness)
 }
@@ -450,17 +451,6 @@ private fun FrontEndScreenBody(s: FrontEndState, a: FrontEndActions, page: (@Com
                     onOpenDeveloperOptions = requestDeveloperOptions,
                     onRequestWirelessAdb = requestWirelessAdbFix,
                 )
-                // Only while a pad or keyboard drives the launcher; a touch hides it again.
-                AnimatedVisibility(
-                    inputModeManager.inputMode == InputMode.Keyboard,
-                    enter = expandVertically() + fadeIn(), exit = shrinkVertically() + fadeOut(),
-                ) {
-                    val onGame = frontFocus.focusedRail == null && frontFocus.last?.startsWith("game:") == true
-                    ControllerHints(
-                        select = if (onGame) "Launch" else "Select",
-                        tabs = railSelection == "setup" && s.pageKey == null && frontFocus.focusedRail == null,
-                    )
-                }
             }
         }
 

@@ -272,7 +272,7 @@ private fun ChannelPicker(u: UpdatesState, ua: UpdatesActions) {
             when (tests.size) { 0 -> "None right now"; 1 -> "1 to try"; else -> "${tests.size} to try" },
             u.follow.channel == Channel.TEST, enabled = tests.isNotEmpty() || u.follow.channel == Channel.TEST,
         ) { tests.firstOrNull()?.let { ua.onFollow(Follow(Channel.TEST, it.pr)) } }
-        AnimatedVisibility(u.follow.channel == Channel.TEST && tests.isNotEmpty(), enter = expandVertically() + fadeIn(), exit = shrinkVertically() + fadeOut()) {
+        AnimatedVisibility(u.follow.channel == Channel.TEST && tests.isNotEmpty(), enter = expandVertically(Motion.sp(1f)) + fadeIn(Motion.sp(1f)), exit = shrinkVertically(Motion.sp(1f)) + fadeOut(Motion.sp(1f))) {
             Column(Modifier.padding(start = 18.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 tests.forEach { t -> TestRow(t, u.follow.pr == t.pr) { ua.onFollow(Follow(Channel.TEST, t.pr)) } }
             }

@@ -233,7 +233,7 @@ internal fun SetupPanel(
                                     SecondaryButton(if (showLimitDetails) "Hide" else "Details", compact = true) { showLimitDetails = !showLimitDetails }
                                 }
                             }
-                            AnimatedVisibility(showLimitDetails, enter = expandVertically() + fadeIn(), exit = shrinkVertically() + fadeOut()) {
+                            AnimatedVisibility(showLimitDetails, enter = expandVertically(Motion.sp(1f)) + fadeIn(Motion.sp(1f)), exit = shrinkVertically(Motion.sp(1f)) + fadeOut(Motion.sp(1f))) {
                                 // One sentence and at most three buttons. The computer route and its
                                 // raw command live on the full page Wireless debugging opens.
                                 Column(modifier = Modifier.fillMaxWidth().padding(start = 56.dp, end = 14.dp, top = 4.dp, bottom = 10.dp)) {
