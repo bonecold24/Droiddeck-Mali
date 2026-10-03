@@ -918,6 +918,12 @@
     <string name="game_env_change_title">Change variable</string>
     <string name="game_env_restore_default">Back to default</string>
     <string name="game_env_eyebrow">Proton games</string>
+    <string name="pip_title">Picture in picture</string>
+    <string name="pip_auto">Automatically enter PiP</string>
+    <string name="pip_suspended">Suspended</string>
+    <string name="pip_not_ready">Picture in picture is available once the session is ready.</string>
+    <string name="pip_permission">Allow picture in picture for DroidDeck in Android settings.</string>
+    <string name="pip_unavailable">Android could not open picture in picture.</string>
     <string name="game_shortcut">Shortcut</string>
     <string name="game_shortcut_add">Add to home screen</string>
     <string name="game_shortcut_choose">Choose game</string>

@@ -78,6 +78,7 @@ class SessionService : Service() {
     /** An explicit Steam sleep request is independent of the background policy. */
     private var steamSleepToken: String? = null
     private var suspendOperationPending = false
+    private var pipTask = false
     private var suspendAttemptFailed = false
     /** One validated game request waiting for this Steam session to reach a usable state. */
     private var pendingSteamGameId: String? = null
@@ -151,7 +152,12 @@ class SessionService : Service() {
                 stopSession(0)
                 return START_NOT_STICKY
             }
+            ACTION_PIP_BEGIN -> {
+                pipTask = true
+                return START_NOT_STICKY
+            }
             ACTION_ACTIVITY_VISIBLE -> {
+                if (!SessionState.pipActive) pipTask = false
                 activityVisible = true
                 resumeSteamSleepOnReturn()
                 suspendAttemptFailed = false
@@ -193,6 +199,8 @@ class SessionService : Service() {
         suspendAttemptFailed = false
         suspendController = null
         SessionState.suspended = false
+        SessionState.pipActive = false
+        pipTask = false
         SessionState.program = intent?.getStringExtra(EXTRA_PROGRAM)
         SessionState.programArgs = intent?.getStringArrayExtra(EXTRA_PROGRAM_ARGS)?.toList().orEmpty()
         SessionState.steamUi = intent?.getStringExtra(EXTRA_STEAM_UI)
@@ -1158,6 +1166,8 @@ class SessionService : Service() {
                 return@post
             }
             SessionState.suspended = false
+            SessionState.pipActive = false
+            pipTask = false
             SessionState.guestPid = -1
             releaseLocks()
             if (status == 0) {
@@ -1267,6 +1277,12 @@ class SessionService : Service() {
      * guest would survive as an orphan holding the rootfs and the GPU. Treat the swipe as "quit".
      */
     override fun onTaskRemoved(rootIntent: Intent?) {
+        if (pipTask) {
+            Log.i(TAG, "PiP task dismissed - retaining the session under its background policy")
+            activityVisible = false
+            updateSuspendPolicy()
+            return
+        }
         Log.i(TAG, "task removed - ending the session")
         stopSession(0)
         super.onTaskRemoved(rootIntent)
@@ -1407,6 +1423,7 @@ class SessionService : Service() {
         private const val NOTIFICATION_ID = 1001
         const val ACTION_STOP = "com.droiddeck.launcher.STOP_SESSION"
         const val ACTION_RESUME = "com.droiddeck.launcher.RESUME_SESSION"
+        private const val ACTION_PIP_BEGIN = "com.droiddeck.launcher.PIP_BEGIN"
         const val ACTION_LAUNCH_GAME = "com.droiddeck.launcher.LAUNCH_STEAM_GAME"
         const val ACTION_HOME_GUIDE = "com.droiddeck.launcher.HOME_GUIDE"
         const val ACTION_AGENT_START = "com.droiddeck.launcher.AGENT_START"
@@ -1465,6 +1482,10 @@ class SessionService : Service() {
                 return
             }
             context.startService(Intent(context, SessionService::class.java).setAction(ACTION_STOP))
+        }
+
+        fun beginPip(context: Context) {
+            context.startService(Intent(context, SessionService::class.java).setAction(ACTION_PIP_BEGIN))
         }
 
         fun setActivityVisible(context: Context, visible: Boolean) {
