@@ -220,6 +220,19 @@ object SessionPrefs {
         prefs(context).edit().putBoolean("mic", on).apply()
     }
 
+    /** Optional SSID reporting and scans. A Location grant alone never opts the user in. */
+    fun wifiDiscoveryEnabled(context: Context): Boolean = prefs(context).getBoolean("wifiDiscovery", false)
+
+    fun setWifiDiscoveryEnabled(context: Context, on: Boolean) {
+        prefs(context).edit().putBoolean("wifiDiscovery", on).apply()
+    }
+
+    fun wifiDiscoveryAsked(context: Context): Boolean = prefs(context).getBoolean("wifiDiscoveryAsked", false)
+
+    fun setWifiDiscoveryAsked(context: Context) {
+        prefs(context).edit().putBoolean("wifiDiscoveryAsked", true).apply()
+    }
+
     /**
      * Whether the client's own core pick is overridden. When on, BL_CLIENT_CPUS is sent even when
      * it names every core - unlike a game mask, the point here is to undo a pin Steam applies to

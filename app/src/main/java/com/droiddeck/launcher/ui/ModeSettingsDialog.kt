@@ -82,6 +82,12 @@ class ModeSettings(
     val steamController: String? = null,
     /** Steam only: start a Steam session when DroidDeck opens. */
     val runSteamAtStartup: Boolean = false,
+    /** Null outside Steam; the saved choice is separate from Android's access and device switch. */
+    val wifiDiscovery: Boolean? = null,
+    val wifiDiscoveryPermission: Boolean = false,
+    val wifiDiscoveryLocation: Boolean = false,
+    val wifiDiscoveryAsked: Boolean = false,
+    val wifiDiscoveryBlocked: Boolean = false,
     /** Steam only: the user's chosen Games folders; null outside Steam. */
     val addedGamesDirs: List<String>? = null,
     val addedGames: List<AddedGameRow> = emptyList(),
@@ -129,6 +135,8 @@ class ModeSettingsActions(
     val onMangoapp: (Boolean) -> Unit = {},
     val onSteamController: (String) -> Unit = {},
     val onRunSteamAtStartup: (Boolean) -> Unit = {},
+    val onWifiDiscovery: (Boolean) -> Unit = {},
+    val onWifiDiscoverySettings: () -> Unit = {},
     val onPickAddedGamesDir: () -> Unit = {},
     val onForgetAddedGamesDir: (path: String) -> Unit = {},
     val onAddedGamesArt: (Boolean) -> Unit = {},
@@ -146,6 +154,7 @@ fun ModeSettingsPage(s: ModeSettings, a: ModeSettingsActions) {
     val steam = s.mode == SessionService.MODE_STEAM
     val host = rememberMenuHost()
     var confirmDeckyRemoval by remember { mutableStateOf(false) }
+    var explainWifiDiscovery by remember { mutableStateOf(false) }
     val pageScroll = androidx.compose.foundation.rememberScrollState()
     val firstChip = remember { androidx.compose.ui.focus.FocusRequester() }
     androidx.compose.runtime.LaunchedEffect(Unit) {
@@ -341,6 +350,25 @@ fun ModeSettingsPage(s: ModeSettings, a: ModeSettingsActions) {
                 onPick = a.onSteamChannel,
             )
         }
+        if (steam && s.wifiDiscovery != null) SettingsGroup(stringResource(R.string.mode_network)) {
+            val hint = when {
+                s.wifiDiscovery && !s.wifiDiscoveryLocation -> stringResource(R.string.mode_wifi_location_off)
+                !s.wifiDiscoveryPermission && s.wifiDiscoveryAsked -> stringResource(R.string.mode_wifi_permission_denied)
+                else -> stringResource(R.string.mode_wifi_discovery_hint)
+            }
+            SettingsRow(stringResource(R.string.mode_wifi_discovery), hint) {
+                Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+                    horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(8.dp)) {
+                    if (s.wifiDiscoveryBlocked || (s.wifiDiscovery && !s.wifiDiscoveryLocation)) {
+                        SecondaryButton(stringResource(R.string.mode_wifi_open_settings), onClick = a.onWifiDiscoverySettings)
+                    }
+                    ToggleSwitch(s.wifiDiscovery, label = stringResource(R.string.mode_wifi_discovery)) { on ->
+                        host.open = null
+                        if (on) explainWifiDiscovery = true else a.onWifiDiscovery(false)
+                    }
+                }
+            }
+        }
         if (steam && s.addedGamesDirs != null) SettingsGroup(stringResource(R.string.mode_added_games)) {
             for (dir in s.addedGamesDirs) {
                 val n = s.addedGames.count { it.folderPath.startsWith("$dir/") }
@@ -433,6 +461,19 @@ fun ModeSettingsPage(s: ModeSettings, a: ModeSettingsActions) {
             )
         }
     }
+    if (explainWifiDiscovery) AlertDialog(
+        onDismissRequest = { explainWifiDiscovery = false },
+        title = { Text(stringResource(R.string.mode_wifi_explain_title)) },
+        text = { Text(stringResource(R.string.mode_wifi_explain_text)) },
+        confirmButton = {
+            TextButton(onClick = { explainWifiDiscovery = false; a.onWifiDiscovery(true) }) {
+                Text(stringResource(if (s.wifiDiscoveryBlocked) R.string.mode_wifi_open_settings else R.string.mode_wifi_continue))
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = { explainWifiDiscovery = false }) { Text(stringResource(R.string.common_cancel)) }
+        },
+    )
     if (confirmDeckyRemoval) AlertDialog(
         onDismissRequest = { confirmDeckyRemoval = false },
         title = { Text(stringResource(R.string.mode_decky_remove_title)) },
