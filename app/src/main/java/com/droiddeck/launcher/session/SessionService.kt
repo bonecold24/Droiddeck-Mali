@@ -514,6 +514,7 @@ class SessionService : Service() {
         guest.add("XDG_RUNTIME_DIR=" + LinuxRuntime.GUEST_RUNTIME_DIR)
         guest.add("XDG_SESSION_TYPE=wayland")
         guest.add("WAYLAND_DISPLAY=wayland-0")
+        guest.add("BL_ANDROID_CLIPBOARD=" + File(filesDir, "session/android-clipboard").path)
         guest.add("GAMESCOPE_FORCE_GENERAL_QUEUE=1")
         // Steam's CEF needs GL and the rootfs ships no native GL driver: route it through Zink.
         guest.add("MESA_LOADER_DRIVER_OVERRIDE=zink")
