@@ -647,6 +647,7 @@
     <string name="upd_version_ago">%1$s · %2$s</string>
     <string name="upd_preview">Preview</string>
     <string name="upd_preview_hint">Newest fixes, before Stable</string>
+    <string name="upd_preview_current">Up to date</string>
     <string name="upd_tests">Test builds</string>
     <string name="upd_tests_hint">Try a fix before it\'s released</string>
     <string name="upd_tests_none">None right now</string>
@@ -659,6 +660,14 @@
     <plurals name="upd_tests_count">
         <item quantity="one">%1$d to try</item>
         <item quantity="other">%1$d to try</item>
+    </plurals>
+    <plurals name="upd_preview_behind">
+        <item quantity="one">Changes since your build · %1$d build behind</item>
+        <item quantity="other">Changes since your build · %1$d builds behind</item>
+    </plurals>
+    <plurals name="upd_preview_recent">
+        <item quantity="one">Recent changes · %1$d build</item>
+        <item quantity="other">Recent changes · %1$d builds</item>
     </plurals>
     <string name="gate_title">One Android setting to change</string>
     <string name="gate_eyebrow">Steam</string>
