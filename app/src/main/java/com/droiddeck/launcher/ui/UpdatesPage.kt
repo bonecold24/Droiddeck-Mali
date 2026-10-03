@@ -116,12 +116,12 @@ internal fun UpdatesPage(s: FrontEndState, a: FrontEndActions, modifier: Modifie
                 StatusPanel(s, u, ua, me)
                 Box(Modifier.height(18.dp))
                 ChannelLabel()
-                ChannelPicker(u, ua, me)
+                ChannelPicker(u, ua)
             } else {
                 // The label sits over both columns, so the status card lines up with the first channel.
                 ChannelLabel()
                 Row(horizontalArrangement = Arrangement.spacedBy(18.dp)) {
-                    Box(Modifier.weight(1f)) { ChannelPicker(u, ua, me) }
+                    Box(Modifier.weight(1f)) { ChannelPicker(u, ua) }
                     Box(Modifier.weight(1.15f)) { StatusPanel(s, u, ua, me) }
                 }
             }
@@ -202,6 +202,9 @@ private fun StatusPanel(s: FrontEndState, u: UpdatesState, ua: UpdatesActions, m
         if (s.sessionRunning && (offered || offer == Offer.AHEAD)) {
             Text(stringResource(R.string.upd_stop_session), fontSize = 12.5.sp, color = colors.onSurfaceVariant, modifier = Modifier.padding(top = 8.dp))
         }
+        if (u.follow.channel == Channel.NIGHTLY) {
+            PreviewHistory(catalog, me)
+        }
     }
 }
 
@@ -260,7 +263,7 @@ private fun ChannelLabel() {
 }
 
 @Composable
-private fun ChannelPicker(u: UpdatesState, ua: UpdatesActions, me: AppUpdates.Installed) {
+private fun ChannelPicker(u: UpdatesState, ua: UpdatesActions) {
     val colors = MaterialTheme.colorScheme
     val catalog = u.catalog
     val tests = catalog?.tests.orEmpty()
@@ -273,7 +276,6 @@ private fun ChannelPicker(u: UpdatesState, ua: UpdatesActions, me: AppUpdates.In
             Icons.Outlined.Bolt, stringResource(R.string.upd_preview), stringResource(R.string.upd_preview_hint),
             catalog?.preview?.let { ago(it.publishedAt) }, u.follow.channel == Channel.NIGHTLY,
         ) { ua.onFollow(Follow(Channel.NIGHTLY)) }
-        PreviewHistory(catalog, me)
         ChannelCard(
             Icons.Outlined.Science, stringResource(R.string.upd_tests), stringResource(R.string.upd_tests_hint),
             if (tests.isEmpty()) stringResource(R.string.upd_tests_none) else pluralStringResource(R.plurals.upd_tests_count, tests.size, tests.size),
@@ -287,7 +289,7 @@ private fun ChannelPicker(u: UpdatesState, ua: UpdatesActions, me: AppUpdates.In
     }
 }
 
-/** Compact, read-only history under Preview; only the latest Preview build remains installable. */
+/** Read-only Preview history below the status card action; only the latest build is installable. */
 @Composable
 private fun PreviewHistory(catalog: AppUpdates.Catalog?, me: AppUpdates.Installed) {
     val history = catalog?.let { AppUpdates.previewHistory(it, me) } ?: return
@@ -304,7 +306,7 @@ private fun PreviewHistory(catalog: AppUpdates.Catalog?, me: AppUpdates.Installe
             R.plurals.upd_preview_recent, history.changes.size, history.changes.size,
         )
     }
-    Column(Modifier.fillMaxWidth().padding(start = 66.dp, end = 14.dp, bottom = 5.dp)) {
+    Column(Modifier.fillMaxWidth().padding(top = 18.dp)) {
         Text(heading, fontSize = 11.5.sp, fontWeight = FontWeight.Medium, color = colors.onSurfaceVariant)
         if (history.changes.isNotEmpty()) {
             val visible = if (expanded) history.changes else history.changes.take(3)
