@@ -116,12 +116,12 @@ internal fun UpdatesPage(s: FrontEndState, a: FrontEndActions, modifier: Modifie
                 StatusPanel(s, u, ua, me)
                 Box(Modifier.height(18.dp))
                 ChannelLabel()
-                ChannelPicker(u, ua)
+                ChannelPicker(u, ua, me)
             } else {
                 // The label sits over both columns, so the status card lines up with the first channel.
                 ChannelLabel()
                 Row(horizontalArrangement = Arrangement.spacedBy(18.dp)) {
-                    Box(Modifier.weight(1f)) { ChannelPicker(u, ua) }
+                    Box(Modifier.weight(1f)) { ChannelPicker(u, ua, me) }
                     Box(Modifier.weight(1.15f)) { StatusPanel(s, u, ua, me) }
                 }
             }
@@ -260,7 +260,7 @@ private fun ChannelLabel() {
 }
 
 @Composable
-private fun ChannelPicker(u: UpdatesState, ua: UpdatesActions) {
+private fun ChannelPicker(u: UpdatesState, ua: UpdatesActions, me: AppUpdates.Installed) {
     val colors = MaterialTheme.colorScheme
     val catalog = u.catalog
     val tests = catalog?.tests.orEmpty()
@@ -273,6 +273,7 @@ private fun ChannelPicker(u: UpdatesState, ua: UpdatesActions) {
             Icons.Outlined.Bolt, stringResource(R.string.upd_preview), stringResource(R.string.upd_preview_hint),
             catalog?.preview?.let { ago(it.publishedAt) }, u.follow.channel == Channel.NIGHTLY,
         ) { ua.onFollow(Follow(Channel.NIGHTLY)) }
+        PreviewHistory(catalog, me)
         ChannelCard(
             Icons.Outlined.Science, stringResource(R.string.upd_tests), stringResource(R.string.upd_tests_hint),
             if (tests.isEmpty()) stringResource(R.string.upd_tests_none) else pluralStringResource(R.plurals.upd_tests_count, tests.size, tests.size),
@@ -281,6 +282,63 @@ private fun ChannelPicker(u: UpdatesState, ua: UpdatesActions) {
         AnimatedVisibility(u.follow.channel == Channel.TEST && tests.isNotEmpty(), enter = expandVertically(Motion.sp(1f)) + fadeIn(Motion.sp(1f)), exit = shrinkVertically(Motion.sp(1f)) + fadeOut(Motion.sp(1f))) {
             Column(Modifier.padding(start = 18.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 tests.forEach { t -> TestRow(t, u.follow.pr == t.pr) { ua.onFollow(Follow(Channel.TEST, t.pr)) } }
+            }
+        }
+    }
+}
+
+/** Compact, read-only history under Preview; only the latest Preview build remains installable. */
+@Composable
+private fun PreviewHistory(catalog: AppUpdates.Catalog?, me: AppUpdates.Installed) {
+    val history = catalog?.let { AppUpdates.previewHistory(it, me) } ?: return
+    val colors = MaterialTheme.colorScheme
+    val pal = LocalPalette.current
+    val key = catalog?.recentPreviews?.firstOrNull()?.commit
+    var expanded by rememberSaveable(key) { mutableStateOf(false) }
+    val heading = when (history.kind) {
+        AppUpdates.PreviewHistoryKind.CURRENT -> stringResource(R.string.upd_preview_current)
+        AppUpdates.PreviewHistoryKind.BEHIND -> pluralStringResource(
+            R.plurals.upd_preview_behind, history.buildsBehind, history.buildsBehind,
+        )
+        AppUpdates.PreviewHistoryKind.RECENT -> pluralStringResource(
+            R.plurals.upd_preview_recent, history.changes.size, history.changes.size,
+        )
+    }
+    Column(Modifier.fillMaxWidth().padding(start = 66.dp, end = 14.dp, bottom = 5.dp)) {
+        Text(heading, fontSize = 11.5.sp, fontWeight = FontWeight.Medium, color = colors.onSurfaceVariant)
+        if (history.changes.isNotEmpty()) {
+            val visible = if (expanded) history.changes else history.changes.take(3)
+            Column(Modifier.padding(top = 3.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                visible.forEach { change ->
+                    Column {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Text(
+                                changeTitle(change.title.ifBlank { change.commit.take(7) }),
+                                fontSize = 12.5.sp, fontWeight = FontWeight.SemiBold, color = colors.onBackground,
+                                maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f),
+                            )
+                            Text(ago(change.publishedAt), fontSize = 11.sp, color = colors.onSurfaceVariant)
+                        }
+                        if (change.summary.isNotBlank()) Text(
+                            change.summary, fontSize = 11.5.sp, color = colors.onSurfaceVariant,
+                            maxLines = 1, overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                }
+            }
+            if (history.changes.size > 3 || expanded) {
+                val src = remember { MutableInteractionSource() }
+                val hot = rememberHot(src)
+                val toggle = { expanded = !expanded }
+                Text(
+                    if (expanded) stringResource(R.string.upd_less) else stringResource(R.string.upd_more),
+                    fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = pal.signal,
+                    modifier = Modifier.padding(top = 1.dp).offset(x = (-6).dp).paneItem("preview:history:more")
+                        .clip(Shape12).glideBorder(hot, Shape12, pal.signal)
+                        .hoverable(src).clickable(interactionSource = src, indication = null, role = Role.Button, onClick = toggle)
+                        .controllerConfirm(onClick = toggle)
+                        .padding(horizontal = 6.dp, vertical = 4.dp),
+                )
             }
         }
     }
