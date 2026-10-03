@@ -672,7 +672,6 @@ class SessionService : Service() {
             if (SessionState.deckPad) {
                 guest.add("FAKE_EVDEV_DECK=1")
                 guest.add("FAKE_DECK_SYSFS_LISTING=" + SteamDeckPad.listingDir(fakeInputDir.parentFile!!.parentFile!!).path)
-                guest.add("FAKE_DECK_SYSFS_ROOT=" + SteamDeckPad.sysfsRoot(fakeInputDir.parentFile!!.parentFile!!))
             }
         } else if (SessionState.mode == MODE_STEAM) {
             // Without it, games see the pad itself wearing Steam Input's virtual-gamepad identity -
