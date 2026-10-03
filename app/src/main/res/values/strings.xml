@@ -918,4 +918,15 @@
     <string name="game_env_change_title">Change variable</string>
     <string name="game_env_restore_default">Back to default</string>
     <string name="game_env_eyebrow">Proton games</string>
+    <string name="game_shortcut">Shortcut</string>
+    <string name="game_shortcut_add">Add to home screen</string>
+    <string name="game_shortcut_choose">Choose game</string>
+    <string name="game_shortcut_scanning">Scanning installed games…</string>
+    <string name="game_link_copy">Copy launch link</string>
+    <string name="game_link_copied">Launch link copied</string>
+    <string name="game_shortcut_unsupported">This launcher cannot add shortcuts. Use Copy launch link instead.</string>
+    <string name="game_link_invalid">Invalid game launch link.</string>
+    <string name="game_link_missing">This game is no longer in your DroidDeck library.</string>
+    <string name="game_link_session_busy">Stop the current session before launching a Steam game.</string>
+    <string name="game_link_failed">Could not send the game to Steam. Try launching it again.</string>
 </resources>
