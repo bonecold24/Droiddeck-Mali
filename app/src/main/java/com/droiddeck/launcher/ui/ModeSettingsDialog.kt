@@ -8,7 +8,6 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.TextButton
@@ -155,6 +154,7 @@ class ModeSettingsActions(
     val onDeckyCheck: () -> Unit = {},
     val onDeckyEnabled: (Boolean) -> Unit = {},
     val onDeckyUninstall: () -> Unit = {},
+    val onPickDeckyPluginZip: () -> Unit = {},
     val onDismiss: () -> Unit,
 )
 
@@ -324,15 +324,22 @@ fun ModeSettingsPage(s: ModeSettings, a: ModeSettingsActions) {
                     ) { confirmDeckyRemoval = true }
                 }
             }
-            if (s.deckyInstalled != null) SettingsRow(
-                stringResource(R.string.mode_decky),
+            if (s.deckyInstalled != null) ToggleRow(
+                host, "decky-enabled", stringResource(R.string.mode_decky),
                 if (s.deckyEnabled) stringResource(R.string.mode_decky_on)
                 else stringResource(R.string.mode_decky_off),
+                s.deckyEnabled,
+                enabled = !s.deckySessionRunning && s.deckyStage == null,
+                onChange = a.onDeckyEnabled,
+            )
+            SettingsRow(
+                "Plugins",
+                "Install a plugin ZIP for the next Steam session.",
             ) {
-                Switch(
-                    checked = s.deckyEnabled,
-                    onCheckedChange = a.onDeckyEnabled,
-                    enabled = !s.deckySessionRunning && s.deckyStage == null,
+                SecondaryButton(
+                    if (s.deckyStage?.startsWith("Downloading plugin binary") == true) "Downloading…" else "Install from ZIP",
+                    enabled = s.deckyInstalled != null && s.deckyStage == null && !s.deckySessionRunning,
+                    onClick = a.onPickDeckyPluginZip,
                 )
             }
             if (s.deckyStage != null && s.deckyPercent >= 0) {
