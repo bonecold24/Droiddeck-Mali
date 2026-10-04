@@ -137,6 +137,9 @@ class MainActivity : ComponentActivity() {
     private var tuSysmem by mutableStateOf(false)
     private var zinkLazy by mutableStateOf(false)
     private var noXalia by mutableStateOf(true)
+    private var fastSync by mutableStateOf(false)
+    private var syncFallback by mutableStateOf(true)
+    private var fsyncFirst by mutableStateOf(true)
     private var gamescopeRealtime by mutableStateOf(false)
     private var gpuClockPin by mutableStateOf(false)
     private var prootNoSeccomp by mutableStateOf(false)
@@ -863,9 +866,10 @@ class MainActivity : ComponentActivity() {
             val applied = runCatching { ComponentsManager.applyQueued(this) }.getOrDefault(emptyList())
             if (applied.isNotEmpty()) ui.post {
                 android.widget.Toast.makeText(this, "Applied: " + applied.joinToString(", "), android.widget.Toast.LENGTH_LONG).show()
-                if (showComponents) components.refreshComponents()
             }
+            ui.post { if (showComponents) components.refreshComponents() }
         }, "components-queue").start()
+        else if (showComponents) components.refreshComponents()
         oscMode = SessionPrefs.oscMode(this)
         refreshController()
         refreshHomeAppState()
@@ -1018,7 +1022,7 @@ class MainActivity : ComponentActivity() {
             busy = if (busy) stage else components.compBusy,
             downloads = components.compDownloads,
             requestInitialFocus = focusComponentsContent,
-            onProton = { components.compProton = it },
+            onProton = { components.chooseProton(it) },
             onComp = { components.compComp = it },
             onSwap = { file -> components.compProton?.let { pid -> components.componentAction("Swapping") { ComponentsManager.swap(this, pid, file) } } },
             onRestore = { version -> components.compProton?.let { pid -> components.componentAction("Restoring") { ComponentsManager.restore(this, pid, components.compComp, version) } } },
@@ -1130,6 +1134,7 @@ class MainActivity : ComponentActivity() {
                 storageOptions = storageOptions,
                 storageDiagnostics = mode == SessionService.MODE_STEAM && storageDiagnostics,
                 fexPreset = if (mode == SessionService.MODE_STEAM) fexPreset else null,
+                syncBackend = if (mode == SessionService.MODE_STEAM) SessionPrefs.syncBackendOf(fastSync, fsyncFirst, syncFallback) else null,
                 steamChannel = if (mode == SessionService.MODE_STEAM) steamChannel else null,
                 steamDeckMode = mode == SessionService.MODE_STEAM && steamDeckMode,
                 mangoapp = mangoapp,
@@ -1203,6 +1208,12 @@ class MainActivity : ComponentActivity() {
                     storageDiagnostics = on
                 },
                 onFexPreset = { id -> SessionPrefs.setFexPreset(this, id); fexPreset = id },
+                onSyncBackend = { id ->
+                    SessionPrefs.setSyncBackend(this, id)
+                    fastSync = SessionPrefs.fastSync(this)
+                    fsyncFirst = SessionPrefs.fsyncFirst(this)
+                    syncFallback = SessionPrefs.syncFallback(this)
+                },
                 onSteamChannel = { id -> SessionPrefs.setSteamChannel(this, id); steamChannel = id },
                 onSteamDeckMode = { on ->
                     SessionPrefs.setSteamDeckMode(this, on)
@@ -1242,6 +1253,9 @@ class MainActivity : ComponentActivity() {
             cores = CpuCores.all.map { c -> CoreRow(c, "cpu$c" + (CpuCores.maxGhz(c)?.let { String.format(java.util.Locale.US, " · %.1f GHz", it) } ?: "")) },
             clientOverride = clientOverride, clientCores = clientCores, gameCores = gameCores,
             tuSysmem = tuSysmem, zinkLazy = zinkLazy, glThread = glThread, noGlError = noGlError, noXalia = noXalia,
+            fastSync = fastSync,
+            syncFallback = syncFallback,
+            fsyncFirst = fsyncFirst,
             gamescopeRealtime = gamescopeRealtime,
             gpuClockPin = gpuClockPin,
             prootNoSeccomp = prootNoSeccomp, prootFastPath = prootFastPath, guestHostname = guestHostname, phantomWarning = phantomWarning,
@@ -1251,6 +1265,9 @@ class MainActivity : ComponentActivity() {
             onGlThread = { on -> SessionPrefs.setGlThread(this, on); glThread = on },
             onNoGlError = { on -> SessionPrefs.setNoGlError(this, on); noGlError = on },
             onNoXalia = { on -> SessionPrefs.setNoXalia(this, on); noXalia = on },
+            onFastSync = { on -> SessionPrefs.setFastSync(this, on); fastSync = on },
+            onSyncFallback = { on -> SessionPrefs.setSyncFallback(this, on); syncFallback = on },
+            onFsyncFirst = { on -> SessionPrefs.setFsyncFirst(this, on); fsyncFirst = on },
             onGamescopeRealtime = { on -> SessionPrefs.setGamescopeRealtime(this, on); gamescopeRealtime = on },
             onGpuClockPin = { on -> SessionPrefs.setGpuClockPin(this, on); gpuClockPin = on },
             onProotNoSeccomp = { on -> SessionPrefs.setProotNoSeccomp(this, on); prootNoSeccomp = on },
@@ -1309,6 +1326,9 @@ class MainActivity : ComponentActivity() {
         resolutionCap = SessionPrefs.resolutionCap(this, mode)
         customResolution = SessionPrefs.customResolution(this, mode)
         fexPreset = SessionPrefs.fexPreset(this)
+        fastSync = SessionPrefs.fastSync(this)
+        fsyncFirst = SessionPrefs.fsyncFirst(this)
+        syncFallback = SessionPrefs.syncFallback(this)
         steamChannel = SessionPrefs.steamChannel(this)
         steamDeckMode = SessionPrefs.steamDeckMode(this)
         mangoapp = SessionPrefs.mangoapp(this)
@@ -1380,6 +1400,9 @@ class MainActivity : ComponentActivity() {
         tuSysmem = SessionPrefs.tuSysmem(this)
         zinkLazy = SessionPrefs.zinkLazy(this)
         noXalia = SessionPrefs.noXalia(this)
+        fastSync = SessionPrefs.fastSync(this)
+        syncFallback = SessionPrefs.syncFallback(this)
+        fsyncFirst = SessionPrefs.fsyncFirst(this)
         gamescopeRealtime = SessionPrefs.gamescopeRealtime(this)
         gpuClockPin = SessionPrefs.gpuClockPin(this)
         prootNoSeccomp = SessionPrefs.prootNoSeccomp(this)

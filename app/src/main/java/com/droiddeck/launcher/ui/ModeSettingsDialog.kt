@@ -73,6 +73,8 @@ class ModeSettings(
     /** Steam only: record allocation and sampled storage timings in the next session's Share logs. */
     val storageDiagnostics: Boolean = false,
     val fexPreset: String? = null,
+    /** Steam only: SessionPrefs.SYNC_* chosen for Proton games; null outside Steam. */
+    val syncBackend: String? = null,
     /** Steam only: games are stretched to fill the screen (null = not a Steam page). */
     val forceFullscreen: Boolean? = null,
     val stretch16x9: Boolean? = null,
@@ -134,6 +136,7 @@ class ModeSettingsActions(
     val onPickGameStorageFolder: () -> Unit = {},
     val onStorageDiagnostics: (Boolean) -> Unit = {},
     val onFexPreset: (String) -> Unit = {},
+    val onSyncBackend: (String) -> Unit = {},
     val onForceFullscreen: (Boolean) -> Unit = {},
     val onStretch16x9: (Boolean) -> Unit = {},
     val onSteamChannel: (String) -> Unit = {},
@@ -404,6 +407,20 @@ fun ModeSettingsPage(s: ModeSettings, a: ModeSettingsActions) {
             )
         }
         if (steam && s.fexPreset != null) SettingsGroup(stringResource(R.string.game_settings_title)) {
+            if (s.syncBackend != null) SettingsRow(
+                stringResource(R.string.sync_backend_title),
+                stringResource(R.string.sync_backend_hint),
+            ) {
+                SegmentedTabs(
+                    listOf(
+                        SessionPrefs.SYNC_NTSYNC to stringResource(R.string.sync_backend_ntsync),
+                        SessionPrefs.SYNC_FSYNC to stringResource(R.string.sync_backend_fsync),
+                        SessionPrefs.SYNC_ESYNC to stringResource(R.string.sync_backend_esync),
+                        SessionPrefs.SYNC_WINESERVER to stringResource(R.string.sync_backend_wineserver),
+                    ),
+                    s.syncBackend,
+                ) { id -> host.open = null; a.onSyncBackend(id) }
+            }
             ChoiceRow(
                 host, "fex", stringResource(R.string.fex_preset_title), stringResource(R.string.fex_next_launch),
                 FexPreset.all.map { it.id to stringResource(it.label) }, s.fexPreset,

@@ -285,6 +285,52 @@ object SessionPrefs {
         prefs(context).edit().putBoolean("noXalia", on).apply()
     }
 
+    fun fastSync(context: Context): Boolean = prefs(context).getBoolean("fastSync", false)
+
+    fun setFastSync(context: Context, on: Boolean) {
+        prefs(context).edit().putBoolean("fastSync", on).apply()
+    }
+
+    fun fsyncFirst(context: Context): Boolean = prefs(context).getBoolean("fsyncFirst", true)
+
+    fun setFsyncFirst(context: Context, on: Boolean) {
+        prefs(context).edit().putBoolean("fsyncFirst", on).apply()
+    }
+
+    const val SYNC_ESYNC = "esync"
+    const val SYNC_NTSYNC = "ntsync"
+    const val SYNC_FSYNC = "fsync"
+    const val SYNC_WINESERVER = "wineserver"
+
+    /**
+     * The sync Proton games use, as the three switches above decide it: droiddeck-ntsync wins
+     * while it is on, then droiddeck-fsync first, then droiddeck-esync, and wineserver alone while all three are off.
+     */
+    fun syncBackend(context: Context): String = syncBackendOf(fastSync(context), fsyncFirst(context), syncFallback(context))
+
+    fun syncBackendOf(fastSync: Boolean, fsyncFirst: Boolean, syncFallback: Boolean): String = when {
+        fastSync -> SYNC_NTSYNC
+        fsyncFirst -> SYNC_FSYNC
+        syncFallback -> SYNC_ESYNC
+        else -> SYNC_WINESERVER
+    }
+
+    /** Picks one sync for Proton games; the switches change together, in one write. */
+    fun setSyncBackend(context: Context, backend: String) {
+        require(backend == SYNC_ESYNC || backend == SYNC_NTSYNC || backend == SYNC_FSYNC || backend == SYNC_WINESERVER) { "unknown sync $backend" }
+        prefs(context).edit()
+            .putBoolean("fastSync", backend == SYNC_NTSYNC)
+            .putBoolean("fsyncFirst", backend == SYNC_FSYNC)
+            .putBoolean("syncFallback", backend != SYNC_WINESERVER)
+            .apply()
+    }
+
+    fun syncFallback(context: Context): Boolean = prefs(context).getBoolean("syncFallback", true)
+
+    fun setSyncFallback(context: Context, on: Boolean) {
+        prefs(context).edit().putBoolean("syncFallback", on).apply()
+    }
+
     /**
      * Whether gamescope asks for realtime-priority Vulkan queues (GAMESCOPE_FORCE_VULKAN_REALTIME=1,
      * which the app's gamescope build honours without CAP_SYS_NICE). Off by default, as in
