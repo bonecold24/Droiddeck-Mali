@@ -65,6 +65,9 @@ import com.droiddeck.launcher.ui.FrontEndState
 import com.droiddeck.launcher.ui.FrontEndActions
 import com.droiddeck.launcher.frontend.CoverArt
 import com.droiddeck.launcher.frontend.Library
+import com.droiddeck.launcher.frontend.GameFiles
+import com.droiddeck.launcher.frontend.GameFileSync
+import com.droiddeck.launcher.frontend.GameLaunchIntent
 import com.droiddeck.launcher.ui.DroidDeckTheme
 import com.droiddeck.launcher.ui.RomsDialog
 import com.droiddeck.launcher.files.InAppFilePicker
@@ -399,10 +402,15 @@ class MainActivity : ComponentActivity() {
     private fun pickGameExport(game: Library.SteamGame?) {
         onSavePicked = { folder ->
             saveAction(getString(R.string.game_frontend_files)) {
-                if (game != null) com.droiddeck.launcher.frontend.GameFiles.export(folder, game)
-                else com.droiddeck.launcher.frontend.GameFileSync.enable(this, folder)
-                ui.post { gameSyncFolder = com.droiddeck.launcher.frontend.GameFileSync.folder(this) }
-                getString(R.string.game_file_exported, folder.path)
+                val saved = if (game != null) GameFiles.export(folder, game)
+                else {
+                    GameFileSync.enable(this, folder)
+                    folder
+                }
+                ui.post {
+                    gameSyncFolder = GameFileSync.folder(this)
+                }
+                getString(R.string.game_file_exported, saved.path)
             }
         }
         pickSaveDir.launch(InAppFilePicker.buildDirIntent(this, getString(R.string.game_file_folder), gameSyncFolder))
@@ -416,10 +424,10 @@ class MainActivity : ComponentActivity() {
             shortcutLibraryScanning = true
         } else shortcutLibraryScanning = false
         pendingGameLink = null
-        if (request.action == Intent.ACTION_VIEW) {
+        if (GameLaunchIntent.accepts(request.action)) {
             val copy = Intent(request)
             Thread({
-                val id = com.droiddeck.launcher.frontend.GameFiles.readIntent(this, copy)
+                val id = GameLaunchIntent.read(this, copy)
                 ui.post {
                     if (intent === request && !isDestroyed) {
                         pendingGameLink = id
@@ -462,10 +470,14 @@ class MainActivity : ComponentActivity() {
         if (game == null) {
             pendingGameLink = null
             intent.data = null
+            intent.action = Intent.ACTION_MAIN
+            intent.removeExtra(GameLaunchIntent.EXTRA_APP_ID)
             android.widget.Toast.makeText(this, R.string.game_link_missing, android.widget.Toast.LENGTH_LONG).show()
         } else if (launchGame(game)) {
             pendingGameLink = null
             intent.data = null
+            intent.action = Intent.ACTION_MAIN
+            intent.removeExtra(GameLaunchIntent.EXTRA_APP_ID)
         }
     }
 
@@ -477,7 +489,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         readGameIntent(intent)
-        gameSyncFolder = com.droiddeck.launcher.frontend.GameFileSync.folder(this)
+        gameSyncFolder = GameFileSync.folder(this)
         displayManager = getSystemService(DISPLAY_SERVICE) as DisplayManager
         refreshPhantomStatus()
         theme = SessionPrefs.theme(this)
@@ -556,7 +568,7 @@ class MainActivity : ComponentActivity() {
                         onSyncGameFiles = { pickGameExport(null) },
                         onStopGameFileSync = {
                             Thread({
-                                com.droiddeck.launcher.frontend.GameFileSync.disable(this)
+                                GameFileSync.disable(this)
                                 ui.post { gameSyncFolder = null }
                             }, "game-file-stop-sync").start()
                         },
