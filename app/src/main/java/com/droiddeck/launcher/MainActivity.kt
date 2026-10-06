@@ -440,7 +440,7 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private fun launchGame(game: Library.SteamGame): Boolean {
+    private fun launchGame(game: Library.SteamGame, returnHome: Boolean = false): Boolean {
         if (protons.protonBusyId != null || ProtonExtras.installInProgress || pkgStage != null) {
             android.widget.Toast.makeText(this, "Wait for the install to finish before launching a game", android.widget.Toast.LENGTH_SHORT).show()
             return false
@@ -455,10 +455,12 @@ class MainActivity : ComponentActivity() {
                 return false
             }
             startActivity(Intent(this, SessionActivity::class.java).setAction(SessionService.ACTION_RESUME)
+                .putExtra(SessionActivity.EXTRA_RETURN_HOME, returnHome)
                 .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP))
             return true
         }
         return startSession(Intent(this, SessionActivity::class.java)
+                .putExtra(SessionActivity.EXTRA_RETURN_HOME, returnHome)
                 .putExtra(SessionService.EXTRA_STEAM_URL,
                 com.droiddeck.launcher.frontend.GameLaunchLink.steamUrl(game.gameIdString)), steamSession = true)
     }
@@ -473,7 +475,7 @@ class MainActivity : ComponentActivity() {
             intent.action = Intent.ACTION_MAIN
             intent.removeExtra(GameLaunchIntent.EXTRA_APP_ID)
             android.widget.Toast.makeText(this, R.string.game_link_missing, android.widget.Toast.LENGTH_LONG).show()
-        } else if (launchGame(game)) {
+        } else if (launchGame(game, returnHome = true)) {
             pendingGameLink = null
             intent.data = null
             intent.action = Intent.ACTION_MAIN

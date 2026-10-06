@@ -1145,6 +1145,7 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
                 // the request landed in this instance's onNewIntent and went with its finish().
                 SessionState.relaunch?.let { next ->
                     SessionState.relaunch = null
+                    next.putExtra(EXTRA_RETURN_HOME, intent.getBooleanExtra(EXTRA_RETURN_HOME, false))
                     setIntent(next)
                     recreate()
                     return@runOnUiThread
@@ -1906,6 +1907,8 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
             recreate()
             return
         }
+        // Home/notification resumes must retain the external frontend's return destination.
+        if (this.intent.getBooleanExtra(EXTRA_RETURN_HOME, false)) intent.putExtra(EXTRA_RETURN_HOME, true)
         setIntent(intent)
         if (intent.action == SessionService.ACTION_HOME_GUIDE) {
             handleHomeGuideIntent(intent)
@@ -2046,6 +2049,7 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
      * off, it just closes.
      */
     override fun finish() {
+        if (isFinishing) return
         if (!quitFlooded && !closeAtOnce && com.droiddeck.launcher.ui.Motion.scale != 0f &&
             lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.RESUMED)) {
             if (!leaving) {
@@ -2056,6 +2060,12 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
             return
         }
         super.finish()
+        if (!closeAtOnce && intent.getBooleanExtra(EXTRA_RETURN_HOME, false)) {
+            com.droiddeck.launcher.ui.QuitFlood.take()
+            com.droiddeck.launcher.ui.LaunchOrigin.flooding = null
+            startActivity(Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+        }
         if (quitFlooded) overridePendingTransition(0, 0)
         else overridePendingTransition(R.anim.session_hold, R.anim.session_sink)
     }
@@ -2071,6 +2081,7 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
     }
 
     companion object {
+        const val EXTRA_RETURN_HOME = "returnHome"
         /** How long the leaving flood may take before the session closes without it. */
         private const val LEAVE_TIMEOUT_MS = 1_500L
         private const val TAG = "SessionActivity"
