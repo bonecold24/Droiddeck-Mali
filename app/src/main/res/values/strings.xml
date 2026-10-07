@@ -1345,6 +1345,7 @@
     <string name="content_system_many">Many systems</string>
     <!-- File manager -->
     <string name="fm_drive_internal">Internal</string>
+    <string name="fm_drive_linux">Linux system</string>
     <string name="fm_drive_sd">SD card</string>
     <string name="fm_drive_storage">Storage</string>
     <string name="fm_select">Select</string>
