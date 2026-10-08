@@ -144,6 +144,9 @@ program_cores() {
 }
 
 if [ -z "${BL_INSIDE:-}" ]; then
+  # Install the shared default-family aliases before Steam, gamescope or the desktop queries fonts.
+  /usr/local/bin/droiddeck-fonts 2>&1 | sed 's/^/[fonts] /'
+  # Android's directory binding and language-specific family matches handle CJK and Thai fonts.
   device_fonts=/usr/local/share/fonts/android
   if [ -d "$device_fonts" ] && [ -d /etc/fonts/conf.d ] && command -v fc-cache >/dev/null 2>&1; then
     fonts_rules=$(
