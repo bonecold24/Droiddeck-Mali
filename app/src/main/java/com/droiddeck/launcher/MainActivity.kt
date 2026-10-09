@@ -916,6 +916,7 @@ class MainActivity : ComponentActivity() {
 
     /** On the Components page the pad's LB / RB step through GPU drivers, FEX, DXVK and VKD3D-Proton, wrapping around. */
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        if (event.keyCode == KeyEvent.KEYCODE_BUTTON_A) com.droiddeck.launcher.ui.HeldKeys.confirm = event.action == KeyEvent.ACTION_DOWN
         if (showComponents && (event.keyCode == KeyEvent.KEYCODE_BUTTON_L1 || event.keyCode == KeyEvent.KEYCODE_BUTTON_R1)) {
             if (event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0) {
                 val all = listOf(com.droiddeck.launcher.ui.GPU_TAB) + ComponentsManager.COMPONENTS
@@ -924,7 +925,15 @@ class MainActivity : ComponentActivity() {
             }
             return true
         }
-        return super.dispatchKeyEvent(event)
+        // Compose throws when its focus tree has lost the focused node; one key is dropped
+        // instead of the app.
+        return try {
+            super.dispatchKeyEvent(event)
+        } catch (e: IllegalStateException) {
+            if (e.message?.contains("active focus target") != true) throw e
+            android.util.Log.w("MainActivity", "key ${event.keyCode} dropped: ${e.message}")
+            true
+        }
     }
 
     override fun onResume() {
