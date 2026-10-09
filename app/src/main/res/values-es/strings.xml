@@ -358,13 +358,6 @@
     <string name="mode_storage_diagnostics">Diagnóstico de almacenamiento</string>
     <string name="mode_storage_diagnostics_hint">Registra los resultados de asignación y muestras de tiempos de almacenamiento en Compartir registros. Puede ralentizar las instalaciones mientras esté activado. Se aplica en la próxima sesión.</string>
     <string name="mode_choose_folder">Elegir una carpeta…</string>
-    <string name="mode_renderer">Renderizador</string>
-    <string name="mode_desktop_renderer">Renderizador del escritorio</string>
-    <string name="mode_renderer_hint">Dibuja el escritorio.</string>
-    <string name="mode_renderer_vulkan">vulkan - GPU</string>
-    <string name="mode_renderer_gles2">gles2 - GPU (experimental)</string>
-    <string name="mode_renderer_pixman">pixman - software</string>
-    <string name="mode_renderer_note">Vulkan ejecuta los programas del escritorio en la GPU y recurre a pixman si falla. Con pixman, los juegos se abren a pantalla completa en la GPU.</string>
     <string name="mode_custom_res_title">Resolución personalizada</string>
     <string name="mode_custom_res_text">Sustituye el límite y la relación de aspecto. Un tamaño que no coincide con la pantalla muestra barras.</string>
     <string name="mode_width">Ancho</string>
@@ -894,7 +887,7 @@
     <string name="content_open_desktop">Abrir escritorio</string>
     <string name="content_install_open_desktop">Instalar y abrir escritorio</string>
     <string name="content_linux_desktop">Escritorio de Linux</string>
-    <string name="content_linux_desktop_hint">LXQt, Firefox y tus emuladores</string>
+    <string name="content_linux_desktop_hint">KDE Plasma, Firefox y tus emuladores</string>
     <string name="games_empty">Los juegos que instales en Steam aparecen aquí después de la sesión.</string>
     <string name="games_play_steam">Jugar en Steam</string>
     <string name="games_launch_settings">Ajustes de inicio</string>
@@ -1259,7 +1252,6 @@
     <!-- %1$s is the program's name -->
     <string name="session_named_paused">%1$s está en pausa</string>
     <string name="session_program_paused">El programa está en pausa</string>
-    <string name="session_starting_steam_desktop">Iniciando Steam en el escritorio</string>
     <string name="session_starting_desktop">Iniciando el escritorio</string>
 
     <!-- %1$s is the program's name -->
@@ -1285,7 +1277,6 @@
     <string name="session_proton_unpacking">descomprimiendo Proton Experimental (ARM64)</string>
     <string name="session_runtime_catalog_unreachable">No se pudo acceder al catálogo del runtime. Revisa la conexión y vuelve a pulsar Jugar.</string>
     <string name="session_runtime_install_failed">El runtime de Linux no se instaló. Revisa el runtime en Configuración y vuelve a pulsar Jugar.</string>
-    <string name="session_desktop_catalog_unreachable">No se pudo acceder al catálogo del escritorio. Revisa la conexión y pulsa Escritorio de nuevo.</string>
 
     <!-- %1$s says what went wrong -->
     <string name="session_desktop_install_failed">El escritorio no se instaló (%1$s). Revisa la conexión y pulsa Escritorio de nuevo.</string>

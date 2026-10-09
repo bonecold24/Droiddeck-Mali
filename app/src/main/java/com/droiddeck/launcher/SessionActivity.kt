@@ -745,9 +745,9 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
     }
 
     private fun loadingTitle(): String = when (loadingMode()) {
-        SessionService.MODE_DESKTOP ->
-            if (!SessionState.running && intent.getStringExtra(SessionService.EXTRA_STEAM_UI) != null) getString(R.string.session_starting_steam_desktop)
-            else getString(R.string.session_starting_desktop)
+        // Also when the desktop was asked for with Steam (Big Picture's Switch to Desktop): the client
+        // does not open on it.
+        SessionService.MODE_DESKTOP -> getString(R.string.session_starting_desktop)
         SessionService.MODE_RUN -> {
             val program = if (SessionState.running) SessionState.program else intent.getStringExtra(SessionService.EXTRA_PROGRAM)
             com.droiddeck.launcher.frontend.Library.nameForProgram(program)?.let { getString(R.string.session_starting_named, it) }
@@ -929,8 +929,7 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
     /** Null when the desktop package is in, else the loading screen's closing line. */
     private fun installDesktop(): String? {
         uiHandler.post { loading.percent = -1; loading.say(getString(DESKTOP_LINES.downloading), DESKTOP_LINES.topic, readable = true) }
-        val entry = com.droiddeck.launcher.runtime.DesktopCatalog.fetch()?.firstOrNull { it.id == "desktop" }
-            ?: return getString(R.string.session_desktop_catalog_unreachable)
+        val entry = com.droiddeck.launcher.runtime.DesktopCatalog.desktopEntry(this)
         val problem = com.droiddeck.launcher.runtime.DesktopCatalog.install(this, entry,
             progressFor(DESKTOP_LINES, entry.size / 1_000_000))
         return problem?.let { getString(R.string.session_desktop_install_failed, it) }
