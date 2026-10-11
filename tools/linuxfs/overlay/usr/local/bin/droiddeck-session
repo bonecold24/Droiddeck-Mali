@@ -408,9 +408,9 @@ case $mode in
     # its main library already - and the ARM64 Proton that lets it launch the Windows ones.
     # A request left in ~/.bl-proton-extra installs a third-party Proton before the client starts,
     # so it is in the Compatibility dropdown the first time the user looks. One per line, each the
-    # arguments to droiddeck-proton-extra: "ge", "cachyos", "ge --tag GE-Proton11-7", or a URL.
-    # Hundreds of megabytes each, so it is only ever done on request, and the line is dropped once
-    # it has succeeded - a failed download stays and is retried next session.
+    # arguments to droiddeck-proton-extra: "ge", "cachyos", "droiddeck", "ge --tag GE-Proton11-7",
+    # or a URL. Hundreds of megabytes each, so it is only ever done on request, and the line is
+    # dropped once it has succeeded - a failed download stays and is retried next session.
     if [ -s "$HOME/.bl-proton-extra" ]; then
       _bl_left=$HOME/.bl-proton-extra.left
       : > "$_bl_left"
