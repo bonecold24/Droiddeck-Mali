@@ -111,10 +111,26 @@ private fun DownloadList(s: FrontEndState, a: FrontEndActions) {
     var clearing by remember { mutableStateOf(false) }
     // Under way on top; finished below a line whose X clears them all (rows only - a failed
     // download's kept files stay until its game page's Clear).
-    val (active, finished) = entries.partition { it.isActive }
+    // Under way first, then paused, then the queue in its order: a queued row sat above the one running.
+    val (active, finished) = entries.partition { it.isActive }.let { (on, off) ->
+        on.sortedWith(compareBy<DownloadEntry>({ when (it.state) { DownloadState.RUNNING -> 0; DownloadState.PAUSED -> 1; else -> 2 } }, { it.queuePosition })) to off
+    }
     val finishedShown = if (clearing) emptyList() else finished
+    // Installs that stopped without the queue knowing (the app closed or was killed): the queue
+    // lives in memory, so after a restart they were only on their game's page. They resume here too.
+    val queued = entries.mapTo(HashSet()) { it.key }
+    // Matched against each store's library: one not read yet (Downloads opened first) is read from
+    // its cache, quietly, so the rows are there without visiting the store.
+    val ctx = LocalContext.current
+    val missing = StoresState.unfinished.map { it.store }.filter { StoresState.library[it] == null }.toSet()
+    LaunchedEffect(missing) { missing.forEach { StoresState.backend(it)?.syncLibrary(ctx, false) } }
+    val interrupted = StoresState.unfinished.mapNotNull { u ->
+        StoresState.library[u.store]?.firstOrNull {
+            u.id == it.id || (u.id == null && u.folder.name == com.droiddeck.launcher.stores.StoreInstallRoot.folderName(it.title, it.id))
+        }
+    }.filter { "${it.store.id}:${it.id}" !in queued }.distinctBy { "${it.store.id}:${it.id}" }
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        AnimatedVisibility(entries.isEmpty(), enter = fadeIn(Motion.tw(300, 300)), exit = fadeOut(Motion.tw(120))) {
+        AnimatedVisibility(entries.isEmpty() && interrupted.isEmpty(), enter = fadeIn(Motion.tw(300, 300)), exit = fadeOut(Motion.tw(120))) {
             Box(Modifier.fillMaxWidth().padding(vertical = 40.dp), contentAlignment = Alignment.Center) {
                 Text(stringResource(R.string.stores_downloads_empty), fontSize = 13.sp, color = colors.onSurfaceVariant)
             }
@@ -135,6 +151,11 @@ private fun DownloadList(s: FrontEndState, a: FrontEndActions) {
                 else shrinkHorizontally(Motion.tw(260), shrinkTowards = Alignment.End) + shrinkVertically(Motion.tw(300, 120)) + fadeOut(Motion.tw(200, 80))
             },
         ) { row, _ -> DownloadCard(StoresState.download(row.key) ?: row, s, a) }
+        AnimatedRows(
+            interrupted, key = { "${it.store.id}:${it.id}" },
+            enter = { i, _ -> fadeIn(Motion.tw(300, 60 * i.coerceAtMost(5))) + expandVertically(Motion.tw(260)) },
+            exit = { _, _, _ -> fadeOut(Motion.tw(160)) + shrinkVertically(Motion.tw(220, 60)) },
+        ) { item, _ -> InterruptedRow(item) }
         AnimatedVisibility(
             finishedShown.isNotEmpty(),
             enter = expandVertically(Motion.tw(260)) + fadeIn(Motion.tw(220)),
@@ -172,21 +193,50 @@ private fun DownloadList(s: FrontEndState, a: FrontEndActions) {
     }
 }
 
+/** An install that stopped before it finished, from an earlier run: Resume picks it up, Clear deletes what it had. */
+@Composable
+private fun InterruptedRow(item: com.droiddeck.launcher.stores.CatalogItem) {
+    val ctx = LocalContext.current
+    ArtStrip(item.imageUrl ?: item.tallImageUrl, item.title) {
+        Text(item.title, fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color.White, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
+        SourceChip(item.store.id, small = true)
+        Text(stringResource(R.string.stores_dl_interrupted), fontSize = 12.sp, color = Color(0xFFFFC24D), maxLines = 1)
+        Spacer(Modifier.weight(1f))
+        RoundAction(Icons.Filled.PlayArrow, stringResource(R.string.stores_dl_resume), primary = true) { StoresState.requestInstall(ctx, item) }
+        CancelAction { StoresState.clearUnfinished(ctx, item) }
+    }
+}
+
 /** How long a row that installed holds for its bar to gather into Play before it moves under the line. */
 private const val GATHER_HOLD_MS = 900
+
+/**
+ * A row in the download card's look, shorter: the game's art behind it under the same dark wash,
+ * the copy in white. Finished and interrupted downloads read as the same thing as one under way.
+ */
+@Composable
+private fun ArtStrip(cover: String?, name: String, content: @Composable androidx.compose.foundation.layout.RowScope.() -> Unit) {
+    val pal = LocalPalette.current
+    Box(Modifier.fillMaxWidth().heightIn(min = 60.dp).clip(Shape12).background(Color(0xFF101318)).border(1.dp, pal.line, Shape12)) {
+        if (!cover.isNullOrEmpty()) AsyncImage(model = cover, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.matchParentSize())
+        else Spacer(Modifier.matchParentSize().background(artBrush(hueOf(name))))
+        Spacer(Modifier.matchParentSize().background(Brush.horizontalGradient(0f to Color.Black.copy(alpha = 0.92f), 0.5f to Color.Black.copy(alpha = 0.72f), 1f to Color.Black.copy(alpha = 0.2f))))
+        Row(
+            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp),
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 8.dp), content = content,
+        )
+    }
+}
 
 /** A finished download: its name and store, and Play when it installed - blooming out of a dot when it just did. */
 @Composable
 private fun FinishedRow(d: DownloadEntry, s: FrontEndState, a: FrontEndActions, bloom: Boolean = false) {
     val ctx = LocalContext.current
-    val colors = MaterialTheme.colorScheme
-    Row(
-        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp),
-        modifier = Modifier.fillMaxWidth().clip(Shape12).background(colors.surface).padding(horizontal = 12.dp, vertical = 6.dp),
-    ) {
-        Text(d.name, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = colors.onBackground, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
+    ArtStrip(d.cover, d.name) {
+        Text(d.name, fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color.White, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
         SourceChip(d.store.id, small = true)
-        Text(stringResource(if (d.state == DownloadState.INSTALLED) R.string.stores_installed_chip else R.string.stores_dl_cancelled), fontSize = 11.sp, color = colors.onSurfaceVariant, maxLines = 1, modifier = Modifier.weight(1f))
+        Text(stringResource(if (d.state == DownloadState.INSTALLED) R.string.stores_installed_chip else R.string.stores_dl_cancelled), fontSize = 12.sp, color = Color.White.copy(alpha = 0.72f), maxLines = 1)
+        Spacer(Modifier.weight(1f))
         if (d.state == DownloadState.INSTALLED) Box(Modifier.bloomIn(bloom, GATHER_HOLD_MS + 150)) {
             RoundAction(Icons.Filled.PlayArrow, stringResource(R.string.stores_play), primary = true) { launchStoreGame(ctx, d.store, d.id, s, a) }
         }
