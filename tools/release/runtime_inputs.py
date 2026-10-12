@@ -16,7 +16,9 @@ SOURCE_PATHS = ['app/build.gradle', 'app/src/main/cpp/fakeinput_steam.cpp', 'app
                 'tools/linuxfs', 'tools/proot', 'tools/aaudio-sink', 'tools/directaudio',
                 'tools/gamescope/release.env', 'tools/droiddeck-esync/release.env',
                 'tools/mangoapp', 'tools/msitools', 'tools/comet', 'tools/build_local.sh',
-                'tools/release/runtime_inputs.py', 'app/src/main/assets/desktop-removal']
+                'tools/release/runtime_inputs.py', 'app/src/main/assets/desktop-removal',
+                'tools/quest', 'app/src/main/cpp/adrenotools/src/hook/kgsl.h',
+                'app/src/main/assets/graphics_driver/adrenotools-turnip25.1.0.tzst']
 
 
 def digest(path):
@@ -48,11 +50,14 @@ def outputs(root):
     for library in ['libproot.so', 'libproot-loader.so', 'libdirectaudiorelay.so']:
         result['lib/arm64-v8a/' + library] = 'app/src/main/jniLibs/arm64-v8a/' + library
     result['assets/pulseaudio.tzst'] = 'app/build/prepared-assets/pulseaudio.tzst'
+    result['assets/graphics_driver/adrenotools-turnip25.1.0-quest1.tzst'] = \
+        'app/build/prepared-assets/graphics_driver/adrenotools-turnip25.1.0-quest1.tzst'
     return result
 
 
 def required():
-    paths = ['assets/linuxfs/' + name for name in ['libfakeinput.so', 'libblsession.so',
+    paths = ['assets/graphics_driver/adrenotools-turnip25.1.0-quest1.tzst']
+    paths += ['assets/linuxfs/' + name for name in ['libfakeinput.so', 'libblsession.so',
              'libblfastpath.so', 'libssbs.so', 'usr/local/bin/droiddeck-clipboard',
              'usr/local/bin/gamescope', 'usr/local/lib/droiddeck/uruntime']]
     for arch in ['x86_64', 'i386']:

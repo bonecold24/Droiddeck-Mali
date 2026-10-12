@@ -585,6 +585,8 @@ class SessionService : Service() {
     private fun addClientEnvironment(guest: MutableList<String>, steamHere: Boolean) {
         guest.add("/usr/bin/env")
         guest.add("-i")
+        // PRoot executes guest[0] directly; assignments belong after env -i.
+        guest.add("DROIDDECK_BWRAP_SOCKET=" + com.droiddeck.launcher.runtime.BwrapSpawner.socket(this))
         guest.add("HOME=/root")
         guest.add("USER=root")
         guest.add("PATH=/usr/local/bin:/usr/bin:/bin")

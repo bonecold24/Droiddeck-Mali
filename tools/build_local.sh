@@ -320,6 +320,7 @@ else
 fi
 
 cd "${repo_root}"
+python3 tools/quest/build-driver.py "${NDK}"
 bash tools/comet/build-local.sh
 python3 tools/release/runtime_inputs.py record
 ./gradlew "${gradle_task}" --console=plain -PndkVersion="${ndk_version}" ${gradle_rust_arg}
