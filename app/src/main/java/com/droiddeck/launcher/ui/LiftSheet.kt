@@ -248,6 +248,8 @@ internal fun LiftHero(
     val playSrc = remember { MutableInteractionSource() }
     val playHovered by playSrc.collectIsHoveredAsState()
     var playFocused by remember { mutableStateOf(false) }
+    // Set as a pad leaves the sheet to the left for Play, which folds it once Play has focus.
+    val leftForPlay = remember { booleanArrayOf(false) }
     var heroAt by remember { mutableStateOf(Offset.Zero) }
     var rest by remember { mutableStateOf<Rect?>(null) }
     fun focusPlay() { if (ff != null && inputMode.inputMode == InputMode.Keyboard) runCatching { ff.primary.requestFocus() } }
@@ -350,6 +352,9 @@ internal fun LiftHero(
         }
     }
     BackHandler(enabled = open && !launching) { close() }
+    // The ring keeps out of the lift and the fold, and comes back on whatever has focus once
+    // they are done: Play rides the sheet on a layer, and the ring hung where Play had been.
+    if (ride.isRunning || (shown && !open)) VeilRing()
     val openNow = open || shown
     LaunchedEffect(openNow) { onOpenChange(openNow) }
 
@@ -554,8 +559,8 @@ internal fun LiftHero(
                         onPrevious = { if (tab > 0) { travel = -1; tab--; runCatching { chipFocus[tab].requestFocus() } } },
                         onNext = { if (tab < tabs.lastIndex) { travel = 1; tab++; runCatching { chipFocus[tab].requestFocus() } } },
                     )
-                    // A pad stays in the sheet until it folds; Left from it reaches Play, the handle.
-                    .focusProperties { exit = { dir -> if (!openState.value || launchingState.value) FocusRequester.Default else if (dir == FocusDirection.Left && ff != null) ff.primary else FocusRequester.Cancel } }
+                    // A pad stays in the sheet until it folds; Left from it reaches Play, the handle, and folds it.
+                    .focusProperties { exit = { dir -> if (!openState.value || launchingState.value) FocusRequester.Default else if (dir == FocusDirection.Left && ff != null) { leftForPlay[0] = true; ff.primary } else FocusRequester.Cancel } }
                     .focusGroup(),
             ) {
                 Box(
@@ -629,7 +634,11 @@ internal fun LiftHero(
                 Modifier
                     .onGloballyPositioned { rest = it.boundsInRoot() }
                     .graphicsLayer { translationY = raise * ride.value }
-                    .onFocusChanged { playFocused = it.hasFocus }
+                    .onFocusChanged {
+                        // Left out of the sheet (from the chips or a row) folds it, as Up from the chips does.
+                        if (it.hasFocus && leftForPlay[0]) { leftForPlay[0] = false; if (openState.value && !launchingState.value) close() }
+                        playFocused = it.hasFocus
+                    }
                     .hoverable(playSrc)
                     .onPreviewKeyEvent { e ->
                         val k = e.nativeKeyEvent
@@ -746,9 +755,11 @@ private fun Modifier.drawBorderSidesAndFoot(color: Color, corner: Dp): Modifier 
 
 /**
  * The sheet's chips: equal capsules with one selection gliding under them (the stores' chip row),
- * LB and RB a chip at a time, a tap or A on a far one a hop as a drop. [first] takes focus as the
- * sheet opens. Too narrow for equal chips, the row scrolls.
+ * LB and RB a chip at a time, a tap or A on a far one a hop as a drop. A pad picks a chip by
+ * moving onto it, and comes into the row on the picked one. [first] takes focus as the sheet
+ * opens. Too narrow for equal chips, the row scrolls.
  */
+@OptIn(ExperimentalComposeUiApi::class)
 @Composable
 internal fun SheetChips(labels: List<String>, selected: Int, focus: List<FocusRequester>? = null, onPick: (Int) -> Unit) {
     val pal = LocalPalette.current
@@ -765,12 +776,18 @@ internal fun SheetChips(labels: List<String>, selected: Int, focus: List<FocusRe
         // Room inside the scroll for the focus ring, which the scroll's clip would otherwise cut.
         Box(if (equal) Modifier.fillMaxWidth() else Modifier.edgeFade(scroll).horizontalScroll(scroll).padding(3.dp)) {
             ChipGlide(selected, bounds[selected], tint)
-            Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = if (equal) Modifier.fillMaxWidth() else Modifier) {
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                // Up from the rows lands on the picked chip, not whichever sits above: landing picks.
+                modifier = (if (equal) Modifier.fillMaxWidth() else Modifier)
+                    .focusProperties { enter = { chips.getOrNull(selected) ?: FocusRequester.Default } }
+                    .focusGroup(),
+            ) {
                 labels.forEachIndexed { i, label ->
                     val m = (if (equal) Modifier.weight(1f) else Modifier.widthIn(min = 64.dp))
                         .onGloballyPositioned { bounds[i] = it.boundsInParent() }
                         .focusRequester(chips[i])
-                    SheetChip(label, i == selected, m) { onPick(i) }
+                    SheetChip(label, i == selected, m.onFocusChanged { if (it.isFocused && i != selected) onPick(i) }) { onPick(i) }
                 }
             }
         }
