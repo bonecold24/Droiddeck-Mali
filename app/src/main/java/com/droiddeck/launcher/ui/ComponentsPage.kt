@@ -739,7 +739,15 @@ fun ComponentsPage(
         Column(Modifier.fillMaxSize()) {
             // The in-use bar keeps its place; only its words change.
             AnimatedContent(l, transitionSpec = { fadeIn(Motion.tw(240)) togetherWith fadeOut(Motion.tw(160)) }, label = "inUse") { k -> bar(k) }
-            Column(Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()).padding(top = 12.dp, bottom = 16.dp)) {
+            val detailScroll = androidx.compose.runtime.key(l) { rememberScrollState() }
+            Column(Modifier.weight(1f).fillMaxWidth().verticalScroll(detailScroll).padding(top = 12.dp, bottom = 16.dp)) {
+                // Shared performance settings stay visible before the downloadable catalog.
+                if (l == PROTON_TAB) {
+                    if (!protons.runtimeReady) EmptyLine(stringResource(R.string.content_needs_runtime))
+                    if (protons.sessionRunning) EmptyLine(stringResource(R.string.proton_stop_first))
+                    SettingsGroup(stringResource(R.string.comp_for_every_proton)) { protonOptions() }
+                    Spacer(Modifier.height(12.dp))
+                }
                 val slide: @Composable (@Composable (String) -> Unit) -> Unit = { body ->
                     AnimatedContent(
                         l,
@@ -777,10 +785,6 @@ fun ComponentsPage(
                     }
                 }
                 if (l == PROTON_TAB) {
-                    Spacer(Modifier.height(10.dp))
-                    if (!protons.runtimeReady) EmptyLine(stringResource(R.string.content_needs_runtime))
-                    if (protons.sessionRunning) EmptyLine(stringResource(R.string.proton_stop_first))
-                    SettingsGroup(stringResource(R.string.comp_for_every_proton)) { protonOptions() }
                     Spacer(Modifier.height(12.dp))
                     Note(stringResource(R.string.comp_about_text))
                 }
@@ -815,40 +819,36 @@ fun ComponentsPage(
             if (narrow) Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 6.dp)) { DeviceChip(gpu) }
             Spacer(Modifier.height(14.dp))
             if (games.isNotEmpty()) {
-                SettingsGroup(stringResource(R.string.comp_profile_configure)) {
-                    SettingsRow(
-                        stringResource(R.string.comp_profile),
-                        if (selectedGame == null) {
-                            stringResource(R.string.comp_scope_general_detail)
-                        } else {
-                            stringResource(R.string.comp_profile_game_detail, selectedGame.name)
-                        },
-                    ) {
-                        Box {
-                            ValueChip(
-                                selectedGame?.name ?: stringResource(R.string.comp_scope_general),
-                                scopeMenu,
-                                modifier = Modifier.widthIn(max = 320.dp).heightIn(min = 44.dp),
-                            ) { scopeMenu = !scopeMenu }
-                            AnchoredMenu(
-                                scopeMenu,
-                                onDismiss = { scopeMenu = false },
-                                title = stringResource(R.string.comp_profile_configure),
-                            ) { first ->
-                                MenuItem(
-                                    stringResource(R.string.comp_scope_general),
-                                    checked = selectedGame == null,
-                                    detail = stringResource(R.string.comp_scope_general_detail),
-                                    focusRequester = first,
-                                ) {
-                                    selectedGameKey = null
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    modifier = Modifier.fillMaxWidth().padding(bottom = 10.dp),
+                ) {
+                    Text(stringResource(R.string.comp_profile), fontSize = 14.sp, color = colors.onSurfaceVariant)
+                    Box(Modifier.weight(1f, fill = false)) {
+                        ValueChip(
+                            selectedGame?.name ?: stringResource(R.string.comp_scope_general),
+                            scopeMenu,
+                            modifier = Modifier.widthIn(max = 320.dp).heightIn(min = 44.dp),
+                        ) { scopeMenu = !scopeMenu }
+                        AnchoredMenu(
+                            scopeMenu,
+                            onDismiss = { scopeMenu = false },
+                            title = stringResource(R.string.comp_profile_configure),
+                        ) { first ->
+                            MenuItem(
+                                stringResource(R.string.comp_scope_general),
+                                checked = selectedGame == null,
+                                detail = stringResource(R.string.comp_scope_general_detail),
+                                focusRequester = first,
+                            ) {
+                                selectedGameKey = null
+                                scopeMenu = false
+                            }
+                            games.sortedBy { it.name.lowercase() }.forEach { game ->
+                                MenuItem(game.name, checked = selectedGameKey == game.profileKey) {
+                                    selectedGameKey = game.profileKey
                                     scopeMenu = false
-                                }
-                                games.sortedBy { it.name.lowercase() }.forEach { game ->
-                                    MenuItem(game.name, checked = selectedGameKey == game.profileKey) {
-                                        selectedGameKey = game.profileKey
-                                        scopeMenu = false
-                                    }
                                 }
                             }
                         }
