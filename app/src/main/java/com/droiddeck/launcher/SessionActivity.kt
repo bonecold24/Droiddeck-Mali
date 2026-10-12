@@ -259,6 +259,7 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
     private val drawerGameInventory = GameProfileInventoryCache<Library.SteamGame>()
     private var drawerGameInventoryRevision = 0L
     private var drawerGameFexPresetSaving by mutableStateOf(false)
+    private var drawerGameNoSteamSaving by mutableStateOf(false)
     private val drawerGameProfileFollowState = GameProfileFollowState()
     private data class DrawerGameProfileRefresh(
         val followsSteam: Boolean,
@@ -726,6 +727,8 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
                     onSelectedGameProfileRefresh = ::refreshDrawerGameProfile,
                     gameFexPresetSaving = drawerGameFexPresetSaving,
                     onGameFexPreset = ::setDrawerGameFexPreset,
+                    gameNoSteamSaving = drawerGameNoSteamSaving,
+                    onGameNoSteam = ::setDrawerGameNoSteam,
                     onComponentSwap = { pid, comp, value -> swapDrawerComponent(pid, comp, value) },
                     onGameComponent = ::setDrawerGameComponent,
                 ))
@@ -981,6 +984,26 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
                 refreshDrawerGameProfile()
             }
         }, "drawer-game-fex-preset").start()
+    }
+
+    private fun setDrawerGameNoSteam(appId: Long, on: Boolean) {
+        if (drawerGameNoSteamSaving) return
+        drawerGameNoSteamSaving = true
+        val name = drawerGameProfileRefresh.data?.profiles?.firstOrNull { it.first == appId }?.second ?: appId.toString()
+        Thread({
+            val message = try {
+                GameEnvironmentStore.setGameNoSteam(this, appId.toString(), on)
+                getString(R.string.comp_game_saved_next, name)
+            } catch (error: Exception) {
+                Log.w(TAG, "Could not save Start without Steam for $appId", error)
+                getString(R.string.session_profile_save_failed, error.message ?: error.javaClass.simpleName)
+            }
+            uiHandler.post {
+                drawerGameNoSteamSaving = false
+                Toast.makeText(this, message, Toast.LENGTH_LONG).show()
+                refreshDrawerGameProfile()
+            }
+        }, "drawer-game-no-steam").start()
     }
 
     /** The session this screen is bringing up: the live one when re-attached, else the intent's. */
