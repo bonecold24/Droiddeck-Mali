@@ -50,6 +50,7 @@
 #include "framegen_bridge.h"
 #include <pthread.h>
 #include "effects_chain.h"
+#include "cardboard.h"
 #include "droiddeck_ext.h"
 #include "droiddeck_color.h"
 #include "compositor_internal.h"
@@ -260,6 +261,7 @@ struct surface {
     /* Toplevel placement on the scene. */
     int mapped;                             /* in g_toplevels */
     struct wl_list toplevel_link;
+    int keep_on_top; /* Cardboard mode's SteamVR window: above every other toplevel (raise_kept_on_top) */
     int x, y, placed;
     uint32_t hwnd;
 
@@ -632,6 +634,8 @@ static struct surface *toplevel_by_hwnd(uint32_t hwnd) {
     return NULL;
 }
 
+static void raise_kept_on_top(void);
+
 /* Reorder the mapped toplevels to match the last reported Windows z-order. Windows the
  * report doesn't mention keep their relative order below the ones it does. */
 static void apply_zorder(void) {
@@ -641,6 +645,17 @@ static void apply_zorder(void) {
         wl_list_remove(&s->toplevel_link);
         wl_list_insert(g_toplevels.prev, &s->toplevel_link);
     }
+    raise_kept_on_top();
+}
+
+/* Windows marked keep_on_top go back to the top of the stack (the end of g_toplevels). */
+static void raise_kept_on_top(void) {
+    struct surface *s, *tmp, *kept[4];
+    int n = 0;
+    wl_list_for_each_safe(s, tmp, &g_toplevels, toplevel_link) {
+        if (s->keep_on_top && n < 4) { wl_list_remove(&s->toplevel_link); kept[n++] = s; }
+    }
+    for (int i = 0; i < n; i++) wl_list_insert(g_toplevels.prev, &kept[i]->toplevel_link);
 }
 
 static void map_toplevel(struct surface *s) {
@@ -655,6 +670,7 @@ static void map_toplevel(struct surface *s) {
                    s->placed ? "" : " (no desktop position yet)");
     }
     wl_list_insert(g_toplevels.prev, &s->toplevel_link); /* new windows start on top */
+    raise_kept_on_top();
     /* Without a Wine desktop the clients are whole programs (the Linux desktop, a gamescope a
      * program on it started over it): a window that opens on top takes the keys too, as it would
      * on any desktop, rather than the one clicked last that is now underneath it. */
@@ -1473,7 +1489,13 @@ static void xdg_toplevel_set_title(struct wl_client *c, struct wl_resource *r, c
         droiddeck_log("window", "renamed %s -> %s", before, after);
     }
 }
-static void xdg_toplevel_set_app_id(struct wl_client *c, struct wl_resource *r, const char *id) {}
+static void xdg_toplevel_set_app_id(struct wl_client *c, struct wl_resource *r, const char *id) {
+    struct surface *s = wl_resource_get_user_data(r);
+    /* Cardboard mode's SteamVR window (tools/vr/src/presenter.cpp) stays above every other window,
+     * gamescope's included: gamescope reopens its window when Steam notices VR, and a reopened window
+     * would otherwise come up over it (new windows start on top). */
+    if (s && id && !strcmp(id, "droiddeck-cardboard-vr")) s->keep_on_top = 1;
+}
 static void xdg_toplevel_show_menu(struct wl_client *c, struct wl_resource *r, struct wl_resource *seat,
                                    uint32_t serial, int32_t x, int32_t y) {}
 static void xdg_toplevel_move(struct wl_client *c, struct wl_resource *r, struct wl_resource *seat,
@@ -2086,6 +2108,8 @@ static void render_scene(void) {
     int rendered = 0;
     int fx_on = vkp_effects_active();
     int framegen = vkp_framegen_active();
+    /* Cardboard mode draws the whole panel itself, so the game never gets a display layer of its own. */
+    const int cardboard = vkp_cardboard_active();
     /* HDR (see hdr_plan): route 0 = the old paths below; 1 / 2 = composed; 3 = layer only, effects and
      * frame generation skipped. Always 0 while the HDR gate is closed: nothing changes for that session. */
     struct hdr_scene hs;
@@ -2132,7 +2156,7 @@ static void render_scene(void) {
      *   - screen effects DO when a window is drawn above the game: the chain has to see the whole
      *     scene to look the way it does on the copy path, and here the game is only part of it. */
     const int pass_on = fx_on || framegen;
-    int li = (g_zero_copy && !framegen) ? layer_candidate(&dl, w, h) : -1;
+    int li = (g_zero_copy && !framegen && !cardboard) ? layer_candidate(&dl, w, h) : -1;
     int over = li >= 0 ? dl.n - 1 - li : 0; /* draws above the fullscreen game (0 or 1) */
     const int fx_blocks = (li >= 0 && fx_on && over > 0);
     if (fx_blocks) { li = -1; over = 0; }
@@ -2162,6 +2186,7 @@ static void render_scene(void) {
     /* HDR: the same, for a game's SUBSURFACE swapchain whose 10-bit frame the compositor could not
      * import (NULL whenever the HDR gate is closed - nothing is ever noted then). */
     if (li < 0 && !ls) ls = hdr_unimported_fullscreen(&dl, w, h);
+    if (cardboard) ls = NULL;
     if (ls && pass_on && li < 0 && !g_zero_copy_fx_skip_said) {
         g_zero_copy_fx_skip_said = 1;
         droiddeck_log(framegen ? "framegen" : "effects",
@@ -2304,6 +2329,8 @@ static void on_vsync(int64_t frame_time_ns) {
     if (vkp_apply_window_request()) g_dirty = 1;
     /* A screen-effect setting changed (JNI, any thread): redraw so it shows on a static scene too. */
     if (vkp_effects_sync()) g_dirty = 1;
+    /* Cardboard mode: a new head pose (or setting) moves the virtual screen, static scene or not. */
+    if (vkp_cardboard_pose_changed()) g_dirty = 1;
     if (g_dirty && !scene_waits_for_game(now)) render_scene();
 }
 
