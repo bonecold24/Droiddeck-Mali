@@ -170,7 +170,25 @@ object StoresState {
 
     fun install(context: Context, item: CatalogItem, root: java.io.File? = null) {
         val app = context.applicationContext
-        val target = root ?: StoreInstallRoot.installRoot(app)
+        val folder = StoreInstallRoot.folderFor(app, item.store, item.id, item.title, root ?: StoreInstallRoot.installRoot(app))
+        val target = folder.parentFile!!.parentFile!!
+        val check = StoreInstallRoot.checkStorage(app, item, target)
+        if (!check.enough) {
+            val errorMsg = check.errorMessage ?: app.getString(com.droiddeck.launcher.R.string.stores_storage_insufficient, formatBytes(check.requiredBytes), formatBytes(check.availableBytes))
+            val entry = com.droiddeck.launcher.stores.download.DownloadEntry(
+                item.store,
+                item.id,
+                item.title,
+                cover = item.imageUrl,
+                bytesTotal = item.sizeBytes,
+                location = StoreInstallRoot.labelFor(app, folder)
+            )
+            com.droiddeck.launcher.stores.download.SavedQueue.remember(app, item, target)
+            com.droiddeck.launcher.stores.download.DownloadQueue.recordFailed(app, entry, errorMsg) {
+                install(app, item, target)
+            }
+            return
+        }
         com.droiddeck.launcher.stores.download.SavedQueue.remember(app, item, target)
         backends[item.store]?.install(app, item, target) ?: logLine("${item.store.label}: this build cannot install yet")
     }

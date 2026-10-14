@@ -71,10 +71,14 @@ struct HashingWriter<W: Write> {
     inner: W,
     sha: Option<Sha1>,
     written: u64,
+    limit: u64,
 }
 
 impl<W: Write> Write for HashingWriter<W> {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        if self.written.saturating_add(buf.len() as u64) > self.limit {
+            return Err(io::Error::other("chunk exceeds reserved decoded window"));
+        }
         let n = self.inner.write(buf)?;
         if let Some(sha) = self.sha.as_mut() {
             sha.update(&buf[..n]);
@@ -102,10 +106,21 @@ pub fn write_verified_chunk(
     let tmp = part_path(final_path);
     let _ = fs::remove_file(&tmp);
 
-    let result = write_part(body, expected_sha1, &tmp, final_path);
+    let result = write_part(body, expected_sha1, &tmp, final_path, u64::MAX, false);
     if result.is_err() {
         let _ = fs::remove_file(&tmp);
     }
+
+    result
+}
+
+pub fn write_verified_chunk_bounded(
+    body: &[u8], expected_sha1: Option<&[u8; 20]>, final_path: &Path,
+    decoded_limit: u64, exact_size: bool,
+) -> Result<u64, String> {
+    let tmp = part_path(final_path);
+    let result = write_part(body, expected_sha1, &tmp, final_path, decoded_limit, exact_size);
+    if result.is_err() { let _ = fs::remove_file(tmp); }
     result
 }
 
@@ -114,20 +129,43 @@ fn write_part(
     expected_sha1: Option<&[u8; 20]>,
     tmp: &Path,
     final_path: &Path,
+    limit: u64,
+    exact_size: bool,
 ) -> Result<u64, String> {
     let hdr = parse_chunk_header(body)?;
     let payload = chunk_payload(body, &hdr)?;
+    if limit != u64::MAX && (hdr.compressed_size < 0 || payload.len() != hdr.compressed_size as usize) {
+        return Err("truncated chunk body".into());
+    }
 
     let file = File::create(tmp).map_err(|e| format!("open {}: {e}", tmp.display()))?;
     let mut out = HashingWriter {
         inner: BufWriter::with_capacity(128 * 1024, file),
         sha: expected_sha1.map(|_| Sha1::new()),
         written: 0,
+        limit,
     };
 
     if hdr.is_compressed() {
-        let mut dec = flate2::read::ZlibDecoder::new(payload);
-        io::copy(&mut dec, &mut out).map_err(|e| format!("inflate: {e}"))?;
+        if limit == u64::MAX {
+            let mut dec = flate2::read::ZlibDecoder::new(payload);
+            io::copy(&mut dec, &mut out).map_err(|e| format!("inflate: {e}"))?;
+        } else {
+            let mut dec = flate2::Decompress::new(true);
+            let mut buffer = [0u8; 128 * 1024];
+            loop {
+                let input = dec.total_in() as usize;
+                let before = dec.total_out();
+                let status = dec.decompress(&payload[input..], &mut buffer, flate2::FlushDecompress::None)
+                    .map_err(|e| format!("inflate: {e}"))?;
+                let count = (dec.total_out() - before) as usize;
+                out.write_all(&buffer[..count]).map_err(|e| format!("inflate write: {e}"))?;
+                if status == flate2::Status::StreamEnd { break; }
+                if count == 0 && dec.total_in() as usize == input {
+                    return Err("truncated compressed Epic chunk".into());
+                }
+            }
+        }
     } else {
         out.write_all(payload).map_err(|e| format!("write: {e}"))?;
     }
@@ -135,6 +173,9 @@ fn write_part(
     let written = out.written;
     let digest = out.sha.take().map(|s| s.finalize());
     drop(out);
+    if exact_size && written != limit {
+        return Err("chunk decoded size mismatch".into());
+    }
 
     if let (Some(expected), Some(actual)) = (expected_sha1, digest) {
         if actual.as_slice() != &expected[..] {
@@ -144,6 +185,80 @@ fn write_part(
 
     fs::rename(tmp, final_path).map_err(|e| format!("Chunk rename failed: {e}"))?;
     Ok(written)
+}
+
+/// The window a chunk decompresses to: the manifest's, or 1 MiB for a legacy JSON manifest that
+/// names none (`EpicDownloadManager.chunkWindowSize`). The streaming installer also plans its
+/// shared-chunk cache with this size.
+pub fn chunk_window_bytes(window_size: i32) -> u64 {
+    if window_size > 0 {
+        window_size as u64
+    } else {
+        1024 * 1024
+    }
+}
+
+/// One downloaded body → the verified, decompressed chunk in memory, for the streaming installer
+/// (`stream.rs`), which writes most chunks straight into the files that use them and never puts
+/// them in a cache. The checks are the bounded Java writer's (`downloadChunkStreaming`), which is
+/// stricter than [`write_verified_chunk`]: a stored payload shorter than `compressedSize` is
+/// truncated, a zlib stream must reach its end, the output may not grow past the chunk's window
+/// and must fill it exactly when the manifest names one, and the SHA-1 must match when the
+/// manifest has one. `Err` = "try another CDN", exactly like a cache write that failed.
+pub fn decode_verified_chunk(
+    body: &[u8],
+    window_size: i32,
+    expected_sha1: Option<&[u8; 20]>,
+) -> Result<Vec<u8>, String> {
+    let hdr = parse_chunk_header(body)?;
+    let start = hdr.payload_start();
+    if start > body.len() {
+        return Err("Stream ended during skip".to_string());
+    }
+    let want = if hdr.compressed_size <= 0 {
+        0
+    } else {
+        hdr.compressed_size as usize
+    };
+    let avail = body.len() - start;
+    let cap = chunk_window_bytes(window_size) as usize;
+    let out = if hdr.is_compressed() {
+        // Java stops reading once the inflater finishes, so a body may carry less than
+        // `compressedSize` as long as the stream itself is complete.
+        let payload = &body[start..start + want.min(avail)];
+        let mut out: Vec<u8> = Vec::with_capacity(cap + 1);
+        let mut inflater = flate2::Decompress::new(true);
+        let status = inflater
+            .decompress_vec(payload, &mut out, flate2::FlushDecompress::Finish)
+            .map_err(|e| format!("inflate: {e}"))?;
+        if out.len() > cap {
+            return Err("chunk exceeds expected window size".to_string());
+        }
+        if status != flate2::Status::StreamEnd {
+            return Err("truncated compressed Epic chunk".to_string());
+        }
+        out
+    } else {
+        if avail < want {
+            return Err("truncated Epic chunk".to_string());
+        }
+        if want > cap {
+            return Err("chunk exceeds expected window size".to_string());
+        }
+        body[start..start + want].to_vec()
+    };
+    if window_size > 0 && out.len() != window_size as usize {
+        return Err(format!(
+            "chunk is {} bytes, window is {window_size}",
+            out.len()
+        ));
+    }
+    if let Some(expected) = expected_sha1 {
+        if Sha1::digest(&out).as_slice() != &expected[..] {
+            return Err("Chunk SHA-1 mismatch (streaming)".to_string());
+        }
+    }
+    Ok(out)
 }
 
 #[cfg(test)]
@@ -324,6 +439,29 @@ mod tests {
         assert!(!final_path.exists());
         assert!(!part_path(&final_path).exists());
         let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn decode_in_memory_applies_the_bounded_writer_checks() {
+        let data = sample_data();
+        let window = data.len() as i32;
+        let sha = sha1_of(&data);
+        let zipped = build_chunk_body(&data, true, 2, None);
+        assert_eq!(decode_verified_chunk(&zipped, window, Some(&sha)).unwrap(), data);
+        let stored = build_chunk_body(&data, false, 0, None);
+        assert_eq!(decode_verified_chunk(&stored, window, Some(&sha)).unwrap(), data);
+        // No window and no hash (legacy JSON manifest): accepted up to 1 MiB.
+        assert_eq!(decode_verified_chunk(&zipped, 0, None).unwrap(), data);
+        // Window mismatch, SHA-1 mismatch, truncation, oversize.
+        assert!(decode_verified_chunk(&zipped, window + 1, None).is_err());
+        let err = decode_verified_chunk(&zipped, window, Some(&[7; 20])).unwrap_err();
+        assert!(err.contains("SHA-1 mismatch"), "{err}");
+        let cut = zipped.len() - 500;
+        assert!(decode_verified_chunk(&zipped[..cut], window, None).is_err());
+        assert!(decode_verified_chunk(&stored[..stored.len() - 1], 0, None)
+            .unwrap_err()
+            .contains("truncated"));
+        assert!(decode_verified_chunk(&zipped, window - 1, None).is_err());
     }
 
     #[test]
