@@ -338,6 +338,26 @@ jobs:
           ls -la app/src/main/assets/driver-bundles/panvk-kbase-g720-v0.1.0-rc3-universal+local1/ | head -8
           rm -rf /tmp/driver-pkg
 
+      - name: Bundle the glibc PanVK driver (Linux guest)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          # The glibc driver .so stays out of git history; CI injects it here.
+          # Upstream prebuilt: zenithblue-oss/panvk-kbase-android, universal
+          # v10-v14 (includes G720/v12), MIT-licensed. Fails closed on SHA mismatch.
+          GLIBC_URL="https://github.com/zenithblue-oss/panvk-kbase-android/releases/download/panvk-kbase-v0.1.0-rc3/PanVK-Kbase-g615-v11-csf-v0.1.0-rc3-5a07217f-EMULATOR.zip"
+          GLIBC_SHA256="a3846878e8f33dbcfbb5926d2a8763d07dcb10bd06adf53def5d603ecb16558a"
+          mkdir -p /tmp/glibc-driver-pkg
+          curl -sSfL "$GLIBC_URL" -o /tmp/glibc-driver-pkg/driver.zip
+          echo "$GLIBC_SHA256  /tmp/glibc-driver-pkg/driver.zip" | sha256sum -c -
+          mkdir -p app/src/main/assets/linux-drivers/panvk-kbase-glibc
+          unzip -q -o /tmp/glibc-driver-pkg/driver.zip -d app/src/main/assets/linux-drivers/panvk-kbase-glibc/
+          test -f "app/src/main/assets/linux-drivers/panvk-kbase-glibc/libvulkan_panfrost.so"
+          test -f "app/src/main/assets/linux-drivers/panvk-kbase-glibc/panfrost_icd.aarch64.json"
+          ls -la app/src/main/assets/linux-drivers/panvk-kbase-glibc/ | head -8
+          rm -rf /tmp/glibc-driver-pkg
+
       - name: Build D3D Tier-0 cubes (mingw-w64)
         run: |
           set -euo pipefail
