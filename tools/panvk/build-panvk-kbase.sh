@@ -78,7 +78,7 @@ git -C driver-repo fetch -q origin "$DRIVER_COMMIT" --depth 1 2>/dev/null || tru
 git -C driver-repo checkout -q -f "$DRIVER_COMMIT"
 # Assemble Mesa + kbase patches into src/mesa.
 mkdir -p src
-driver-repo/scripts/fetch-mesa.sh src >/dev/null
+driver-repo/scripts/fetch-mesa.sh src
 driver-repo/scripts/apply-patches.sh --profile g720-v12-csf --mesa "$W/src/mesa"
 MESASRC="$W/src/mesa"
 # DroidDeck's own patches on top (pattern-based, robust to include drift).
@@ -87,7 +87,7 @@ python3 "$HERE/apply-droiddeck-patches.py" "$MESASRC"
 # Host tools, against the private LLVM.
 PKG_CONFIG_PATH="$W/hostroot/usr/lib/pkgconfig:$W/hostroot/usr/share/pkgconfig" PATH="$W/hostroot/usr/bin:$PATH" \
   meson setup --wipe "$MESASRC/build-host" "$MESASRC" -Dplatforms=[] -Dgallium-drivers=[] -Dvulkan-drivers=[] -Dtools=panfrost \
-  -Dprecomp-compiler=enabled -Dinstall-precomp-compiler=true -Dllvm=enabled -Dmesa-clc=enabled -Dinstall-mesa-clc=true >/dev/null
+  -Dprecomp-compiler=enabled -Dinstall-precomp-compiler=true -Dllvm=enabled -Dmesa-clc=enabled -Dinstall-mesa-clc=true
 ninja -C "$MESASRC/build-host" src/compiler/clc/mesa_clc src/compiler/spirv/vtn_bindgen2 src/panfrost/clc/panfrost_compile
 ln -sf "$MESASRC/build-host/src/compiler/clc/mesa_clc" host-bin/mesa_clc
 ln -sf "$MESASRC/build-host/src/compiler/spirv/vtn_bindgen2" host-bin/vtn_bindgen2
@@ -121,7 +121,7 @@ meson setup --wipe "$MESASRC/build-glibc" "$MESASRC" --cross-file cross-aarch64-
   -Dplatforms=x11,wayland -Dglx=disabled -Dgbm=disabled -Degl=disabled -Dopengl=false -Dgles1=disabled \
   -Dgles2=disabled -Dglvnd=disabled -Dvalgrind=disabled -Dgallium-drivers= -Dzstd=disabled \
   -Dmesa-clc=system -Dprecomp-compiler=system -Dvulkan-drivers=panfrost -Dllvm=disabled \
-  -Dpanfrost-kmds=kbase,panthor,panfrost -Dlibunwind=disabled -Dexpat=enabled >/dev/null
+  -Dpanfrost-kmds=kbase,panthor,panfrost -Dlibunwind=disabled -Dexpat=enabled
 ninja -C "$MESASRC/build-glibc" src/panfrost/vulkan/libvulkan_panfrost.so
 
 # Package: the library and a meta.json in LinuxVulkanDriverManager's schema.
