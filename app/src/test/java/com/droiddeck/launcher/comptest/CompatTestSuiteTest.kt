@@ -53,4 +53,30 @@ class CompatTestSuiteTest {
         val game = CompatTestSuite.gameSpec(1L, "X")
         assertTrue(game.timeoutSec >= 120)
     }
+
+    @Test fun defaultTierGamesMatchPhase6TierPlan() {
+        // Mirrors docs/COMPAT.md: Tier 1 (light F2P) then Tier 2 (D3D11 F2P).
+        val games = CompatTestSuite.defaultTierGames()
+        assertEquals(7, games.size)
+        assertTrue(games.all { it.kind == TestKind.GAME_TEST })
+        assertEquals(
+            listOf(440L, 304930L, 291550L, 230410L, 570L, 238960L, 444090L),
+            games.map { it.gameId },
+        )
+        assertEquals(
+            listOf(
+                "Team Fortress 2", "Unturned", "Brawlhalla",
+                "Warframe", "Dota 2", "Path of Exile", "Paladins",
+            ),
+            games.map { it.label },
+        )
+        assertTrue(games.all { it.timeoutSec >= 120 })
+    }
+
+    @Test fun defaultTierGamesBuildIntoRequestedSuite() {
+        val requested = CompatTestSuite.defaultTierGames()
+        val suite = CompatTestSuite.buildWithRequested(requested, installedIds = setOf(440L, 570L))
+        assertEquals(4 + 7, suite.size) // 4 system checks + 7 requested
+        assertTrue(CompatTestSuite.isInstalled(suite.first { it.id == "game-440" }, setOf(440L, 570L)))
+    }
 }
