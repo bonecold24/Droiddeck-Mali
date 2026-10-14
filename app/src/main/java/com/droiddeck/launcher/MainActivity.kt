@@ -527,6 +527,9 @@ class MainActivity : ComponentActivity() {
         // W3: first run on a Mali GPU auto-imports the bundled PanVK driver package
         // (assets/driver-bundles): no download needed, runs off the UI thread.
         com.droiddeck.launcher.gpu.MaliDriverBundle.ensureImportedAsync(this)
+        // Glibc PanVK for the Linux guest (assets/linux-drivers): what the
+        // Tier-0 guest checks and Proton actually load.
+        com.droiddeck.launcher.gpu.GlibcDriverBundle.ensureImportedAsync(this)
         setContent {
             DroidDeckTheme(theme, appScale = appScale) {
             com.droiddeck.launcher.ui.FocusGlideHost(androidx.compose.ui.Modifier.fillMaxSize().exposeTestTags()) {
