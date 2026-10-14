@@ -23,7 +23,19 @@ object WirelessAdbFix {
     private const val CONNECTION_FILE = "wireless-adb-connection.txt"
     const val LOOPBACK = "127.0.0.1"
 
-    private data class SavedConnection(val host: String, val port: Int?)
+    internal data class SavedConnection(val host: String, val port: Int?)
+
+    /**
+     * Parses the persisted wireless-debugging connection. Malformed content
+     * falls back to a port-less connection (service discovery) rather than
+     * failing; a corrupt host fails closed so the user re-pairs.
+     */
+    internal fun parseSavedConnection(host: String, lines: List<String>?): SavedConnection? {
+        if (host.isEmpty() || '\n' in host || '\r' in host) return null
+        val port = lines?.takeIf { it.size == 2 && it[0] == host }
+            ?.get(1)?.toIntOrNull()?.takeIf { it in 1..65535 }
+        return SavedConnection(host, port)
+    }
 
     @Synchronized
     private fun loadOrCreateIdentity(context: Context) {
@@ -60,9 +72,7 @@ object WirelessAdbFix {
         val host = File(directory, HOST_FILE).takeIf(File::isFile)?.readText()?.trim()
             ?.takeIf(String::isNotEmpty) ?: return null
         val lines = File(directory, CONNECTION_FILE).takeIf(File::isFile)?.readLines()
-        val port = lines?.takeIf { it.size == 2 && it[0] == host }
-            ?.get(1)?.toIntOrNull()?.takeIf { it in 1..65535 }
-        return SavedConnection(host, port)
+        return parseSavedConnection(host, lines)
     }
 
     fun savedConnectionAddress(context: Context): String? = savedConnection(context)?.let { saved ->
