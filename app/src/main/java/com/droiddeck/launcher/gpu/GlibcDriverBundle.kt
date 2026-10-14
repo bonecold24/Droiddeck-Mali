@@ -208,10 +208,35 @@ object GlibcDriverBundle {
                         }
                     }
                 }
-                // Also copy the loader (ld-linux-aarch64.so.1) if present.
+                // CRITICAL: Update the dynamic loader symlink atomically with libc.
+                // In Bullseye, /lib/ld-linux-aarch64.so.1 -> /lib/aarch64-linux-gnu/ld-2.31.so.
+                // If we install libc6 2.41 but leave ld-2.31.so, EVERY binary crashes
+                // with "undefined symbol: ... version GLIBC_PRIVATE".
+                // We must point /lib/ld-linux-aarch64.so.1 to the new 2.41 loader.
                 val srcLd = File(tmpExtract, "lib/aarch64-linux-gnu/ld-linux-aarch64.so.1")
                 if (srcLd.exists() && !isUsrMerge) {
-                    srcLd.copyTo(File(rootfs, "lib/aarch64-linux-gnu/ld-linux-aarch64.so.1"), overwrite = true)
+                    val dstLd = File(rootfs, "lib/aarch64-linux-gnu/ld-linux-aarch64.so.1")
+                    srcLd.copyTo(dstLd, overwrite = true)
+                    // Atomically update the /lib/ld-linux-aarch64.so.1 symlink.
+                    val interpLink = File(rootfs, "lib/ld-linux-aarch64.so.1")
+                    val tmpLink = File(rootfs, "lib/.ld-linux-aarch64.so.1.tmp")
+                    try {
+                        // Create new symlink, then atomically rename over the old one.
+                        java.nio.file.Files.createSymbolicLink(
+                            tmpLink.toPath(),
+                            java.nio.file.Path.of("aarch64-linux-gnu/ld-linux-aarch64.so.1")
+                        )
+                        java.nio.file.Files.move(
+                            tmpLink.toPath(), interpLink.toPath(),
+                            java.nio.file.StandardCopyOption.ATOMIC_MOVE,
+                            java.nio.file.StandardCopyOption.REPLACE_EXISTING
+                        )
+                        Log.i(TAG, "Updated /lib/ld-linux-aarch64.so.1 -> aarch64-linux-gnu/ld-linux-aarch64.so.1 (2.41)")
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Failed to update loader symlink: ${e.message}")
+                        tmpLink.delete()
+                        return false
+                    }
                 }
                 tmpExtract.deleteRecursively()
             }
