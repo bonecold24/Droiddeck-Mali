@@ -1267,7 +1267,9 @@
     <string name="drivers_bundle_sets_display">Android + Linux: sets the display driver with it</string>
     <string name="drivers_bundle_sets_runtime">Android + Linux: sets the runtime driver with it</string>
     <string name="drivers_runtime_builtin">the Turnip built into the runtime</string>
+    <string name="drivers_runtime_builtin_mali">the runtime\'s Turnip: draws nothing on Mali, import a Mali driver</string>
     <string name="drivers_system_vulkan">system Vulkan: no bundled build for this GPU</string>
+    <string name="drivers_system_vulkan_mali">system Vulkan: the Mali driver</string>
     <string name="drivers_bundled">%1$s (bundled)</string>
     <string name="drivers_manual">Manual</string>
     <string name="drivers_summary">%1$s · %2$s</string>
@@ -1826,7 +1828,7 @@
     <string name="turnip_reject_library_missing">meta.json names %1$s, which is not in the zip</string>
     <string name="turnip_reject_not_aarch64">%1$s is not a 64-bit AArch64 ELF shared library</string>
     <string name="turnip_reject_glibc">%1$s links glibc - a \"-Linux\" Turnip, which belongs under \"Linux runtime driver\"</string>
-    <string name="lvd_no_library">No libvulkan_freedreno*.so in this zip. An Android (AdrenoTools) or -Wayland Turnip zip is not a Linux runtime driver.</string>
+    <string name="lvd_no_library">No libvulkan_*.so in this zip. An Android (AdrenoTools) or -Wayland Turnip zip is not a Linux runtime driver.</string>
     <string name="lvd_not_aarch64">%1$s is not a 64-bit AArch64 ELF shared library.</string>
     <string name="lvd_not_glibc">%1$s is not a glibc driver - it links Android\'s libc. The Linux runtime needs a \"-Linux\" zip; a plain or \"-Wayland\" Turnip cannot be loaded by the Steam client at all.</string>
     <string name="bundle_no_manifest">Not a driver bundle: no manifest.json naming an android and a linux driver</string>
