@@ -202,9 +202,12 @@ object GlibcDriverBundle {
                             val targetFile = File(src.parentFile, target.toString())
                             if (targetFile.exists()) {
                                 targetFile.copyTo(dst, overwrite = true)
+                                // proot execve() needs +x; tar/copy may leave 0644.
+                                dst.setExecutable(true, false)
                             }
                         } else {
                             src.copyTo(dst, overwrite = true)
+                            dst.setExecutable(true, false)
                         }
                     }
                 }
@@ -217,6 +220,7 @@ object GlibcDriverBundle {
                 if (srcLd.exists() && !isUsrMerge) {
                     val dstLd = File(rootfs, "lib/aarch64-linux-gnu/ld-linux-aarch64.so.1")
                     srcLd.copyTo(dstLd, overwrite = true)
+                    dstLd.setExecutable(true, false)
                     // Atomically update the /lib/ld-linux-aarch64.so.1 symlink.
                     val interpLink = File(rootfs, "lib/ld-linux-aarch64.so.1")
                     val tmpLink = File(rootfs, "lib/.ld-linux-aarch64.so.1.tmp")
