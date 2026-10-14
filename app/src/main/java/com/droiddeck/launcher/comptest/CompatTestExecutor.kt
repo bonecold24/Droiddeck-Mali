@@ -97,7 +97,8 @@ class CompatTestExecutor(
             val display = probeDisplay()
             if (!display.reachable) {
                 return CompatTestRunner.TestRunOutcome(
-                    TestOutcome.PREREQ_MISSING, emptyList(),
+                    TestOutcome.PrereqMissing("display not available — ${display.detail}"),
+                    emptyList(),
                     "display not available — ${display.detail}. " +
                         "GPU bring-up is tested separately by vk-compute-test; " +
                         "this is not a GPU/driver failure.",
@@ -140,7 +141,7 @@ class CompatTestExecutor(
             }
         } catch (e: CompatCancelled) {
             return CompatTestRunner.TestRunOutcome(
-TestOutcome.Cancelled, emptyList(), "Cancelled by user",
+                TestOutcome.Cancelled, emptyList(), "Cancelled by user",
             ).withPayload(payload)
         } catch (t: Throwable) {
             // GuestCommand failures surface as exceptions: no process ran, so this
@@ -150,9 +151,6 @@ TestOutcome.Cancelled, emptyList(), "Cancelled by user",
                 "Guest command failed before/without a process exit: " +
                     "${t.javaClass.simpleName}: ${t.message}".take(400),
             ).withPayload(payload)
-TestOutcome.CRASH, emptyList(),
-                "Guest command failed: ${t.javaClass.simpleName}: ${t.message}".take(500),
-            )
         }
         val frames = parseFrameTimes(lines)
         // Gate B2: the headless compute test uses distinct exit codes per
@@ -262,59 +260,6 @@ TestOutcome.CRASH, emptyList(),
      * Guest command lines per system check. NEEDS-REAL-MALI: binary names and
      * display-server assumptions (X/Wayland inside the session) are unverified.
      */
-    private fun guestArgv(checkId: String): List<String>? {
-        // D3D cubes and the headless compute test: ensure the payload is
-        // installed in the guest first.
-        if (checkId == "d3d9-cube" || checkId == "d3d11-cube" || checkId == "vk-compute-test") {
-            ensureComptestPayload()
-        }
-        return when (checkId) {
-            // vk-compute-test: headless GPU bring-up; needs no display.
-            // Exit codes: 0=pass, 9=no loader, 10=instance, 11=no devices,
-            // 12=device, 13=compute. See computeTestOutcome().
-            "vk-compute-test" -> listOf("/opt/comptest/vk-compute-test")
-            // vkcube: run N frames offscreen-ish; parse its fps readout into frame times.
-            "vkcube" -> listOf("/usr/bin/vkcube", "--c", "600")
-            "vulkaninfo" -> listOf("/usr/bin/vulkaninfo")
-            // D3D9/D3D11 sample cubes: installed to /opt/comptest by ensureComptestPayload().
-            "d3d9-cube" -> listOf("/opt/comptest/d3d9-cube")
-            "d3d11-cube" -> listOf("/opt/comptest/d3d11-cube")
-            else -> null
-        }
-    }
-
-    /**
-     * Copies the D3D Tier-0 payload (wrappers + .exe) from APK assets into the
-     * guest's /opt/comptest. Runs once per process; best-effort, never throws.
-     */
-    private fun ensureComptestPayload() {
-        if (comptestPayloadDone) return
-        synchronized(this) {
-            if (comptestPayloadDone) return
-            comptestPayloadDone = true
-        }
-        try {
-            val am = context.assets
-            val files = am.list("comptest") ?: return
-            if (files.isEmpty()) return
-            // Stage to a host-visible dir, then move into the guest via proot.
-            val stage = java.io.File(context.filesDir, "comptest-payload").apply { mkdirs() }
-            for (n in files) {
-                am.open("comptest/$n").use { inp ->
-                    java.io.File(stage, n).outputStream().use { inp.copyTo(it) }
-                }
-                java.io.File(stage, n).setExecutable(true)            }
-        }
-        return env
-    }
-
-    // ------------------------------------------------------- Stage 0 probe
-
-    /**
-     * Gate A4 Stage 0: environment probe. Runs BEFORE vkcube and records everything
-     * a later failure might need: kernel, device props, SELinux, /dev/mali0 (+errno),
-     * kbase version, ICD selection, driver files, storage/RAM, AVC denials.
-     *
      * The probe itself PASSes when it ran — bad findings are data, not failure.
      * Only a missing runtime or a hard error makes it PREREQ_MISSING/FAIL_EXIT.
      */
