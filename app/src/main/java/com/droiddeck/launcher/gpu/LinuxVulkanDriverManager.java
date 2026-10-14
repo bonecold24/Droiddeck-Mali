@@ -10,7 +10,6 @@ import com.droiddeck.launcher.core.FileUtils;
 import org.json.JSONObject;
 
 import java.io.File;
-import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
@@ -45,6 +44,14 @@ import java.util.zip.ZipInputStream;
  * </pre>
  * The session gets {@code icd.json}'s path in {@code BL_VK_DRIVER} and exports it as
  * {@code VK_DRIVER_FILES}, so nothing inside the runtime is modified and the choice is reversible.
+ *
+ * <p>Versioned driver packages (the mission's driver-package layout: libvulkan_panfrost.so +
+ * panvk_kbase_icd.aarch64.json + meta.json + MANIFEST.json + SHA256SUMS.txt) import through
+ * {@link #importDriverPackage(Uri, String)}: every file's SHA-256 is verified against
+ * SHA256SUMS.txt and the .so against MANIFEST.json's binarySha256, and each version lands in
+ * its own directory (name-packageVersion-binarySha256[:8]) so versions coexist and the
+ * previous one stays available for rollback. Both ABIs are accepted; only glibc drivers
+ * are usable as Linux runtime drivers (see {@link #isLinuxRuntimeUsable(String)}).
  *
  * <p>Ported from Bannerlator's {@code LinuxVulkanDriverManager} (GPL-3.0), unchanged in behaviour.
  */
@@ -136,6 +143,10 @@ public class LinuxVulkanDriverManager {
     }
 
     public String installDriver(Uri zipUri, String displayName) throws IOException {
+        if (looksLikeDriverPackage(zipUri)) {
+            Log.i(TAG, "zip holds a versioned driver package; importing with SHA-256 verification");
+            return importDriverPackage(zipUri, displayName);
+        }
         File tmpDir = newStagingDir();
         boolean keep = false;
         try {
@@ -170,6 +181,134 @@ public class LinuxVulkanDriverManager {
         } finally {
             if (!keep) FileUtils.delete(tmpDir);
         }
+    }
+
+    /**
+     * Import a versioned driver package zip: the mission's driver-package layout
+     * (libvulkan_panfrost.so + panvk_kbase_icd.aarch64.json + meta.json + MANIFEST.json +
+     * SHA256SUMS.txt). Every file's SHA-256 is verified against SHA256SUMS.txt and the
+     * .so against MANIFEST.json's binarySha256; a tampered, incomplete or malformed
+     * package is rejected with the reason and nothing is registered.
+     *
+     * <p>Both ABIs are accepted. A glibc package registers as a Linux runtime driver
+     * (offered for VK_DRIVER_FILES); a bionic (Android) package is verified and kept as
+     * a versioned entry but never offered as a Linux runtime driver - Linux processes
+     * cannot load it. See {@link #getAbi(String)} and {@link #isLinuxRuntimeUsable(String)}.
+     *
+     * <p>Each import lands in its own versioned directory
+     * (name-packageVersion-binarySha256[:8]); older versions are kept, so rolling back
+     * is selecting {@link #previousVersionId(String)}.
+     */
+    public String importDriverPackage(Uri zipUri, String displayName) throws IOException {
+        File tmpDir = newStagingDir();
+        try {
+            try (InputStream is = context.getContentResolver().openInputStream(zipUri);
+                 ZipInputStream zis = new ZipInputStream(is)) {
+                if (is == null) throw new IOException("cannot open " + zipUri);
+                extractPackageEntries(zis, tmpDir);
+            }
+            return importDriverPackageDir(tmpDir);
+        } finally {
+            FileUtils.delete(tmpDir);
+        }
+    }
+
+    /**
+     * Import an already-extracted package directory (the bundled asset copy, or a
+     * downloaded-and-unzipped package). Verifies before registering.
+     */
+    public String importDriverPackageDir(File packageDir) throws IOException {
+        try {
+            InstalledDriver installed = DriverPackageInstaller.install(packageDir, rootDir);
+            for (String w : installed.getWarnings()) Log.w(TAG, "driver package " + installed.getId() + ": " + w);
+            Log.i(TAG, "imported driver package " + installed.getId() + " (" + installed.getPackageVersion()
+                + ", abi=" + installed.getAbi() + ") -> " + installed.getDir());
+            return installed.getId();
+        } catch (DriverPackageException e) {
+            throw new IOException(e.getMessage(), e);
+        }
+    }
+
+    /** True when the zip holds a versioned driver package (a MANIFEST.json entry). */
+    private boolean looksLikeDriverPackage(Uri zipUri) {
+        try (InputStream is = context.getContentResolver().openInputStream(zipUri);
+             ZipInputStream zis = new ZipInputStream(is)) {
+            if (is == null) return false;
+            ZipEntry entry;
+            while ((entry = zis.getNextEntry()) != null) {
+                if (!entry.isDirectory() && new File(entry.getName()).getName().equals("MANIFEST.json")) return true;
+            }
+        } catch (Exception e) {
+            Log.w(TAG, "cannot peek into " + zipUri + ": " + e.getMessage());
+        }
+        return false;
+    }
+
+    /** Extract every file entry by basename (zip-slip safe: directory parts are dropped). */
+    private static void extractPackageEntries(ZipInputStream zis, File tmpDir) throws IOException {
+        ZipEntry entry;
+        byte[] buf = new byte[8192];
+        while ((entry = zis.getNextEntry()) != null) {
+            if (entry.isDirectory()) continue;
+            String base = new File(entry.getName()).getName();
+            if (base.isEmpty() || base.equals(".") || base.equals("..")) continue;
+            try (java.io.FileOutputStream fos = new java.io.FileOutputStream(new File(tmpDir, base))) {
+                int r;
+                while ((r = zis.read(buf)) > 0) fos.write(buf, 0, r);
+            }
+        }
+    }
+
+    /**
+     * The driver's ABI ("linux-aarch64-glibc", "android-aarch64-bionic").
+     * Legacy Turnip imports predate the field and report "glibc" (all were glibc-verified).
+     */
+    public String getAbi(String id) {
+        JSONObject m = readMeta(id);
+        if (m == null) return "";
+        String abi = m.optString("abi", "");
+        if (!abi.isEmpty()) return abi;
+        return m.optString("libc", "glibc");
+    }
+
+    /** Whether the driver can back the Linux runtime: only glibc drivers load in Linux processes. */
+    public boolean isLinuxRuntimeUsable(String id) {
+        return getAbi(id).toLowerCase(java.util.Locale.US).contains("glibc");
+    }
+
+    public String getBackend(String id) {
+        JSONObject m = readMeta(id);
+        return m != null ? m.optString("backend", "") : "";
+    }
+
+    public String getProfile(String id) {
+        JSONObject m = readMeta(id);
+        return m != null ? m.optString("profile", "") : "";
+    }
+
+    public String getBinarySha256(String id) {
+        JSONObject m = readMeta(id);
+        return m != null ? m.optString("binarySha256", "") : "";
+    }
+
+    public String getPackageVersion(String id) {
+        JSONObject m = readMeta(id);
+        if (m == null) return "";
+        String v = m.optString("packageVersion", "");
+        return v.isEmpty() ? m.optString("driverVersion", "") : v;
+    }
+
+    /** Installed version ids of the driver named {@code driverName}, newest first. */
+    public List<String> listVersions(String driverName) {
+        List<String> ids = new ArrayList<>();
+        for (InstalledVersion v : DriverPackageInstaller.listVersions(rootDir, driverName)) ids.add(v.getId());
+        return ids;
+    }
+
+    /** The installed version just older than {@code currentId} - the rollback target - or null. */
+    public String previousVersionId(String currentId) {
+        InstalledVersion v = DriverPackageInstaller.previousVersion(rootDir, currentId);
+        return v != null ? v.getId() : null;
     }
 
     File newStagingDir() throws IOException {
@@ -256,22 +395,7 @@ public class LinuxVulkanDriverManager {
     }
 
     static boolean isAarch64Elf(File f) {
-        try (FileInputStream in = new FileInputStream(f)) {
-            byte[] h = new byte[20];
-            int n = 0;
-            while (n < h.length) {
-                int r = in.read(h, n, h.length - n);
-                if (r < 0) break;
-                n += r;
-            }
-            if (n < 20) return false;
-            if (h[0] != 0x7f || h[1] != 'E' || h[2] != 'L' || h[3] != 'F') return false;
-            if (h[4] != 2 || h[5] != 1) return false;
-            int machine = (h[18] & 0xff) | ((h[19] & 0xff) << 8);
-            return machine == 0xB7;
-        } catch (IOException e) {
-            return false;
-        }
+        return ElfInspect.isAarch64Elf(f);
     }
 
     private static byte[] readAll(InputStream in) throws IOException {
@@ -283,24 +407,6 @@ public class LinuxVulkanDriverManager {
     }
 
     static boolean containsAscii(File f, String needle) {
-        byte[] nb = needle.getBytes(StandardCharsets.US_ASCII);
-        try (InputStream in = new FileInputStream(f)) {
-            byte[] buf = new byte[1 << 16];
-            int carry = 0;
-            int r;
-            while ((r = in.read(buf, carry, buf.length - carry)) > 0) {
-                int len = carry + r;
-                for (int i = 0; i + nb.length <= len; i++) {
-                    int j = 0;
-                    while (j < nb.length && buf[i + j] == nb[j]) j++;
-                    if (j == nb.length) return true;
-                }
-                carry = Math.min(nb.length - 1, len);
-                System.arraycopy(buf, len - carry, buf, 0, carry);
-            }
-        } catch (IOException e) {
-            return false;
-        }
-        return false;
+        return ElfInspect.containsAscii(f, needle);
     }
 }
