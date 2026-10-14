@@ -29,7 +29,8 @@ jobs:
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y -qq bison flex glslang-tools spirv-tools \
-            pkg-config python3-venv wayland-scanner curl git zstd
+            pkg-config python3-venv libwayland-dev wayland-protocols \
+            curl git zstd
 
       - name: Set up Android NDK (for ld.lld / llvm-ar)
         run: |
