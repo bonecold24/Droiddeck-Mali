@@ -13,12 +13,18 @@ object CpuAllocationDefaults {
 
     fun forDevice(model: String, platform: String, frequencies: Map<Int, Double?>): Allocation? {
         val chip = model.trim().uppercase().substringBefore('-')
-        val gen2 = chip in setOf("SM8550", "QCS8550") ||
-            (chip.isEmpty() && platform.trim().equals("kalama", ignoreCase = true))
-        if (!gen2 || frequencies.size != 8 || frequencies.keys.any { it < 0 } ||
+        val plat = platform.trim().lowercase()
+        // Expected cluster sizes, ascending by frequency: (little, mid, prime).
+        val layout = when {
+            chip in setOf("SM8550", "QCS8550") || (chip.isEmpty() && plat == "kalama") -> listOf(3, 4, 1)
+            // Dimensity 9300+: 1x X4 @ 3.4 GHz + 3x A720 @ 2.85 GHz + 4x A520 @ 2.0 GHz.
+            chip == "MT6989" || (chip.isEmpty() && plat == "mt6989") -> listOf(4, 3, 1)
+            else -> return null
+        }
+        if (frequencies.size != 8 || frequencies.keys.any { it < 0 } ||
             frequencies.values.any { it == null || !it.isFinite() || it <= 0.0 }) return null
         val clusters = frequencies.entries.groupBy { it.value }.toSortedMap(compareBy { it ?: 0.0 }).values.toList()
-        if (clusters.map { it.size } != listOf(3, 4, 1)) return null
+        if (clusters.map { it.size } != layout) return null
         return Allocation(
             client = CpuCores.format(clusters[2].map { it.key }.toSet()),
             game = CpuCores.format(clusters[1].map { it.key }.toSet()),

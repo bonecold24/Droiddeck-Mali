@@ -11,10 +11,15 @@ object SessionLogCapture {
     private var pid = -1
     private var writer: BufferedWriter? = null
     private var target: File? = null
+    private val recent = LogTailBuffer(400)
+
+    /** Last captured log lines (newest last), for crash reports. */
+    fun tailLines(max: Int = 200): List<String> = recent.tail(max)
 
     @Synchronized
     fun start(target: File) {
         stop()
+        recent.clear()
         try {
             val out = target.bufferedWriter()
             out.write("The app's own log for this session (logcat, this process only).\n")
@@ -26,6 +31,7 @@ object SessionLogCapture {
                 "/system/bin/logcat -v threadtime -T 1 --pid=" + Process.myPid(),
                 null, target.parentFile, null,
             ) { line ->
+                recent.add(line)
                 synchronized(this) {
                     try {
                         writer?.apply { write(line); newLine(); flush() }

@@ -41,8 +41,23 @@ class GameLaunchIntentTest {
             android.net.Uri.parse("droiddeck://game/620"))))
     }
 
-    @Test fun deepLinksStillAcceptUnsignedShortcutIds() {
+    @Test fun steamRunGameIdUrisResolveToAppIds() {
         val context = RuntimeEnvironment.getApplication()
+        assertEquals("620", GameLaunchIntent.read(context,
+            Intent(Intent.ACTION_VIEW, android.net.Uri.parse("steam://rungameid/620"))))
+        assertEquals("570", GameLaunchIntent.read(context,
+            Intent(Intent.ACTION_VIEW, android.net.Uri.parse("steam://run/570"))))
+        assertEquals("18446744073709551615", GameLaunchIntent.read(context,
+            Intent(Intent.ACTION_VIEW, android.net.Uri.parse("steam://rungameid/18446744073709551615"))))
+        assertNull(GameLaunchIntent.read(context,
+            Intent(Intent.ACTION_VIEW, android.net.Uri.parse("steam://store/"))))
+        assertNull(GameLaunchIntent.read(context,
+            Intent(Intent.ACTION_VIEW, android.net.Uri.parse("steam://rungameid/abc"))))
+        assertNull(GameLaunchIntent.read(context,
+            Intent(Intent.ACTION_VIEW, android.net.Uri.parse("steam://rungameid/"))))
+    }
+
+    @Test fun deepLinksStillAcceptUnsignedShortcutIds() {        val context = RuntimeEnvironment.getApplication()
         assertEquals("18446744073709551615", GameLaunchIntent.read(context,
             Intent(Intent.ACTION_VIEW, android.net.Uri.parse("droiddeck://game/18446744073709551615"))))
         assertFalse(GameLaunchIntent.accepts(Intent.ACTION_SEND))
