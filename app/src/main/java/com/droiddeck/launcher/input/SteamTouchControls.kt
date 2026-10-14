@@ -472,7 +472,7 @@ class SteamTouchControls(
         val inner = r * 0.1f
         val shoulder = r * 0.42f
         val corner = r * 0.12f
-        val arms = listOf(DPAD_UP to 0f, DPAD_DOWN to 180f, DPAD_LEFT to 270f, DPAD_RIGHT to 90f)
+        val arms = listOf(SteamTouchBits.DPAD_UP to 0f, SteamTouchBits.DPAD_DOWN to 180f, SteamTouchBits.DPAD_LEFT to 270f, SteamTouchBits.DPAD_RIGHT to 90f)
         val oldStroke = stroke.color
         for ((armIndex, armEntry) in arms.withIndex()) {
             val (bit, angle) = armEntry
@@ -538,14 +538,7 @@ class SteamTouchControls(
     private fun dpadBits(e: Element): Long {
         var bits = 0L
         fingers.values.filter { it.element?.type == SteamTouchConfig.DPAD }.forEach { f ->
-            val dx = f.x - cx(e)
-            val dy = f.y - cy(e)
-            if (hypot(dx, dy) < radius(e) * 0.22f) return@forEach
-            val angle = Math.toDegrees(atan2(-dy, dx).toDouble()).let { if (it < 0) it + 360 else it }
-            if (angle < 67.5 || angle > 292.5) bits = bits or DPAD_RIGHT
-            if (angle in 22.5..157.5) bits = bits or DPAD_UP
-            if (angle in 112.5..247.5) bits = bits or DPAD_LEFT
-            if (angle in 202.5..337.5) bits = bits or DPAD_DOWN
+            bits = bits or SteamTouchBits.dpadBits(f.x - cx(e), f.y - cy(e), radius(e) * 0.22f)
         }
         return bits
     }
@@ -561,23 +554,21 @@ class SteamTouchControls(
                 SteamTouchConfig.DPAD -> buttons = buttons or dpadBits(e)
                 SteamTouchConfig.JOYSTICK_LEFT, SteamTouchConfig.JOYSTICK_RIGHT -> {
                     val right = e.type == SteamTouchConfig.JOYSTICK_RIGHT
-                    var dx = (f.x - cx(e)) / r
-                    var dy = (f.y - cy(e)) / radiusY(e)
-                    val d = hypot(dx, dy)
-                    if (d > 1f) { dx /= d; dy /= d }
-                    sticks[if (right) 2 else 0] = (dx * 32767).toInt().coerceIn(-32767, 32767).toShort()
-                    sticks[if (right) 3 else 1] = (-dy * 32767).toInt().coerceIn(-32767, 32767).toShort()
-                    buttons = buttons or if (right) STICK_RIGHT_TOUCHED else STICK_LEFT_TOUCHED
+                    val (ax, ay) = SteamTouchBits.stickAxes(f.x - cx(e), f.y - cy(e), r, radiusY(e))
+                    sticks[if (right) 2 else 0] = ax
+                    sticks[if (right) 3 else 1] = ay
+                    buttons = buttons or if (right) SteamTouchBits.STICK_RIGHT_TOUCHED else SteamTouchBits.STICK_LEFT_TOUCHED
                 }
                 SteamTouchConfig.TRACKPAD_CENTER, SteamTouchConfig.TRACKPAD_LEFT, SteamTouchConfig.TRACKPAD_RIGHT -> {
                     val index = e.type - SteamTouchConfig.TRACKPAD_CENTER
                     val nx = ((f.x - (cx(e) - r)) / (2 * r)).coerceIn(0f, 1f)
                     val ny = ((f.y - (cy(e) - radiusY(e))) / (2 * radiusY(e))).coerceIn(0f, 1f)
-                    pads[2 * index] = (((nx * 65535).toInt().coerceIn(0, 65535)) xor 0x8000).toShort()
-                    pads[2 * index + 1] = (((ny * 65535).toInt().coerceIn(0, 65535)) xor 0x7fff).toShort()
-                    buttons = buttons or TRACKPAD_TOUCHED[index]
+                    val (px, py) = SteamTouchBits.trackpadPair(nx, ny)
+                    pads[2 * index] = px
+                    pads[2 * index + 1] = py
+                    buttons = buttons or SteamTouchBits.TRACKPAD_TOUCHED[index]
                 }
-                else -> BUTTON_BITS[e.type]?.let { buttons = buttons or it }
+                else -> buttons = buttons or SteamTouchBits.buttonBit(e.type)
             }
         }
         device.setControls(buttons, sticks, pads)
@@ -631,9 +622,9 @@ class SteamTouchControls(
                     f.x = event.getX(i)
                     f.y = event.getY(i)
                     val e = f.element ?: continue
-                    if (BUTTON_BITS.containsKey(e.type)) {
+                    if (SteamTouchBits.hasButton(e.type)) {
                         val over = hit(live(), f.x, f.y)
-                        if (over != null && over !== e && BUTTON_BITS.containsKey(over.type)) {
+                        if (over != null && over !== e && SteamTouchBits.hasButton(over.type)) {
                             fingers[event.getPointerId(i)] = Finger(over, f.x, f.y)
                             if (feedback) performHapticFeedback(android.view.HapticFeedbackConstants.VIRTUAL_KEY)
                         }
@@ -1455,36 +1446,8 @@ class SteamTouchControls(
         private const val FADED = 0.3f
         private const val SHAKE_G = 2.3f
 
-        private const val DPAD_UP = 1L shl 8
-        private const val DPAD_RIGHT = 1L shl 9
-        private const val DPAD_LEFT = 1L shl 10
-        private const val DPAD_DOWN = 1L shl 11
-        private const val STICK_LEFT_TOUCHED = 1L shl 46
-        private const val STICK_RIGHT_TOUCHED = 1L shl 47
-        private val TRACKPAD_TOUCHED = longArrayOf(1L shl 27, 1L shl 19, 1L shl 20)
-
-        private val BUTTON_BITS: Map<Int, Long> = buildMap {
-            put(SteamTouchConfig.STEAM, 1L shl 13)
-            put(SteamTouchConfig.JOYSTICK_LEFT_BUTTON, 1L shl 22)
-            put(SteamTouchConfig.JOYSTICK_RIGHT_BUTTON, 1L shl 26)
-            put(SteamTouchConfig.A, 1L shl 7)
-            put(SteamTouchConfig.B, 1L shl 5)
-            put(SteamTouchConfig.X, 1L shl 6)
-            put(SteamTouchConfig.Y, 1L shl 4)
-            put(SteamTouchConfig.SELECT, 1L shl 12)
-            put(SteamTouchConfig.START, 1L shl 14)
-            put(SteamTouchConfig.TRIGGER_LEFT, 1L shl 1)
-            put(SteamTouchConfig.TRIGGER_RIGHT, 1L shl 0)
-            put(SteamTouchConfig.BUMPER_LEFT, 1L shl 3)
-            put(SteamTouchConfig.BUMPER_RIGHT, 1L shl 2)
-            for (i in 0 until 8) put(SteamTouchConfig.MACRO_0 + i, 1L shl (32 + i))
-            put(SteamTouchConfig.MACRO_1_FINGER, 1L shl 48)
-            put(SteamTouchConfig.MACRO_2_FINGER, 1L shl 49)
-            put(SteamTouchConfig.THUMB, 0L)
-            put(SteamTouchConfig.KEYBOARD, 0L)
-            put(SteamTouchConfig.PASTE, 0L)
-        }
-
+        // The button-bit table, d-pad sectors and axis encodings live in
+        // SteamTouchBits (unit-tested); the view delegates to it.
         private val LABEL_COLORS = mapOf(
             SteamTouchConfig.A to Color.rgb(72, 133, 48),
             SteamTouchConfig.B to Color.rgb(211, 68, 37),
