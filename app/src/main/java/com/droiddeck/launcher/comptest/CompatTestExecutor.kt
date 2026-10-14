@@ -66,6 +66,10 @@ class CompatTestExecutor(
             )
         val lines = ArrayList<String>()
         val logName = "comptest-${spec.id}"
+        // Gate A2: make sure the Linux driver selection is a usable glibc
+        // driver before the guest tries to load it — migrates v2's bionic
+        // selection (or a corrupt one) to the bundled glibc driver.
+        runCatching { com.droiddeck.launcher.gpu.GlibcDriverBundle.ensureValidSelection(context) }
         // Export the selected Linux Vulkan driver so the guest loader finds it.
         // Without VK_DRIVER_FILES, vkcube/vulkaninfo see no Mali ICD and fail.
         val extraEnv = runCatching {
