@@ -338,6 +338,42 @@ jobs:
           ls -la app/src/main/assets/driver-bundles/panvk-kbase-g720-v0.1.0-rc3-universal+local1/ | head -8
           rm -rf /tmp/driver-pkg
 
+      - name: Build D3D Tier-0 cubes (mingw-w64)
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq mingw-w64
+          mkdir -p app/src/main/assets/comptest
+          x86_64-w64-mingw32-gcc -O2 -o app/src/main/assets/comptest/d3d9-cube.exe \
+            tools/comptest/d3d9-cube.c -ld3d9
+          x86_64-w64-mingw32-gcc -O2 -o app/src/main/assets/comptest/d3d11-cube.exe \
+            tools/comptest/d3d11-cube.c -ld3d11 -ldxgi
+          # Wrapper scripts: the guest test execs /opt/comptest/d3d9-cube directly.
+          for t in d3d9 d3d11; do
+            cat > app/src/main/assets/comptest/$t-cube <<'EOF'
+          #!/bin/bash
+          # Tier-0 D3D cube: run the Windows test .exe under Wine/Proton.
+          EXE_DIR="$(dirname "$(readlink -f "$0")")"
+          WINE_BIN=""
+          for w in "$WINE" wine64 wine; do
+            if [ -n "$w" ] && command -v "$w" >/dev/null 2>&1; then WINE_BIN="$w"; break; fi
+          done
+          if [ -z "$WINE_BIN" ]; then
+            # Proton's wine: look for a proton installation in the usual places.
+            for p in "$HOME/.steam/steam/compatibilitytools.d" "$HOME/.local/share/Steam/compatibilitytools.d"; do
+              [ -d "$p" ] || continue
+              cand=$(find "$p" -maxdepth 3 -path "*/files/bin/wine64" 2>/dev/null | head -1)
+              if [ -n "$cand" ]; then WINE_BIN="$cand"; break; fi
+            done
+          fi
+          if [ -z "$WINE_BIN" ]; then echo "d3d-cube: no Wine/Proton found"; exit 127; fi
+          exec "$WINE_BIN" "$EXE_DIR/EXE_PLACEHOLDER" "$@"
+          EOF
+            sed -i "s/EXE_PLACEHOLDER/$t-cube.exe/" app/src/main/assets/comptest/$t-cube
+            chmod +x app/src/main/assets/comptest/$t-cube
+          done
+          ls -la app/src/main/assets/comptest/
+
       - name: Bundle the droiddeck-esync packs
         env:
           GH_TOKEN: ${{ github.token }}

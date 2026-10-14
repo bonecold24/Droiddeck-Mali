@@ -30,6 +30,8 @@ class CompatTestExecutor(
     private val environment: () -> EnvironmentInfo,
 ) : CompatTestRunner.TestExecutor {
 
+    @Volatile private var comptestPayloadDone = false
+
     override fun execute(
         spec: TestSpec,
         ctl: CompatTestRunner.RunControl,
@@ -109,15 +111,51 @@ class CompatTestExecutor(
      * Guest command lines per system check. NEEDS-REAL-MALI: binary names and
      * display-server assumptions (X/Wayland inside the session) are unverified.
      */
-    private fun guestArgv(checkId: String): List<String>? = when (checkId) {
-        // vkcube: run N frames offscreen-ish; parse its fps readout into frame times.
-        "vkcube" -> listOf("/usr/bin/vkcube", "--c", "600")
-        "vulkaninfo" -> listOf("/usr/bin/vulkaninfo")
-        // D3D9/D3D11 sample cubes: expected under the compat-test payload dir in the
-        // userland image; exact paths confirmed on first device run.
-        "d3d9-cube" -> listOf("/opt/comptest/d3d9-cube")
-        "d3d11-cube" -> listOf("/opt/comptest/d3d11-cube")
-        else -> null
+    private fun guestArgv(checkId: String): List<String>? {
+        // D3D cubes: ensure the payload is installed in the guest first.
+        if (checkId == "d3d9-cube" || checkId == "d3d11-cube") ensureComptestPayload()
+        return when (checkId) {
+            // vkcube: run N frames offscreen-ish; parse its fps readout into frame times.
+            "vkcube" -> listOf("/usr/bin/vkcube", "--c", "600")
+            "vulkaninfo" -> listOf("/usr/bin/vulkaninfo")
+            // D3D9/D3D11 sample cubes: installed to /opt/comptest by ensureComptestPayload().
+            "d3d9-cube" -> listOf("/opt/comptest/d3d9-cube")
+            "d3d11-cube" -> listOf("/opt/comptest/d3d11-cube")
+            else -> null
+        }
+    }
+
+    /**
+     * Copies the D3D Tier-0 payload (wrappers + .exe) from APK assets into the
+     * guest's /opt/comptest. Runs once per process; best-effort, never throws.
+     */
+    private fun ensureComptestPayload() {
+        if (comptestPayloadDone) return
+        synchronized(this) {
+            if (comptestPayloadDone) return
+            comptestPayloadDone = true
+        }
+        try {
+            val am = context.assets
+            val files = am.list("comptest") ?: return
+            if (files.isEmpty()) return
+            // Stage to a host-visible dir, then move into the guest via proot.
+            val stage = java.io.File(context.filesDir, "comptest-payload").apply { mkdirs() }
+            for (n in files) {
+                am.open("comptest/$n").use { inp ->
+                    java.io.File(stage, n).outputStream().use { inp.copyTo(it) }
+                }
+                java.io.File(stage, n).setExecutable(true)
+            }
+            GuestCommand.run(
+                context,
+                listOf("/bin/sh", "-c",
+                    "mkdir -p /opt/comptest && cp -f ${stage.path}/* /opt/comptest/ && chmod +x /opt/comptest/*"),
+                logName = "comptest-payload-install",
+            ) { }
+        } catch (t: Throwable) {
+            android.util.Log.w("CompatTest", "comptest payload install failed: ${t.message}")
+        }
     }
 
     /**
