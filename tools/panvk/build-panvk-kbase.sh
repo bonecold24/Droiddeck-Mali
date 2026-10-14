@@ -84,12 +84,12 @@ MESASRC="$W/src/mesa"
 # DroidDeck's own patches on top (pattern-based, robust to include drift).
 python3 "$HERE/apply-droiddeck-patches.py" "$MESASRC"
 
-# Host tools, against the private LLVM.
+# Host tools, against the private LLVM. PanVK uses its own shader compiler,
+# not LLVM, so disable it here to avoid version-skew with the Arch packages.
 PKG_CONFIG_PATH="$W/hostroot/usr/lib/pkgconfig:$W/hostroot/usr/share/pkgconfig" PATH="$W/hostroot/usr/bin:$PATH" \
   meson setup --wipe "$MESASRC/build-host" "$MESASRC" -Dplatforms=[] -Dgallium-drivers=[] -Dvulkan-drivers=[] -Dtools=panfrost \
-  -Dprecomp-compiler=enabled -Dinstall-precomp-compiler=true -Dllvm=enabled -Dmesa-clc=enabled -Dinstall-mesa-clc=true
-ninja -C "$MESASRC/build-host" src/compiler/clc/mesa_clc src/compiler/spirv/vtn_bindgen2 src/panfrost/clc/panfrost_compile
-ln -sf "$MESASRC/build-host/src/compiler/clc/mesa_clc" host-bin/mesa_clc
+  -Dprecomp-compiler=enabled -Dinstall-precomp-compiler=true -Dllvm=disabled -Dmesa-clc=disabled -Dinstall-mesa-clc=false
+ninja -C "$MESASRC/build-host" src/compiler/spirv/vtn_bindgen2 src/panfrost/clc/panfrost_compile
 ln -sf "$MESASRC/build-host/src/compiler/spirv/vtn_bindgen2" host-bin/vtn_bindgen2
 ln -sf "$MESASRC/build-host/src/panfrost/clc/panfrost_compile" host-bin/panfrost_compile
 
