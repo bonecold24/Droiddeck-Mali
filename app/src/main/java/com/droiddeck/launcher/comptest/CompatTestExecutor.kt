@@ -126,6 +126,9 @@ class CompatTestExecutor(
         // driver before the guest tries to load it — migrates v2's bionic
         // selection (or a corrupt one) to the bundled glibc driver.
         runCatching { com.droiddeck.launcher.gpu.GlibcDriverBundle.ensureValidSelection(context) }
+        // Gate A1: install the Trixie runtime overlay (libc6 2.41, Wayland 1.24.0,
+        // SPIRV-Tools) before the guest tries to dlopen() the PanVK driver.
+        runCatching { com.droiddeck.launcher.gpu.GlibcDriverBundle.ensureRuntimeOverlayInstalled(context) }
         // Export the selected Linux Vulkan driver so the guest loader finds it.
         // Without VK_DRIVER_FILES, vkcube/vulkaninfo see no Mali ICD and fail.
         val extraEnv = buildGuestEnv()

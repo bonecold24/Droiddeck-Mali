@@ -345,6 +345,23 @@ jobs:
           rm -rf /tmp/driver-pkg
 
 
+      - name: Bundle the Trixie runtime overlay (Linux guest)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          # Trixie overlay: libc6 2.41, libwayland-client 1.24.0, SPIRV-Tools.
+          # Verified via QEMU dlopen+dlsym on ci-debian-bullseye-r1.
+          OVERLAY_URL="https://github.com/bonecold24/Droiddeck-Mali/releases/download/trixie-overlay-v1/trixie-runtime-overlay.tar.gz"
+          OVERLAY_SHA256="e62b7c63a704ad63c8a914bf364f74f9efdcdff2cfbce24eef3caac1a24af73d"
+          mkdir -p app/src/main/assets/runtime-overlay
+          curl -sSfL "$OVERLAY_URL" -o /tmp/trixie-overlay.tar.gz
+          echo "$OVERLAY_SHA256  /tmp/trixie-overlay.tar.gz" | sha256sum -c -
+          cp /tmp/trixie-overlay.tar.gz app/src/main/assets/runtime-overlay/trixie-runtime-overlay.tar.gz
+          echo "$OVERLAY_SHA256" > app/src/main/assets/runtime-overlay/trixie-runtime-overlay.sha256
+          rm -f /tmp/trixie-overlay.tar.gz
+
+
       - name: Bundle the glibc PanVK driver (Linux guest)
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

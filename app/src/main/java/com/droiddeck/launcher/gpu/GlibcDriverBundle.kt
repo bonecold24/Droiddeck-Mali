@@ -130,4 +130,65 @@ object GlibcDriverBundle {
             stage.deleteRecursively()
         }
     }
+
+    /**
+     * Install the Trixie runtime overlay into the Linux guest rootfs.
+     * Must be called before Stage 0 / B2 / vkcube run.
+     * The overlay provides libc6 2.41, libwayland-client 1.24.0, and
+     * SPIRV-Tools — all required for dlopen() of libvulkan_panfrost.so.
+     * Verified via QEMU: dlopen(RTLD_NOW) + dlsym(vk_icdGetInstanceProcAddr) PASS.
+     */
+    fun ensureRuntimeOverlayInstalled(context: Context): Boolean {
+        val app = context.applicationContext
+        val prefs = app.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        val overlayMarker = File(app.filesDir, "linuxfs/.trixie-overlay-installed")
+        if (overlayMarker.exists()) {
+            Log.i(TAG, "Trixie overlay already installed")
+            return true
+        }
+        return try {
+            val rootfs = File(app.filesDir, "linuxfs")
+            if (!rootfs.exists()) {
+                Log.w(TAG, "Linux guest not installed; skipping overlay")
+                return false
+            }
+            app.assets.open("runtime-overlay/trixie-runtime-overlay.tar.gz").use { inp ->
+                val tmpTar = File(app.cacheDir, "trixie-overlay.tar.gz")
+                tmpTar.outputStream().use { inp.copyTo(it) }
+                val expectedSha = app.assets.open("runtime-overlay/trixie-runtime-overlay.sha256")
+                    .bufferedReader().readText().trim()
+                val actualSha = sha256Of(tmpTar)
+                if (actualSha != expectedSha) {
+                    Log.e(TAG, "Overlay SHA256 mismatch")
+                    tmpTar.delete()
+                    return false
+                }
+                val proc = ProcessBuilder("tar", "-xzf", tmpTar.absolutePath, "-C", rootfs.absolutePath)
+                    .redirectErrorStream(true).start()
+                val out = proc.inputStream.bufferedReader().readText()
+                val rc = proc.waitFor()
+                tmpTar.delete()
+                if (rc != 0) {
+                    Log.e(TAG, "Overlay extraction failed (rc=$rc): $out")
+                    return false
+                }
+            }
+            overlayMarker.createNewFile()
+            Log.i(TAG, "Trixie runtime overlay installed")
+            true
+        } catch (e: Exception) {
+            Log.e(TAG, "Overlay install failed: ${e.message}", e)
+            false
+        }
+    }
+
+    private fun sha256Of(f: File): String {
+        val md = java.security.MessageDigest.getInstance("SHA-256")
+        f.inputStream().use { inp ->
+            val buf = ByteArray(8192)
+            var n = inp.read(buf)
+            while (n > 0) { md.update(buf, 0, n); n = inp.read(buf) }
+        }
+        return md.digest().joinToString("") { "%02x".format(it) }
+    }
 }
