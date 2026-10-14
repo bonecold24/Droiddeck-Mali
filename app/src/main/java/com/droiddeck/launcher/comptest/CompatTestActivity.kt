@@ -212,7 +212,7 @@ private fun CompatTestScreen(vm: CompatTestViewModel) {
 }
 
 @Composable
-private fun IdleBody(vm: CompatTestViewModel) {
+private fun ColumnScope.IdleBody(vm: CompatTestViewModel) {
     Text("Runs system GPU checks first, then installed games. Missing games are skipped, never fail the run. No Steam login needed.",
         style = MaterialTheme.typography.bodyMedium)
     Spacer(Modifier.height(8.dp))
@@ -224,7 +224,7 @@ private fun IdleBody(vm: CompatTestViewModel) {
 }
 
 @Composable
-private fun RunningBody(vm: CompatTestViewModel) {
+private fun ColumnScope.RunningBody(vm: CompatTestViewModel) {
     LinearProgressIndicator(progress = { vm.progress }, modifier = Modifier.fillMaxWidth())
     Spacer(Modifier.height(8.dp))
     Text(if (vm.currentLabel.isNotEmpty()) "Running: ${vm.currentLabel}" else "Starting…",
@@ -240,7 +240,7 @@ private fun RunningBody(vm: CompatTestViewModel) {
 }
 
 @Composable
-private fun DoneBody(vm: CompatTestViewModel) {
+private fun ColumnScope.DoneBody(vm: CompatTestViewModel) {
     if (vm.summary.isNotEmpty()) {
         Text(vm.summary, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
         Spacer(Modifier.height(8.dp))
