@@ -1,0 +1,44 @@
+name: Bug report
+description: Report a crash, hang, or incorrect behavior
+labels: [bug]
+body:
+  - type: input
+    id: device
+    attributes:
+      label: Device
+      description: Phone model, e.g. Xiaomi 14T Pro (rothko)
+    validations:
+      required: true
+  - type: input
+    id: rom
+    attributes:
+      label: Android / ROM
+      description: e.g. HyperOS 3 beta (Android 15), build number
+    validations:
+      required: true
+  - type: input
+    id: gpu-driver
+    attributes:
+      label: GPU and driver package
+      description: e.g. Mali Immortalis-G720 MC12, panvk-kbase-g720 v0.1.0
+    validations:
+      required: true
+  - type: input
+    id: app-version
+    attributes:
+      label: App version / APK source
+      description: e.g. CI debug build from commit abc1234, or release v0.1.0
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      description: What you did, what you expected, what happened
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: Attach the session folder from Download/DroidDeck/ as a zip, plus relevant logcat excerpts

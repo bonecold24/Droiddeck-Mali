@@ -1,0 +1,32 @@
+# Upstream pins — droiddeck-mali
+
+This fork tracks upstream DroidDeck and the Mali implementation it ports.
+Update these pins deliberately, one at a time, with CI green after each.
+
+## App base
+
+- Upstream: https://github.com/Droid-Deck/DroidDeck
+- Branch: main
+- Pinned commit: 079261759e7f05de3786821f9f619bc8703e4a89
+- Pinned date: 2026-10-14
+- Subject: perf: the session's background watchers share two loops and one D-Bus service process (#575)
+
+To sync: `git fetch upstream && git merge upstream/main` (or rebase the mali/*
+stack), resolve conflicts keeping the Mali delta, CI green.
+
+## Mali implementation ported
+
+- Source: https://github.com/emir34-34/droiddeck
+- Branch: mediatek-mali-support
+- Pinned commit: 229fe07438a959a896703ce1205a6b41c2ad2987
+- Pinned date: 2026-10-04
+- See docs/MALI_PORT.md for the per-branch port map.
+
+## Driver fork (separate repo)
+
+- Repo: https://github.com/bonecold24/panvk-kbase-g720
+- Upstream: https://github.com/zenithblue-oss/panvk-kbase-android
+- Pinned commit: 0183fc489f17156a6b266360b0c296cfd9109da1
+- Pinned date: 2026-10-13
+- Mesa pin inside the driver repo: see its sources.lock
+  (mesa 26.3.0-devel @ 5a07217f034b3e50d8c7c7794f97a2df1742613b as of 2026-09-18).
