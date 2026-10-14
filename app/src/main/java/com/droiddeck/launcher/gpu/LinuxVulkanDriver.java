@@ -22,7 +22,13 @@ public final class LinuxVulkanDriver {
     public static List<String> optionValues(Context context) {
         ArrayList<String> values = new ArrayList<>();
         values.add("");
-        values.addAll(new LinuxVulkanDriverManager(context).enumerateInstalledDrivers());
+        LinuxVulkanDriverManager m = new LinuxVulkanDriverManager(context);
+        for (String id : m.enumerateInstalledDrivers()) {
+            // A bionic (Android) driver package is verified and registered, but it cannot back
+            // the Linux runtime: Linux processes cannot load a bionic library. It stays
+            // visible in driver diagnostics instead.
+            if (m.isLinuxRuntimeUsable(id)) values.add(id);
+        }
         return values;
     }
 
@@ -43,6 +49,10 @@ public final class LinuxVulkanDriver {
         }
         if (value == null || value.isEmpty()) return null;
         LinuxVulkanDriverManager m = new LinuxVulkanDriverManager(context);
+        if (!m.isLinuxRuntimeUsable(value)) {
+            Log.w(TAG, "imported driver \"" + value + "\" is not a glibc Linux driver; using the runtime's own driver");
+            return null;
+        }
         String icd = m.getIcdPath(value);
         if (icd == null) {
             Log.w(TAG, "imported Linux driver \"" + value + "\" is gone; using the runtime's own driver");

@@ -1046,6 +1046,8 @@
     <string name="gpu_manual_hint">Pick a pair yourself</string>
     <string name="gpu_checking">Checking for drivers…</string>
     <string name="gpu_mali_hint">Mali GPU: driver pairs are for Adreno and do not apply here. Set the Runtime driver to the imported PanVK (kbase) driver, and leave the Display driver on Auto, which uses the phone\'s own Mali driver.</string>
+    <string name="mali_diag_title">Driver diagnostics</string>
+    <string name="mali_diag_loading">Collecting driver diagnostics…</string>
     <string name="gpu_none_listed">No drivers listed yet. Refresh to look for them.</string>
     <string name="gpu_hide_other">Hide drivers for other GPUs</string>
     <string name="gpu_show_other">Show drivers for other GPUs</string>
