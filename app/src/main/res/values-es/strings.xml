@@ -170,6 +170,9 @@
     <string name="app_fex_not_ready">Este programa está hecho para PC %1$s y se ejecuta con FEX, que aún no está listo. Abre Steam una vez con tu sesión iniciada: DroidDeck hará que descargue FEX y el Steam Linux Runtime que necesita, y después se abrirá.</string>
     <string name="session_end_program">Este programa</string>
     <string name="session_end_fex_missing">%1$s está hecho para PC x86 y se ejecuta con FEX, que aún no está instalado. Abre Steam una vez con tu sesión iniciada y deja que descargue FEX y el Steam Linux Runtime; después vuelve a iniciarlo.</string>
+    <string name="session_mali_no_driver">Esta GPU Mali aún no tiene un controlador Linux: el controlador propio del runtime (Turnip) solo funciona en Adreno. Importa un controlador Vulkan Mali para glibc (PanVK para kbase) en Controladores GPU → Controlador de runtime Linux e inténtalo de nuevo.</string>
+    <string name="session_mali_turnip_ran">La sesión siguió usando el Turnip del runtime, no el controlador Mali importado: el script de sesión del runtime no tomó el controlador. Comparte los registros.</string>
+    <string name="session_mali_no_usable_gpu">El controlador de runtime Linux importado no encontró una GPU utilizable en este Mali. Prueba otra compilación o comparte los registros.</string>
     <string name="add_app_flatpak_hint">Un ID de app de Flathub o su página en Flathub. Flatpak se configura primero si aún no lo está.</string>
     <string name="add_app_file">Archivo</string>
     <string name="add_app_no_file">Ningún archivo elegido</string>
@@ -1194,6 +1197,11 @@
     <string name="main_non_adreno_title">La GPU no es Adreno</string>
     <string name="main_non_adreno_text">Turnip es compatible con GPU Adreno. En %1$s, Steam puede mostrar una pantalla negra. Descarga: %2$.0f MB.</string>
     <string name="main_install_anyway">Instalar de todos modos</string>
+    <string name="main_mali_no_driver_title">GPU Mali: se necesita un controlador Linux</string>
+    <string name="main_mali_no_driver_text">El controlador propio del runtime (Turnip) solo funciona en Adreno, así que Steam aún no puede iniciarse en %1$s. Importa un controlador Vulkan Mali para glibc (PanVK para kbase) en Controladores GPU → Controlador de runtime Linux, selecciónalo e inténtalo de nuevo.</string>
+    <string name="main_mali_gpu_drivers">Controladores GPU</string>
+    <string name="main_mali_experimental_title">GPU Mali: experimental</string>
+    <string name="main_mali_experimental_text">La compatibilidad con Mali (MediaTek) es experimental. La pantalla se dibuja con el controlador Mali del sistema, pero el runtime necesita un controlador Vulkan Mali para glibc (PanVK para kbase) importado en Controladores GPU → Controlador de runtime Linux; sin él, Steam muestra una pantalla negra. Descarga: %1$.0f MB.</string>
     <string name="main_remove_runtime_title">Eliminar el runtime de Linux</string>
     <string name="main_remove_runtime_text">Esto elimina el runtime, el cliente de Steam que contiene y todos los juegos instalados en él.</string>
     <string name="main_applied">Aplicado: %1$s</string>

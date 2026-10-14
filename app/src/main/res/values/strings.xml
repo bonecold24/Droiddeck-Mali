@@ -170,6 +170,9 @@
     <string name="app_fex_not_ready">This program is built for %1$s PCs and runs through FEX, which is not set up yet. Open Steam once while signed in: DroidDeck has it download FEX and the Steam Linux Runtime it needs, then this opens.</string>
     <string name="session_end_program">This program</string>
     <string name="session_end_fex_missing">%1$s is built for x86 PCs and runs through FEX, which is not installed yet. Start Steam once while signed in and let it download FEX and the Steam Linux Runtime, then start this again.</string>
+    <string name="session_mali_no_driver">This Mali GPU has no Linux driver yet: the runtime\'s own driver (Turnip) only runs on Adreno. Import a glibc Mali Vulkan driver (PanVK for kbase) under GPU drivers → Linux runtime driver, then start again.</string>
+    <string name="session_mali_turnip_ran">The session still ran the runtime\'s Turnip, not the imported Mali driver: the runtime\'s session script did not take the driver. Share the logs.</string>
+    <string name="session_mali_no_usable_gpu">The imported Linux runtime driver found no usable GPU on this Mali. Try another build, or share the logs.</string>
     <string name="add_app_flatpak_hint">A Flathub app ID or its Flathub page. Flatpak is set up first if it is not yet.</string>
     <string name="add_app_file">File</string>
     <string name="add_app_no_file">No file chosen</string>
@@ -1217,6 +1220,11 @@
     <string name="main_non_adreno_title">Not an Adreno GPU</string>
     <string name="main_non_adreno_text">Turnip supports Adreno GPUs. On %1$s, Steam may show a black screen. Download: %2$.0f MB.</string>
     <string name="main_install_anyway">Install anyway</string>
+    <string name="main_mali_no_driver_title">Mali GPU: Linux driver needed</string>
+    <string name="main_mali_no_driver_text">The runtime\'s own driver (Turnip) only runs on Adreno, so Steam cannot start on %1$s yet. Import a glibc Mali Vulkan driver (PanVK for kbase) under GPU drivers → Linux runtime driver and select it, then start again.</string>
+    <string name="main_mali_gpu_drivers">GPU drivers</string>
+    <string name="main_mali_experimental_title">Mali GPU: experimental</string>
+    <string name="main_mali_experimental_text">Mali support (MediaTek) is experimental. The screen is drawn with the system\'s Mali driver, but the runtime needs a glibc Mali Vulkan driver (PanVK for kbase) imported under GPU drivers → Linux runtime driver; without one Steam shows a black screen. Download: %1$.0f MB.</string>
     <string name="main_remove_runtime_title">Remove Linux runtime</string>
     <string name="main_remove_runtime_text">This deletes the runtime, the Steam client inside it, and every game installed there.</string>
     <string name="main_applied">Applied: %1$s</string>
