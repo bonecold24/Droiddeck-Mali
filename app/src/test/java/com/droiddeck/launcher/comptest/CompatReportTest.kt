@@ -21,7 +21,7 @@ class CompatReportTest {
 
     private fun result() = TestResult(
         specId = "vkcube", label = "vkcube (Vulkan cube)", kind = TestKind.SYSTEM_CHECK,
-        outcome = TestOutcome.REACHED_MENU, startedAtMs = 1_700_000_000_000L, durationMs = 12_000L,
+        outcome = TestOutcome.ReachedMenu, startedAtMs = 1_700_000_000_000L, durationMs = 12_000L,
         avgFps = 60.0, onePercentLowFps = 59.5, maxFrameTimeMs = 18.2,
         telemetryStart = TelemetrySnapshot(45.0, 50.5, 80, 2_048L, 1_700_000_000_000L),
         telemetryEnd = TelemetrySnapshot(47.0, 53.0, 79, 2_100L, 1_700_000_012_000L),
@@ -38,7 +38,7 @@ class CompatReportTest {
     @Test fun jsonContainsExactComponentVersions() {
         val json = CompatReport.toJson(data())
         for (needle in listOf(
-            "\"schemaVersion\": 1",
+            "\"schemaVersion\": 2",
             "\"appVersion\": \"2.3.1\"",
             "\"appCommit\": \"abcdef1234\"",
             "\"name\": \"PanVK Kbase\"",
@@ -88,5 +88,49 @@ class CompatReportTest {
         val r = result().copy(label = "weird | label")
         val md = CompatReport.toMarkdown(data().copy(results = listOf(r)))
         assertTrue(md.contains("weird \\| label"))
+    }
+
+    @Test fun schemaV2SerializesDiagnostics() {
+        val r = result().copy(
+            outcome = TestOutcome.FailExit(1),
+            commandLine = "/usr/bin/vkcube --c 600",
+            envVars = mapOf("VK_DRIVER_FILES" to "/x/panfrost_icd.aarch64.json"),
+            exitCode = 1,
+            outputTail = listOf("line1", "line2"),
+            outputLinesTotal = 150,
+            stderrMerged = true,
+            logFile = "comptest-vkcube.log",
+            payloadInstall = PayloadInstallResult(false, reason = "assets empty"),
+        )
+        val json = CompatReport.toJson(data().copy(results = listOf(r)))
+        for (needle in listOf(
+            "\"schemaVersion\": 2",
+            "\"outcome\": \"FAIL_EXIT(1)\"",
+            "\"commandLine\": \"/usr/bin/vkcube --c 600\"",
+            "\"VK_DRIVER_FILES\": \"/x/panfrost_icd.aarch64.json\"",
+            "\"exitCode\": 1",
+            "\"outputTail\": [\"line1\",\"line2\"]",
+            "\"outputLinesTotal\": 150",
+            "\"stderrMerged\": true",
+            "\"logFile\": \"comptest-vkcube.log\"",
+            "\"reason\": \"assets empty\"",
+        )) assertTrue("missing: $needle", json.contains(needle))
+    }
+
+    @Test fun markdownRendersFirstFailureSection() {
+        val r = result().copy(
+            outcome = TestOutcome.FailExit(1),
+            note = "exit=1 — last output: boom",
+        )
+        val md = CompatReport.toMarkdown(CompatReport.withFirstFailure(data().copy(results = listOf(r))))
+        assertTrue(md.contains("## First failure"))
+        assertTrue(md.contains("FAIL_EXIT(1)"))
+        assertTrue(md.contains("boom"))
+        assertTrue(md.contains("## Stage diagnostics (failed stages)"))
+    }
+
+    @Test fun markdownSaysNoneWhenNothingFailed() {
+        val md = CompatReport.toMarkdown(CompatReport.withFirstFailure(data()))
+        assertTrue(md.contains("None — every stage passed or was skipped."))
     }
 }

@@ -20,11 +20,11 @@ class CompatTestRunnerTest {
         TestSpec(id, id, TestKind.SYSTEM_CHECK, "desc", timeoutSec)
 
     @Test fun outcomesAndStatsFlowIntoResults() {
-        val runner = CompatTestRunner(executorOf(TestOutcome.REACHED_GAMEPLAY, List(600) { 1000.0 / 60.0 }))
+        val runner = CompatTestRunner(executorOf(TestOutcome.ReachedGameplay, List(600) { 1000.0 / 60.0 }))
         val results = runner.runAll(listOf(spec("vkcube")))
         assertEquals(1, results.size)
         val r = results[0]
-        assertEquals(TestOutcome.REACHED_GAMEPLAY, r.outcome)
+        assertEquals(TestOutcome.ReachedGameplay, r.outcome)
         assertTrue(r.avgFps!! > 59.9)
         assertTrue(r.onePercentLowFps!! > 59.9)
     }
@@ -35,17 +35,17 @@ class CompatTestRunnerTest {
             override fun execute(spec: TestSpec, ctl: CompatTestRunner.RunControl): CompatTestRunner.TestRunOutcome {
                 calls++
                 if (spec.id == "boom") throw RuntimeException("segfault in vkcube")
-                return CompatTestRunner.TestRunOutcome(TestOutcome.REACHED_MENU, emptyList(), null)
+                return CompatTestRunner.TestRunOutcome(TestOutcome.ReachedMenu, emptyList(), null)
             }
         }
         val runner = CompatTestRunner(exec)
         val results = runner.runAll(listOf(spec("boom"), spec("vulkaninfo"), spec("d3d9")))
         assertEquals(3, calls)
         assertEquals(3, results.size)
-        assertEquals(TestOutcome.CRASH, results[0].outcome)
+        assertEquals(TestOutcome.FailExit(-1), results[0].outcome)
         assertTrue(results[0].note!!.contains("segfault"))
-        assertEquals(TestOutcome.REACHED_MENU, results[1].outcome)
-        assertEquals(TestOutcome.REACHED_MENU, results[2].outcome)
+        assertEquals(TestOutcome.ReachedMenu, results[1].outcome)
+        assertEquals(TestOutcome.ReachedMenu, results[2].outcome)
     }
 
     @Test fun timeoutProducesTimeoutOutcomeWithoutStalling() {
@@ -57,7 +57,7 @@ class CompatTestRunnerTest {
                     clock.t += 1_000
                     Thread.sleep(1)
                 }
-                return CompatTestRunner.TestRunOutcome(TestOutcome.REACHED_MENU, emptyList(), null)
+                return CompatTestRunner.TestRunOutcome(TestOutcome.ReachedMenu, emptyList(), null)
             }
         }
         val runner = CompatTestRunner(exec, clock)
@@ -65,7 +65,7 @@ class CompatTestRunnerTest {
         val results = runner.runAll(listOf(spec("hang", timeoutSec = 2)))
         val elapsed = System.currentTimeMillis() - start
         assertEquals(1, results.size)
-        assertEquals(TestOutcome.TIMEOUT, results[0].outcome)
+        assertEquals(TestOutcome.Timeout, results[0].outcome)
         assertTrue("suite must not stall: took ${elapsed}ms", elapsed < 10_000)
     }
 
@@ -74,7 +74,7 @@ class CompatTestRunnerTest {
         val exec = object : CompatTestRunner.TestExecutor {
             override fun execute(spec: TestSpec, ctl: CompatTestRunner.RunControl): CompatTestRunner.TestRunOutcome {
                 calls++
-                return CompatTestRunner.TestRunOutcome(TestOutcome.REACHED_MENU, emptyList(), null)
+                return CompatTestRunner.TestRunOutcome(TestOutcome.ReachedMenu, emptyList(), null)
             }
         }
         val runner = CompatTestRunner(exec)
@@ -93,7 +93,7 @@ class CompatTestRunnerTest {
     @Test fun partialResultsArePersistedAsItGoes() {
         val seen = mutableListOf<TestResult>()
         val runner = CompatTestRunner(
-            executorOf(TestOutcome.REACHED_MENU),
+            executorOf(TestOutcome.ReachedMenu),
             sink = object : CompatTestRunner.ResultsSink {
                 override fun onTestFinished(result: TestResult) { seen.add(result) }
             },
@@ -102,16 +102,16 @@ class CompatTestRunnerTest {
         assertEquals(listOf("a", "b"), seen.map { it.specId })
     }
 
-    @Test fun executorHangOutcomeIsRecordedAsHangNotTimeout() {
-        val runner = CompatTestRunner(executorOf(TestOutcome.HANG, note = "no frames for 5s"))
+    @Test fun executorDetectedHangIsRecordedAsTimeout() {
+        val runner = CompatTestRunner(executorOf(TestOutcome.Timeout, note = "no frames for 5s"))
         val results = runner.runAll(listOf(spec("game")))
-        assertEquals(TestOutcome.HANG, results[0].outcome)
+        assertEquals(TestOutcome.Timeout, results[0].outcome)
         assertEquals("no frames for 5s", results[0].note)
     }
 
     @Test fun skippedOutcomeSurvives() {
-        val runner = CompatTestRunner(executorOf(TestOutcome.SKIPPED, note = "not installed"))
+        val runner = CompatTestRunner(executorOf(TestOutcome.Skipped, note = "not installed"))
         val results = runner.runAll(listOf(spec("game", 60)))
-        assertEquals(TestOutcome.SKIPPED, results[0].outcome)
+        assertEquals(TestOutcome.Skipped, results[0].outcome)
     }
 }

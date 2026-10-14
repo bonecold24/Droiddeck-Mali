@@ -38,6 +38,10 @@ class CompatTestRunner(
         val outcome: TestOutcome,
         val frameTimesMs: List<Double> = emptyList(),
         val note: String? = null,
+        /** Gate A4 per-stage diagnostics (command, env, exit, output tail, log file). */
+        val diagnostics: CompatDiagnostics? = null,
+        /** D3D payload install result, when the stage needed it (BUG-5). */
+        val payloadInstall: PayloadInstallResult? = null,
     )
 
     interface RunControl {
@@ -80,6 +84,7 @@ class CompatTestRunner(
         val duration = clock.nowMs() - startedAt
         val stats = FpsStats.compute(outcome.frameTimesMs)
         val teleEnd = runCatching { telemetry(spec) }.getOrNull()
+        val diag = outcome.diagnostics
         return TestResult(
             specId = spec.id,
             label = spec.label,
@@ -94,6 +99,14 @@ class CompatTestRunner(
             telemetryEnd = teleEnd,
             driver = runCatching { driver() }.getOrNull(),
             note = outcome.note,
+            commandLine = diag?.commandLine,
+            envVars = diag?.envVars,
+            exitCode = diag?.exitCode,
+            outputTail = diag?.outputTail,
+            outputLinesTotal = diag?.outputLinesTotal,
+            stderrMerged = diag?.stderrMerged ?: false,
+            logFile = diag?.logFile,
+            payloadInstall = outcome.payloadInstall,
         )
     }
 
@@ -120,7 +133,7 @@ class CompatTestRunner(
                 ctl.cancelled.set(true)
                 worker.interrupt()
                 worker.join(2_000)
-                return TestRunOutcome(TestOutcome.ERROR, emptyList(), "Cancelled by user")
+                return TestRunOutcome(TestOutcome.Cancelled, emptyList(), "Cancelled by user")
             }
             val remaining = deadline - clock.nowMs()
             if (remaining <= 0) {
@@ -128,7 +141,7 @@ class CompatTestRunner(
                 worker.interrupt()
                 worker.join(2_000)
                 return TestRunOutcome(
-                    TestOutcome.TIMEOUT, emptyList(),
+                    TestOutcome.Timeout, emptyList(),
                     "Exceeded ${spec.timeoutSec}s wall-clock budget",
                 )
             }
@@ -137,10 +150,15 @@ class CompatTestRunner(
         return when (val r = box[0]) {
             is TestRunOutcome -> r
             is Throwable -> TestRunOutcome(
-                TestOutcome.CRASH, emptyList(),
-                "Crashed: ${r.javaClass.simpleName}: ${r.message}".take(500),
+                // Gate B3: a harness throw is not a process exit; code -1 marks
+                // "no process ran" so it is never mislabelled CRASH.
+                TestOutcome.FailExit(-1), emptyList(),
+                "Harness exception (no process ran): ${r.javaClass.simpleName}: ${r.message}".take(500),
             )
-            else -> TestRunOutcome(TestOutcome.ERROR, emptyList(), "Executor returned no result")
+            else -> TestRunOutcome(
+                TestOutcome.FailExit(-1), emptyList(),
+                "Executor returned no result (no process ran)",
+            )
         }
     }
 }
