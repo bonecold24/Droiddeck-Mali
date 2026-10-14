@@ -41,6 +41,24 @@ object CompatTestSuite {
     )
 
     /**
+     * Default requested game list (Phase 6 tier plan — see docs/COMPAT.md).
+     * Steam app ids are stable public identifiers. Pure; host-unit-testable.
+     * Games not installed stay in the suite as specs so the executor records
+     * them as SKIPPED; a missing game can never fail the suite.
+     */
+    fun defaultTierGames(): List<TestSpec> = listOf(
+        // Tier 1 — light / free-to-play
+        gameSpec(440L, "Team Fortress 2"),
+        gameSpec(304930L, "Unturned"),
+        gameSpec(291550L, "Brawlhalla"),
+        // Tier 2 — D3D11 free-to-play
+        gameSpec(230410L, "Warframe"),
+        gameSpec(570L, "Dota 2"),
+        gameSpec(238960L, "Path of Exile"),
+        gameSpec(444090L, "Paladins"),
+    )
+
+    /**
      * Full ordered suite: system checks, then one spec per installed game.
      * Missing requested games are NOT filtered here; use [buildWithRequested] when the
      * tier list matters.
