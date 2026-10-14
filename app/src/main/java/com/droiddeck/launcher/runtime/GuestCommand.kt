@@ -11,7 +11,8 @@ import java.io.File
 
 object GuestCommand {
     fun run(context: Context, argv: List<String>, fakeRoot: Boolean = false, logName: String? = null,
-            linkDir: File? = null, onLine: (String) -> Unit): Int {
+            linkDir: File? = null, extraEnv: Map<String, String> = emptyMap(),
+            onLine: (String) -> Unit): Int {
         val log = logName?.let {
             try {
                 File(File(LinuxRuntime.logDir(context), SessionPaths.TOOLS_DIR).apply { mkdirs() }, "$it.log").printWriter()
@@ -50,6 +51,7 @@ object GuestCommand {
             if (linkDir != null) put("PROOT_L2S_DIR", linkDir.path)
             if (SessionPrefs.prootNoSeccomp(context)) put("PROOT_NO_SECCOMP", "1")
             LinuxRuntime.prootLibraryPath(context).takeIf { it.isNotEmpty() }?.let { put("LD_LIBRARY_PATH", it) }
+            putAll(extraEnv)
         }
         val process = builder.start()
         val pid = HostProcess.pidOf(process)
