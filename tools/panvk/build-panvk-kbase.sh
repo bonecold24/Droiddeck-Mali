@@ -58,7 +58,7 @@ export LD_LIBRARY_PATH="$W/hostroot/usr/lib"
 # Arch Linux ARM sysroot.
 for repo in core extra; do [ -s armpkgs/idx-$repo.html ] || curl -sSfLo armpkgs/idx-$repo.html "$ALARM/$repo/"; done
 for p in "${TARGET_PKGS[@]}"; do
-  re=$(printf '%s' "$p" | sed 's/+\\+/g')
+  re=${p//+/\\+}
   f=$(grep -hoE "href=\"$re-[0-9][^\"]*(aarch64|any)\.pkg\.tar\.[a-z]+\"" armpkgs/idx-*.html | sed 's/href="//;s/"$//' | sort -V | tail -1)
   repo=$(grep -lF "$f" armpkgs/idx-*.html | head -1 | sed 's#.*idx-##;s#\.html##')
   [ -s "armpkgs/$f" ] || curl -sSfLo "armpkgs/$f" "$ALARM/$repo/$(printf '%s' "$f" | sed 's/+/%2B/g')"
