@@ -18,12 +18,11 @@ class HomeActivity : Activity() {
     }
 
     private fun routeHome() {
-        val destination = if (HomeApp.isActiveSteamSession()) {
-            Intent(this, SessionActivity::class.java)
+        val destination = when (com.droiddeck.launcher.core.LaunchDecisions.homeDestination(HomeApp.isActiveSteamSession())) {
+            com.droiddeck.launcher.core.LaunchDecisions.HomeDestination.SESSION_GUIDE -> Intent(this, SessionActivity::class.java)
                 .setAction(SessionService.ACTION_HOME_GUIDE)
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
-        } else {
-            Intent(this, MainActivity::class.java)
+            com.droiddeck.launcher.core.LaunchDecisions.HomeDestination.MAIN -> Intent(this, MainActivity::class.java)
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
         }
         startActivity(destination)
