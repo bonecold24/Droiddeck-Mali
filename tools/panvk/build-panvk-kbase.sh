@@ -65,27 +65,33 @@ for p in "${TARGET_PKGS[@]}"; do
   tar -xf "armpkgs/$f" -C sysroot --exclude=.PKGINFO --exclude=.BUILDINFO --exclude=.MTREE --exclude=.INSTALL
 done
 
-# Source, pinned, with DroidDeck's patches.
-if [ "$(git -C src remote get-url origin 2>/dev/null)" != "$SRC_REPO" ]; then
-  rm -rf src
-  git clone -q --branch "$SRC_BRANCH" "$SRC_REPO" src
+# Source: upstream driver repo (scripts + patch series) + pinned Mesa.
+# The driver repo is a packaging repo, not a Mesa tree: fetch Mesa at the
+# pinned commit, then apply the kbase patch series for the g720 profile.
+DRIVER_REPO=${PANVK_SRC_REPO:-https://github.com/zenithblue-oss/panvk-kbase-android.git}
+DRIVER_COMMIT=${PANVK_SRC_COMMIT:-0183fc489f17156a6b266360b0c296cfd9109da1}
+if [ "$(git -C driver-repo remote get-url origin 2>/dev/null)" != "$DRIVER_REPO" ]; then
+  rm -rf driver-repo
+  git clone -q "$DRIVER_REPO" driver-repo
 fi
-if [ -n "$SRC_COMMIT" ]; then
-  git -C src checkout -q -f "$SRC_COMMIT"
-else
-  echo "WARNING: no SRC_COMMIT pin - building branch head $SRC_BRANCH (not reproducible)" >&2
-  git -C src checkout -q -f "$SRC_BRANCH" && git -C src pull -q --ff-only
-fi
-for p in "$HERE"/patches/*.patch; do git -C src apply "$p"; done
+git -C driver-repo fetch -q origin "$DRIVER_COMMIT" --depth 1 2>/dev/null || true
+git -C driver-repo checkout -q -f "$DRIVER_COMMIT"
+# Assemble Mesa + kbase patches into src/mesa.
+mkdir -p src
+driver-repo/scripts/fetch-mesa.sh src >/dev/null
+driver-repo/scripts/apply-patches.sh --profile g720-v12-csf --mesa "$W/src/mesa"
+MESASRC="$W/src/mesa"
+# DroidDeck's own patches on top.
+for p in "$HERE"/patches/*.patch; do git -C "$MESASRC" apply "$p"; done
 
 # Host tools, against the private LLVM.
 PKG_CONFIG_PATH="$W/hostroot/usr/lib/pkgconfig:$W/hostroot/usr/share/pkgconfig" PATH="$W/hostroot/usr/bin:$PATH" \
-  meson setup --wipe src/build-host src -Dplatforms=[] -Dgallium-drivers=[] -Dvulkan-drivers=[] -Dtools=panfrost \
+  meson setup --wipe "$MESASRC/build-host" "$MESASRC" -Dplatforms=[] -Dgallium-drivers=[] -Dvulkan-drivers=[] -Dtools=panfrost \
   -Dprecomp-compiler=enabled -Dinstall-precomp-compiler=true -Dllvm=enabled -Dmesa-clc=enabled -Dinstall-mesa-clc=true >/dev/null
-ninja -C src/build-host src/compiler/clc/mesa_clc src/compiler/spirv/vtn_bindgen2 src/panfrost/clc/panfrost_compile
-ln -sf "$W/src/build-host/src/compiler/clc/mesa_clc" host-bin/mesa_clc
-ln -sf "$W/src/build-host/src/compiler/spirv/vtn_bindgen2" host-bin/vtn_bindgen2
-ln -sf "$W/src/build-host/src/panfrost/clc/panfrost_compile" host-bin/panfrost_compile
+ninja -C "$MESASRC/build-host" src/compiler/clc/mesa_clc src/compiler/spirv/vtn_bindgen2 src/panfrost/clc/panfrost_compile
+ln -sf "$MESASRC/build-host/src/compiler/clc/mesa_clc" host-bin/mesa_clc
+ln -sf "$MESASRC/build-host/src/compiler/spirv/vtn_bindgen2" host-bin/vtn_bindgen2
+ln -sf "$MESASRC/build-host/src/panfrost/clc/panfrost_compile" host-bin/panfrost_compile
 
 # Cross file: the linker only on link lines, or meson's -Werror checks fail on an unused argument.
 cat > cross-aarch64-glibc.ini <<EOF
@@ -111,18 +117,18 @@ cpu = 'armv8-a'
 endian = 'little'
 EOF
 
-meson setup --wipe src/build-glibc src --cross-file cross-aarch64-glibc.ini -Dbuildtype=release \
+meson setup --wipe "$MESASRC/build-glibc" "$MESASRC" --cross-file cross-aarch64-glibc.ini -Dbuildtype=release \
   -Dplatforms=x11,wayland -Dglx=disabled -Dgbm=disabled -Degl=disabled -Dopengl=false -Dgles1=disabled \
   -Dgles2=disabled -Dglvnd=disabled -Dvalgrind=disabled -Dgallium-drivers= -Dzstd=disabled \
   -Dmesa-clc=system -Dprecomp-compiler=system -Dvulkan-drivers=panfrost -Dllvm=disabled \
   -Dpanfrost-kmds=kbase,panthor,panfrost -Dlibunwind=disabled -Dexpat=enabled >/dev/null
-ninja -C src/build-glibc src/panfrost/vulkan/libvulkan_panfrost.so
+ninja -C "$MESASRC/build-glibc" src/panfrost/vulkan/libvulkan_panfrost.so
 
 # Package: the library and a meta.json in LinuxVulkanDriverManager's schema.
 rm -rf out && mkdir out
-"$NDKBIN/llvm-strip" --strip-debug -o out/libvulkan_panfrost.so src/build-glibc/src/panfrost/vulkan/libvulkan_panfrost.so
+"$NDKBIN/llvm-strip" --strip-debug -o out/libvulkan_panfrost.so "$MESASRC/build-glibc/src/panfrost/vulkan/libvulkan_panfrost.so"
 glibc=$(readelf -V out/libvulkan_panfrost.so | grep -o 'GLIBC_[0-9.]*' | sort -uV | tail -1 | sed 's/GLIBC_//')
-srcpin=$(git -C src rev-parse --short HEAD)
+srcpin=$(git -C "$MESASRC" rev-parse --short HEAD)
 cat > out/meta.json <<EOF
 {
   "schemaVersion": 1,
