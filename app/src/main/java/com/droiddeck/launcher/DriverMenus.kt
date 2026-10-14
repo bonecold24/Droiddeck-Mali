@@ -257,16 +257,17 @@ internal class DriverMenus(private val activity: Activity, private val ui: Handl
         val name = activity.displayNameOf(uri)
         Thread({
             var bundle: DriverBundle.Bundle? = null
+            var linuxId: String? = null
             val problem = try {
                 when {
                     DriverBundle.isBundle(activity, uri) -> bundle = DriverBundle.install(activity, uri)
-                    linux == true -> LinuxVulkanDriverManager(activity).installDriver(uri, name)
+                    linux == true -> linuxId = LinuxVulkanDriverManager(activity).installDriver(uri, name)
                     linux == false -> TurnipDriver(activity).installFromZip(uri, name)
                     else -> try {
                         TurnipDriver(activity).installFromZip(uri, name)
                     } catch (display: IllegalArgumentException) {
                         try {
-                            LinuxVulkanDriverManager(activity).installDriver(uri, name)
+                            linuxId = LinuxVulkanDriverManager(activity).installDriver(uri, name)
                         } catch (runtime: IllegalArgumentException) {
                             throw IllegalArgumentException(activity.getString(R.string.drivers_not_a_driver))
                         }
@@ -280,8 +281,19 @@ internal class DriverMenus(private val activity: Activity, private val ui: Handl
                 activity.getString(R.string.drivers_import_failed, e.message)
             }
             ui.post {
+                // A Mali has no runtime driver of its own: the first one imported is the one to
+                // draw with, without a second trip to the drop-down.
+                val maliPick = linuxId != null && gpu.family == GpuInfo.Family.MALI &&
+                    LinuxVulkanDriver.resolveIcdPath(activity, SessionPrefs.linuxDriver(activity)) == null
+                if (maliPick) {
+                    SessionPrefs.setLinuxDriver(activity, linuxId!!)
+                    setMode(false)
+                }
                 val done = bundle?.let { useBundle(it) }
-                    ?: name?.let { activity.getString(R.string.comp_imported, it) } ?: activity.getString(R.string.drivers_imported_unnamed)
+                    ?: name?.let {
+                        activity.getString(R.string.comp_imported, it) +
+                            if (maliPick) activity.getString(R.string.drivers_imported_and_selected) else ""
+                    } ?: activity.getString(R.string.drivers_imported_unnamed)
                 android.widget.Toast.makeText(
                     activity, problem ?: done,
                     if (problem != null || bundle != null) android.widget.Toast.LENGTH_LONG else android.widget.Toast.LENGTH_SHORT,
