@@ -81,8 +81,8 @@ mkdir -p src
 driver-repo/scripts/fetch-mesa.sh src >/dev/null
 driver-repo/scripts/apply-patches.sh --profile g720-v12-csf --mesa "$W/src/mesa"
 MESASRC="$W/src/mesa"
-# DroidDeck's own patches on top.
-for p in "$HERE"/patches/*.patch; do git -C "$MESASRC" apply "$p"; done
+# DroidDeck's own patches on top (pattern-based, robust to include drift).
+python3 "$HERE/apply-droiddeck-patches.py" "$MESASRC"
 
 # Host tools, against the private LLVM.
 PKG_CONFIG_PATH="$W/hostroot/usr/lib/pkgconfig:$W/hostroot/usr/share/pkgconfig" PATH="$W/hostroot/usr/bin:$PATH" \
