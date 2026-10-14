@@ -47,6 +47,7 @@ import com.droiddeck.launcher.session.SessionLogShare
 import com.droiddeck.launcher.session.SessionPrefs
 import com.droiddeck.launcher.session.SteamRepair
 import com.droiddeck.launcher.core.CpuCores
+import com.droiddeck.launcher.core.LaunchDecisions
 import com.droiddeck.launcher.core.PhantomProcessLimit
 import com.droiddeck.launcher.core.PhantomProcessStatus
 import com.droiddeck.launcher.core.WirelessAdbFix
@@ -222,8 +223,11 @@ class MainActivity : ComponentActivity() {
         wifiDiscoveryPermission = WifiDiscovery.permissionGranted(this)
         wifiDiscoveryLocation = WifiDiscovery.locationEnabled(this)
         wifiDiscoveryAsked = SessionPrefs.wifiDiscoveryAsked(this)
-        wifiDiscoveryBlocked = !wifiDiscoveryPermission && wifiDiscoveryAsked &&
-            WifiDiscovery.permissions.none { shouldShowRequestPermissionRationale(it) }
+        wifiDiscoveryBlocked = LaunchDecisions.wifiDiscoveryBlocked(
+            granted = wifiDiscoveryPermission,
+            asked = wifiDiscoveryAsked,
+            showRationaleForAny = WifiDiscovery.permissions.any { shouldShowRequestPermissionRationale(it) },
+        )
         if (!wifiDiscoveryPermission && SessionPrefs.wifiDiscoveryEnabled(this)) {
             SessionPrefs.setWifiDiscoveryEnabled(this, false)
         }
@@ -873,16 +877,16 @@ class MainActivity : ComponentActivity() {
 
         if (savedInstanceState == null) ui.post { startSteamAtStartupIfEnabled() }
 
-        val wanted = ArrayList<String>()
-        if (checkSelfPermission(Manifest.permission.WRITE_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED) {
-            wanted.add(Manifest.permission.WRITE_EXTERNAL_STORAGE)
-        }
-        if (SessionPrefs.micEnabled(this) && !SessionPrefs.micAsked(this)
-            && checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
-            wanted.add(Manifest.permission.RECORD_AUDIO)
-            SessionPrefs.setMicAsked(this)
-        }
-        if (wanted.isNotEmpty()) requestPermissions(wanted.toTypedArray(), 1)
+        val startupPermissions = LaunchDecisions.startupPermissions(
+            storagePermission = Manifest.permission.WRITE_EXTERNAL_STORAGE,
+            micPermission = Manifest.permission.RECORD_AUDIO,
+            storageGranted = checkSelfPermission(Manifest.permission.WRITE_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED,
+            micEnabled = SessionPrefs.micEnabled(this),
+            micAsked = SessionPrefs.micAsked(this),
+            micGranted = checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED,
+        )
+        if (startupPermissions.markMicAsked) SessionPrefs.setMicAsked(this)
+        if (startupPermissions.request.isNotEmpty()) requestPermissions(startupPermissions.request.toTypedArray(), 1)
         Thread({ com.droiddeck.launcher.stores.StoreAccounts.encryptAll(this) }, "store-credentials").start()
         if (!SessionState.running) Thread({
             com.droiddeck.launcher.session.LogMigration.run(this)
@@ -1614,23 +1618,37 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun startSession(intent: Intent, steamSession: Boolean = false): Boolean {
-        if (busy || LinuxRuntimeInstaller.isBusy()) return false
-        refreshPhantomStatus()
-        if (steamSession && PhantomProcessLimit.blocksSteam(phantomProcessStatus)) {
-            showPhantomGate = true
-            return false
+        val busyNow = busy || LinuxRuntimeInstaller.isBusy()
+        if (!busyNow) refreshPhantomStatus()
+        return when (LaunchDecisions.sessionStartGate(
+            busy = busyNow,
+            steamSession = steamSession,
+            phantomBlocksSteam = PhantomProcessLimit.blocksSteam(phantomProcessStatus),
+            runtimeInstalled = installed != null,
+            adreno = com.droiddeck.launcher.core.DeviceSupport.adreno(),
+            releaseAvailable = available != null,
+            mali = com.droiddeck.launcher.core.DeviceSupport.mali(),
+            icdAvailable = com.droiddeck.launcher.gpu.LinuxVulkanDriver.resolveIcdPath(
+                this, com.droiddeck.launcher.session.SessionPrefs.linuxDriver(this)) != null,
+        )) {
+            LaunchDecisions.SessionStartGate.BUSY -> false
+            LaunchDecisions.SessionStartGate.PHANTOM_GATE -> {
+                showPhantomGate = true
+                false
+            }
+            LaunchDecisions.SessionStartGate.NON_ADRENO_WARNING -> {
+                showNonAdreno = available
+                false
+            }
+            LaunchDecisions.SessionStartGate.MALI_NO_DRIVER -> {
+                showMaliNoDriver = true
+                false
+            }
+            LaunchDecisions.SessionStartGate.START -> {
+                startActivity(intent)
+                true
+            }
         }
-        val warn = installed == null && !com.droiddeck.launcher.core.DeviceSupport.adreno()
-        if (warn && available != null) { showNonAdreno = available; return false }
-        // The runtime draws with Turnip, an Adreno driver: on a Mali it needs an imported
-        // glibc Mali driver first, or the session ends at once. Said before the start.
-        if (installed != null && com.droiddeck.launcher.core.DeviceSupport.mali() &&
-            com.droiddeck.launcher.gpu.LinuxVulkanDriver.resolveIcdPath(this, com.droiddeck.launcher.session.SessionPrefs.linuxDriver(this)) == null) {
-            showMaliNoDriver = true
-            return false
-        }
-        startActivity(intent)
-        return true
     }
 
     private fun refreshPhantomStatus() {
