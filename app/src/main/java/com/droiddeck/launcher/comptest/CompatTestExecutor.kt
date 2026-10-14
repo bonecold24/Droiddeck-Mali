@@ -145,7 +145,7 @@ class CompatTestExecutor(
                 protonVersion = defaultProtonLabel(context),
                 kbaseUapi = KbaseUapi.probe(),
                 deviceModel = "${Build.MANUFACTURER} ${Build.MODEL}".trim(),
-                soc = SocNames.name(SocNames.model(), ""),
+                soc = SocNames.label(),
             )
         }
 

@@ -161,7 +161,7 @@ internal class CompatTestViewModel(private val activity: CompatTestActivity) {
             runCatching {
                 CompatTestExport.writeReport(
                     activity, runId,
-                    CompatReportData(System.currentTimeMillis(), env, finished),
+                    CompatReportData(generatedAtMs = System.currentTimeMillis(), environment = env, results = finished),
                 )
             }
             activity.runOnUiThread {
@@ -216,7 +216,7 @@ private fun IdleBody(vm: CompatTestViewModel) {
     Text("Runs system GPU checks first, then installed games. Missing games are skipped, never fail the run. No Steam login needed.",
         style = MaterialTheme.typography.bodyMedium)
     Spacer(Modifier.height(8.dp))
-    TestList(vm.rows)
+    TestList(vm.rows, Modifier.weight(1f))
     Spacer(Modifier.height(12.dp))
     Button(onClick = { vm.start() }, modifier = Modifier.fillMaxWidth(), enabled = vm.rows.isNotEmpty()) {
         Text("Run compatibility test")
@@ -230,7 +230,7 @@ private fun RunningBody(vm: CompatTestViewModel) {
     Text(if (vm.currentLabel.isNotEmpty()) "Running: ${vm.currentLabel}" else "Starting…",
         style = MaterialTheme.typography.bodyMedium)
     Spacer(Modifier.height(8.dp))
-    TestList(vm.rows)
+    TestList(vm.rows, Modifier.weight(1f))
     Spacer(Modifier.height(12.dp))
     OutlinedButton(
         onClick = { vm.cancel() },
@@ -245,7 +245,7 @@ private fun DoneBody(vm: CompatTestViewModel) {
         Text(vm.summary, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
         Spacer(Modifier.height(8.dp))
     }
-    TestList(vm.rows)
+    TestList(vm.rows, Modifier.weight(1f))
     Spacer(Modifier.height(12.dp))
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         Button(onClick = { vm.share() }, modifier = Modifier.weight(1f)) { Text("Share report") }
@@ -256,8 +256,8 @@ private fun DoneBody(vm: CompatTestViewModel) {
 }
 
 @Composable
-private fun TestList(rows: List<RowState>) {
-    LazyColumn(Modifier.fillMaxWidth().weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+private fun TestList(rows: List<RowState>, modifier: Modifier = Modifier) {
+    LazyColumn(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
         items(rows, key = { it.spec.id }) { row -> TestRow(row) }
     }
 }
