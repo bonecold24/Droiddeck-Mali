@@ -100,6 +100,11 @@ internal class CompatTestViewModel(private val activity: CompatTestActivity) {
 
     fun start() {
         if (phase == Phase.RUNNING) return
+        // Gate A1: install Trixie runtime overlay before Stage 0.
+        // Idempotent via marker file; v2->v3.1 upgrades get it automatically.
+        runCatching {
+            com.droiddeck.launcher.gpu.GlibcDriverBundle.ensureRuntimeOverlayInstalled(activity)
+        }
         val specs = rows.map { it.spec }
         if (specs.isEmpty()) return
         runId = SimpleDateFormat("yyyyMMdd-HHmmss", Locale.US).format(Date())

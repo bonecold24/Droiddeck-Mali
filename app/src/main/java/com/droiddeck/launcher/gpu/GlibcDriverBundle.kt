@@ -163,15 +163,57 @@ object GlibcDriverBundle {
                     tmpTar.delete()
                     return false
                 }
-                val proc = ProcessBuilder("tar", "-xzf", tmpTar.absolutePath, "-C", rootfs.absolutePath)
+                // Extract to temp dir first, then handle UsrMerge vs non-UsrMerge layout.
+                // Bullseye uses non-UsrMerge (/lib is a real dir); Trixie uses UsrMerge.
+                val tmpExtract = File(app.cacheDir, "trixie-overlay-extract").apply {
+                    deleteRecursively(); mkdirs()
+                }
+                val proc = ProcessBuilder("tar", "-xzf", tmpTar.absolutePath, "-C", tmpExtract.absolutePath)
                     .redirectErrorStream(true).start()
                 val out = proc.inputStream.bufferedReader().readText()
                 val rc = proc.waitFor()
                 tmpTar.delete()
                 if (rc != 0) {
                     Log.e(TAG, "Overlay extraction failed (rc=$rc): $out")
+                    tmpExtract.deleteRecursively()
                     return false
                 }
+                // Detect layout: if rootfs/lib is a symlink, it's UsrMerge.
+                val libDir = File(rootfs, "lib")
+                val isUsrMerge = try {
+                    java.nio.file.Files.isSymbolicLink(libDir.toPath())
+                } catch (e: Exception) { false }
+                // Copy .so files to the correct locations.
+                val srcLib = File(tmpExtract, "usr/lib/aarch64-linux-gnu")
+                val dstDirs = if (isUsrMerge) {
+                    listOf(File(rootfs, "usr/lib/aarch64-linux-gnu"))
+                } else {
+                    // Non-UsrMerge: ld.so searches /lib/aarch64-linux-gnu BEFORE /usr/lib.
+                    // Install to /lib to ensure our versions win.
+                    listOf(File(rootfs, "lib/aarch64-linux-gnu"), File(rootfs, "usr/lib/aarch64-linux-gnu"))
+                }
+                for (dstDir in dstDirs) {
+                    dstDir.mkdirs()
+                    srcLib.listFiles { f -> f.name.endsWith(".so") || f.name.contains(".so.") }?.forEach { src ->
+                        val dst = File(dstDir, src.name)
+                        // Handle symlinks: copy the link target, not the link itself.
+                        if (java.nio.file.Files.isSymbolicLink(src.toPath())) {
+                            val target = java.nio.file.Files.readSymbolicLink(src.toPath())
+                            val targetFile = File(src.parentFile, target.toString())
+                            if (targetFile.exists()) {
+                                targetFile.copyTo(dst, overwrite = true)
+                            }
+                        } else {
+                            src.copyTo(dst, overwrite = true)
+                        }
+                    }
+                }
+                // Also copy the loader (ld-linux-aarch64.so.1) if present.
+                val srcLd = File(tmpExtract, "lib/aarch64-linux-gnu/ld-linux-aarch64.so.1")
+                if (srcLd.exists() && !isUsrMerge) {
+                    srcLd.copyTo(File(rootfs, "lib/aarch64-linux-gnu/ld-linux-aarch64.so.1"), overwrite = true)
+                }
+                tmpExtract.deleteRecursively()
             }
             overlayMarker.createNewFile()
             Log.i(TAG, "Trixie runtime overlay installed")
