@@ -20,6 +20,17 @@ internal fun FrameGenGroup(s: FrontEndState, a: FrontEndActions) {
 }
 
 @Composable
+internal fun CompatTestLink(a: FrontEndActions) {
+    val id = "sheet:comptest"
+    val title = stringResource(R.string.comptest_title)
+    SettingsGroup(title) {
+        LinkRow(title, stringResource(R.string.comptest_hint), stringResource(R.string.store_open), id, arrow = "›") {
+            a.onCompatTest()
+        }
+    }
+}
+
+@Composable
 internal fun PerformanceLink(a: FrontEndActions, rail: String, tab: String) {
     val id = "sheet:performance"
     val title = stringResource(R.string.setup_tool_performance)

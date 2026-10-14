@@ -80,6 +80,13 @@
 
 
         <activity
+            android:name=".comptest.CompatTestActivity"
+            android:exported="false"
+            android:screenOrientation="sensorLandscape"
+            android:theme="@style/AppTheme"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboard|keyboardHidden|navigation|uiMode|density" />
+
+        <activity
             android:name=".input.ControllerEditorActivity"
             android:exported="false"
             android:theme="@style/SessionTheme"
