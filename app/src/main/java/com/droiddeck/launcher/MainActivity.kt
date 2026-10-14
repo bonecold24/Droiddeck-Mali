@@ -520,6 +520,9 @@ class MainActivity : ComponentActivity() {
         storesShowMature = SessionPrefs.storesShowMature(this)
         applyLauncherFullscreen()
         updates.start()
+        // W3: first run on a Mali GPU auto-imports the bundled PanVK driver package
+        // (assets/driver-bundles): no download needed, runs off the UI thread.
+        com.droiddeck.launcher.gpu.MaliDriverBundle.ensureImportedAsync(this)
         setContent {
             DroidDeckTheme(theme, appScale = appScale) {
             com.droiddeck.launcher.ui.FocusGlideHost(androidx.compose.ui.Modifier.fillMaxSize().exposeTestTags()) {
