@@ -12,7 +12,7 @@ import com.droiddeck.launcher.core.ProtonSmartDefaults
 object PerfOverlay {
     data class OverlayState(
         val enabled: Boolean = false,
-        val showFps: Boolean = true,
+        val showFps: Boolean = false,
         val showFrameTimes: Boolean = false,
     ) {
         companion object {
