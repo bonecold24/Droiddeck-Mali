@@ -12,9 +12,24 @@ object GameLaunchIntent {
     fun accepts(action: String?): Boolean = action == Intent.ACTION_VIEW || action == ACTION || action == GAMENATIVE_ACTION
 
     fun read(context: Context, intent: Intent): String? = when (intent.action) {
-        Intent.ACTION_VIEW -> GameFiles.readIntent(context, intent)
+        Intent.ACTION_VIEW -> parseSteamUri(intent) ?: GameFiles.readIntent(context, intent)
         ACTION, GAMENATIVE_ACTION -> readId(intent)
         else -> null
+    }
+
+    /**
+     * steam://rungameid/<id> (and steam://run/<id>) links. Pure parsing lives
+     * in [parseSteamUriParts] so it is unit-testable on a host JVM.
+     */
+    internal fun parseSteamUri(intent: Intent): String? = runCatching {
+        val uri = intent.data ?: return null
+        parseSteamUriParts(uri.scheme, uri.host, uri.pathSegments)
+    }.getOrNull()
+
+    internal fun parseSteamUriParts(scheme: String?, host: String?, pathSegments: List<String>): String? {
+        if (!scheme.equals("steam", ignoreCase = true)) return null
+        if (!host.equals("rungameid", ignoreCase = true) && !host.equals("run", ignoreCase = true)) return null
+        return pathSegments.firstOrNull()?.takeIf(GameLaunchLink::validId)
     }
 
     @Suppress("DEPRECATION")
