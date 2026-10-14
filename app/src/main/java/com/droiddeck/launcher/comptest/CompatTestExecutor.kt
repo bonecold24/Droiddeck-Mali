@@ -66,8 +66,19 @@ class CompatTestExecutor(
             )
         val lines = ArrayList<String>()
         val logName = "comptest-${spec.id}"
+        // Export the selected Linux Vulkan driver so the guest loader finds it.
+        // Without VK_DRIVER_FILES, vkcube/vulkaninfo see no Mali ICD and fail.
+        val extraEnv = runCatching {
+            val driverId = SessionPrefs.linuxDriver(context).orEmpty()
+            if (driverId.isEmpty()) emptyMap()
+            else {
+                val icd = com.droiddeck.launcher.gpu.LinuxVulkanDriverManager(context)
+                    .getIcdPath(driverId)
+                if (icd != null) mapOf("VK_DRIVER_FILES" to icd) else emptyMap()
+            }
+        }.getOrDefault(emptyMap())
         val exit: Int = try {
-            GuestCommand.run(context, argv, logName = logName) { line ->
+            GuestCommand.run(context, argv, logName = logName, extraEnv = extraEnv) { line ->
                 if (ctl.cancelled.get()) throw CompatCancelled()
                 synchronized(lines) { if (lines.size < 4000) lines.add(line) }
             }
