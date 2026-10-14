@@ -88,7 +88,7 @@ python3 "$HERE/apply-droiddeck-patches.py" "$MESASRC"
 # not LLVM, so disable it here to avoid version-skew with the Arch packages.
 PKG_CONFIG_PATH="$W/hostroot/usr/lib/pkgconfig:$W/hostroot/usr/share/pkgconfig" PATH="$W/hostroot/usr/bin:$PATH" \
   meson setup --wipe "$MESASRC/build-host" "$MESASRC" -Dplatforms=[] -Dgallium-drivers=[] -Dvulkan-drivers=[] -Dtools=panfrost \
-  -Dprecomp-compiler=enabled -Dinstall-precomp-compiler=true -Dllvm=disabled -Dmesa-clc=auto
+  -Dprecomp-compiler=disabled -Dllvm=disabled -Dmesa-clc=auto
 ninja -C "$MESASRC/build-host" src/compiler/spirv/vtn_bindgen2 src/panfrost/clc/panfrost_compile
 ln -sf "$MESASRC/build-host/src/compiler/spirv/vtn_bindgen2" host-bin/vtn_bindgen2
 ln -sf "$MESASRC/build-host/src/panfrost/clc/panfrost_compile" host-bin/panfrost_compile
