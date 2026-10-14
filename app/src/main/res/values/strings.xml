@@ -759,6 +759,8 @@
     <string name="setup_tool_protons_hint">Install ARM64 Proton builds</string>
     <string name="setup_tool_performance">Performance</string>
     <string name="setup_tool_performance_hint">CPU core assignment</string>
+    <string name="comptest_title">Compatibility Test</string>
+    <string name="comptest_hint">Run GPU checks and installed games, export a report</string>
     <string name="setup_tool_roms">ROMs folder</string>
     <string name="setup_tool_roms_hint">Where emulator games are stored</string>
     <string name="setup_card_components">Components</string>
