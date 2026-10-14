@@ -1,0 +1,15 @@
+{
+  "profile": "g720-v12-csf",
+  "abi": "android-aarch64-bionic",
+  "binarySha256": "0423314bdc4780e34daa4c1fed3cfd1b1ad39be3e203e0ea9c4c234b892564b9",
+  "files": [
+    "libvulkan_panfrost.so",
+    "panvk_kbase_icd.aarch64.json",
+    "meta.json",
+    "MANIFEST.json",
+    "SOURCE.json",
+    "SHA256SUMS.txt",
+    "BUILD-PROVENANCE.txt"
+  ],
+  "patchSeries": "universal (g615-v11-csf: 123 csf-v11 + 30 jm-v9 = 173 patches, RC3-lowmem incl. 185)"
+}

@@ -1,0 +1,25 @@
+{
+  "schemaVersion": 1,
+  "name": "PanVK Kbase (mission local build)",
+  "libraryName": "libvulkan_panfrost.so",
+  "abi": "android-aarch64-bionic",
+  "backend": "panvk-kbase",
+  "profile": "g720-v12-csf",
+  "sourceRepo": "zenithblue-oss/panvk-kbase-android",
+  "sourceCommit": "0183fc489f17156a6b266360b0c296cfd9109da1",
+  "mesaCommit": "5a07217f034b3e50d8c7c7794f97a2df1742613b",
+  "packageVersion": "0.1.0-rc3-universal+local1",
+  "minApi": 33,
+  "prerelease": true,
+  "published": false,
+  "buildHost": "x86_64 linux, NDK r25c, clang 14.0.7, API 33",
+  "buildDate": "2026-10-14T09:15:08Z",
+  "validation": "UNVALIDATED - no Mali hardware run; all capability claims REPORTED, not OBSERVED",
+  "localFixes": [
+    "vk_android.c %#b->%#x (NDK r25c clang14)",
+    "kbase label-decl null statement",
+    "opencl-c headers into mesa src/compiler/libcl (build env)"
+  ],
+  "patchSeries": "universal (g615-v11-csf: 123 csf-v11 + 30 jm-v9 = 173 patches, RC3-lowmem incl. 185)",
+  "profileNote": "Built with --profile g720-v12-csf (dist dir naming); work tree carries the full universal series per apply-patches.sh --profile g615-v11-csf (verified: patch 185 BC 8bpp present)"
+}

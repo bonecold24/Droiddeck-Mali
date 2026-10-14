@@ -1,0 +1,8 @@
+{
+    "ICD": {
+        "api_version": "1.4.363",
+        "library_arch": "64",
+        "library_path": "./libvulkan_panfrost.so"
+    },
+    "file_format_version": "1.0.1"
+}
