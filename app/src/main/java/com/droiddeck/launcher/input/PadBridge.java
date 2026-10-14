@@ -232,7 +232,7 @@ public final class PadBridge {
         if (action instanceof GamepadButtons.Action.Button) {
             pad.press(((GamepadButtons.Action.Button) action).getIndex(), pressed);
         } else if (action instanceof GamepadButtons.Action.Trigger) {
-            if (((GamepadButtons.Action.Trigger) action).isLeft()) pad.leftTrigger = pressed ? 1f : 0f;
+            if (((GamepadButtons.Action.Trigger) action).getLeft()) pad.leftTrigger = pressed ? 1f : 0f;
             else pad.rightTrigger = pressed ? 1f : 0f;
         } else if (action instanceof GamepadButtons.Action.Dpad) {
             switch (((GamepadButtons.Action.Dpad) action).getDirection()) {
