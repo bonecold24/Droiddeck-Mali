@@ -344,24 +344,19 @@ jobs:
         run: |
           set -euo pipefail
           # The glibc driver .so stays out of git history; CI injects it here.
-          # PLACEHOLDER SHA-256: update with the real value once the driver
-          # release is published. The build fails closed if it does not match.
-          GLIBC_SHA256="PLACEHOLDER_GLIBC_DRIVER_SHA256"
-          if [ "$GLIBC_SHA256" = "PLACEHOLDER_GLIBC_DRIVER_SHA256" ]; then
-            echo "::warning::glibc PanVK driver not yet published; skipping bundling (Tier-0 guest checks will use the runtime default)"
-          else
-            mkdir -p /tmp/glibc-driver-pkg
-            gh release download glibc-driver-v0.1.0-rc3 -R "$GITHUB_REPOSITORY" \
-              -p "PanVK-kbase-glibc-DroidDeck.zip" \
-              -O /tmp/glibc-driver-pkg/driver.zip
-            echo "$GLIBC_SHA256  /tmp/glibc-driver-pkg/driver.zip" | sha256sum -c -
-            mkdir -p app/src/main/assets/linux-drivers/panvk-kbase-glibc
-            unzip -q -o /tmp/glibc-driver-pkg/driver.zip -d app/src/main/assets/linux-drivers/panvk-kbase-glibc/
-            test -f "app/src/main/assets/linux-drivers/panvk-kbase-glibc/libvulkan_panfrost.so"
-            test -f "app/src/main/assets/linux-drivers/panvk-kbase-glibc/MANIFEST.json"
-            ls -la app/src/main/assets/linux-drivers/panvk-kbase-glibc/
-            rm -rf /tmp/glibc-driver-pkg
-          fi
+          # Upstream prebuilt: zenithblue-oss/panvk-kbase-android, universal
+          # v10-v14 (includes G720/v12), MIT-licensed. Fails closed on SHA mismatch.
+          GLIBC_URL="https://github.com/zenithblue-oss/panvk-kbase-android/releases/download/panvk-kbase-v0.1.0-rc3/PanVK-Kbase-g615-v11-csf-v0.1.0-rc3-5a07217f-EMULATOR.zip"
+          GLIBC_SHA256="a3846878e8f33dbcfbb5926d2a8763d07dcb10bd06adf53def5d603ecb16558a"
+          mkdir -p /tmp/glibc-driver-pkg
+          curl -sSfL "$GLIBC_URL" -o /tmp/glibc-driver-pkg/driver.zip
+          echo "$GLIBC_SHA256  /tmp/glibc-driver-pkg/driver.zip" | sha256sum -c -
+          mkdir -p app/src/main/assets/linux-drivers/panvk-kbase-glibc
+          unzip -q -o /tmp/glibc-driver-pkg/driver.zip -d app/src/main/assets/linux-drivers/panvk-kbase-glibc/
+          test -f "app/src/main/assets/linux-drivers/panvk-kbase-glibc/libvulkan_panfrost.so"
+          test -f "app/src/main/assets/linux-drivers/panvk-kbase-glibc/panfrost_icd.aarch64.json"
+          ls -la app/src/main/assets/linux-drivers/panvk-kbase-glibc/ | head -8
+          rm -rf /tmp/glibc-driver-pkg
 
       - name: Build D3D Tier-0 cubes (mingw-w64)
         run: |
