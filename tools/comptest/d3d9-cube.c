@@ -2,6 +2,7 @@
 // target for 600 frames, exits 0 on success.
 // Built with mingw-w64 for the Linux guest (run under Wine/Proton).
 // Exit codes: 0 = pass, 1 = D3D9 unavailable, 2 = render failed.
+#define COBJMACROS
 #include <windows.h>
 #include <d3d9.h>
 #include <stdio.h>
