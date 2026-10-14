@@ -1,0 +1,49 @@
+# Build provenance — panvk-kbase-g720-v0.1.0-rc3-g720+local1
+
+Built: 2026-10-14 ~09:14 UTC on x86_64 Linux (this mission's build host).
+Source: zenithblue-oss/panvk-kbase-android @ 0183fc489f17156a6b266360b0c296cfd9109da1
+        (release 0.1.0 RC3) + Mesa 26.3.0-devel @ 5a07217f034b3e50d8c7c7794f97a2df1742613b
+Profile: g720-v12-csf (20 patches: common/android/kbase-common/app-loader/wsi/csf).
+Toolchain: Android NDK r25c (25.2.9519653), clang 14.0.7, API 33, -O3 release.
+
+## How this build was produced (honest record)
+1. Baseline source verified at the pinned SHA (VERIFIED-CI).
+2. Sandbox reset had wiped the prior worker's pip/apt toolchain; reinstalled
+   ninja 1.13.2, meson 1.12.1, mako, pyyaml via pip.
+3. mesa_clc (prebuilt host tool) needed libLLVM.so.18.1 + libLLVMSPIRVLib.so.18.1
+   + libffi: extracted from Ubuntu archive .debs into driver-work/baseline/hostlibs/
+   (focal libllvm18 build for forward-compat; this mirror lacks noble's own
+   libllvm18) and exported via LD_LIBRARY_PATH.
+4. Copied opencl-c-base.h + opencl-c.h into the mesa work-tree
+   src/compiler/libcl/ (build-scratch copy only) for the panfrost .cl kernels.
+5. Two local source fixes (see driver-work/baseline/local-patches/README.md):
+   - vk_android.c: C23 %#b -> %#x (log line; NDK r25c clang 14 rejects %#b).
+   - panvk_vX_gpu_queue.c: null statement after kbase_wait_continue label.
+   AI-assisted, local only; not submitted upstream (per the tree's AGENTS.md).
+6. Compiled the missing wsi_x11_dlopen.c.o explicitly (stale ninja state had
+   skipped it); its 82 xcb trampolines resolved the final link.
+7. Final link: all 646/646 targets, libvulkan_panfrost.so (24,858,856 bytes,
+   ELF64 AArch64). NEEDED: liblog, libnativewindow, libsync, libdrm, libm,
+   libz, libdl, libc — clean Android ICD dep set.
+8. NOTE — g720-v12-csf profile vs upstream validation: the RC3-validated G720
+   driver used the UNIVERSAL series (g615-v11-csf: 172 patches incl.
+   csf-v11/109 viewport-depth/v12 fixes). This build used the g720 profile
+   series (20 patches), which LACKS csf-v11/109 and the gpu_prerast/BC/clip-cull
+   series. For the 14T Pro bring-up, build the universal series next
+   (applies cleanly: 0 drift over the g720 tree, verified earlier).
+
+## Validation status
+UNVALIDATED. No Mali hardware exists on this host (x86_64, no /dev/kvm, no
+/dev/mali0; the ARM64 emulator refuses to boot here). The .so has never been
+loaded on a real GPU. Every capability claim in docs/GPU.md remains REPORTED
+until reproduced on the 14T Pro (NEEDS-REAL-MALI). Do not present this package
+as tested.
+
+## Package contents
+- libvulkan_panfrost.so — the built Vulkan ICD (sha256 in SHA256SUMS.txt)
+- panvk_kbase_icd.aarch64.json — Vulkan loader manifest (api_version 1.4.363)
+- meta.json — version manifest (profile, commits, toolchain, validation status)
+- MANIFEST.json — file list + binary sha256
+- SOURCE.json — mesa + driver commits
+- SHA256SUMS.txt — hashes
+- BUILD-PROVENANCE.txt — this file
