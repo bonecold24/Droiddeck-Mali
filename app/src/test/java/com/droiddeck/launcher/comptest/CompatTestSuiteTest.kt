@@ -6,14 +6,21 @@ import org.junit.Test
 
 class CompatTestSuiteTest {
     @Test fun systemChecksComeFirstInOrder() {
+        // Gate B2 order: headless compute (GPU bring-up, no display) first,
+        // then vkcube (needs display), vulkaninfo, D3D cubes.
+        // (Stage 0 environment probe runs before this list when implemented.)
         val suite = CompatTestSuite.build(installedGames = emptyList())
         val ids = suite.map { it.id }
-        assertEquals(listOf("stage0-env", "vkcube", "vulkaninfo", "d3d9-cube", "d3d11-cube"), ids)
-        assertTrue(suite.all { it.kind == TestKind.SYSTEM_CHECK })
+assertEquals(listOf("stage0-env", "vkcube", "vulkaninfo", "d3d9-cube", "d3d11-cube"), ids)
+assertEquals(
+            listOf("vk-compute-test", "vkcube", "vulkaninfo", "d3d9-cube", "d3d11-cube"),
+            ids,
+        )        assertTrue(suite.all { it.kind == TestKind.SYSTEM_CHECK })
     }
 
-    @Test fun systemChecksCarryExpectedDxvkVariants() {
+    @Test fun computeTestNeedsNoDxvkVariant() {
         val byId = CompatTestSuite.build(emptyList()).associateBy { it.id }
+        assertEquals(null, byId["vk-compute-test"]!!.dxvkVariant)
         assertEquals(null, byId["vkcube"]!!.dxvkVariant)
         assertEquals("DXVK-Sarek", byId["d3d9-cube"]!!.dxvkVariant)
         assertEquals("stock DXVK", byId["d3d11-cube"]!!.dxvkVariant)
@@ -27,8 +34,8 @@ class CompatTestSuiteTest {
         val suite = CompatTestSuite.build(games)
         assertEquals(7, suite.size)
         assertEquals(
-            listOf("stage0-env", "vkcube", "vulkaninfo", "d3d9-cube", "d3d11-cube"),
-            suite.take(5).map { it.id },
+listOf("stage0-env", "vkcube", "vulkaninfo", "d3d9-cube", "d3d11-cube"),
+listOf("vk-compute-test", "vkcube", "vulkaninfo", "d3d9-cube", "d3d11-cube"),            suite.take(5).map { it.id },
         )
         val gameSpecs = suite.drop(5)
         assertTrue(gameSpecs.all { it.kind == TestKind.GAME_TEST })
@@ -87,5 +94,11 @@ class CompatTestSuiteTest {
         val suite = CompatTestSuite.buildWithRequested(requested, installedIds = setOf(440L, 570L))
         assertEquals(5 + 7, suite.size) // 5 system checks + 7 requested
         assertTrue(CompatTestSuite.isInstalled(suite.first { it.id == "game-440" }, setOf(440L, 570L)))
+    }
+
+    @Test fun computeTestSpecHasSaneTimeout() {
+        val spec = CompatTestSuite.build(emptyList()).first { it.id == "vk-compute-test" }
+        assertEquals(TestKind.SYSTEM_CHECK, spec.kind)
+        assertTrue("compute test timeout ${spec.timeoutSec}s out of range", spec.timeoutSec in 15..120)
     }
 }

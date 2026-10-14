@@ -401,6 +401,23 @@ jobs:
           done
           ls -la app/src/main/assets/comptest/
 
+      - name: Build vk-compute-test (aarch64 glibc, headless)
+        run: |
+          set -euo pipefail
+          # Gate B2: headless Vulkan compute smoke test. Needs no display server;
+          # runs before vkcube in Tier 0 to separate GPU bring-up from display bring-up.
+          # Vulkan is dlopen()ed at runtime, so only the headers are needed at build time.
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq gcc-aarch64-linux-gnu libvulkan-dev
+          mkdir -p app/src/main/assets/comptest
+          aarch64-linux-gnu-gcc -O2 -Wall -Wextra -o app/src/main/assets/comptest/vk-compute-test \
+            tools/comptest/vk-compute-test.c -ldl
+          aarch64-linux-gnu-strip --strip-unneeded app/src/main/assets/comptest/vk-compute-test
+          file app/src/main/assets/comptest/vk-compute-test
+          # Sanity: must be an aarch64 glibc (SYSV) binary, not bionic/Android.
+          aarch64-linux-gnu-readelf -d app/src/main/assets/comptest/vk-compute-test | grep -i NEEDED
+          ls -la app/src/main/assets/comptest/
+
       - name: Bundle the droiddeck-esync packs
         env:
           GH_TOKEN: ${{ github.token }}

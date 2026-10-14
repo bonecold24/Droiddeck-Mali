@@ -42,7 +42,7 @@ sealed class TestOutcome {
         override val sortOrder = 12
     }
     /** Wall-clock timeout enforced by the runner watchdog. */
-    data object Timeout : TestOutcome() {
+data object Timeout : TestOutcome() {
         override val serialName = "TIMEOUT"
         override val sortOrder = 13
     }
@@ -104,7 +104,17 @@ sealed class TestOutcome {
             else -> FailExit(code)
         }
     }
-}
+TIMEOUT,
+    /**
+     * A prerequisite for the test is missing in the environment (e.g. no
+     * display server for vkcube, no Vulkan loader for the compute test).
+     * Environmental — never a GPU/driver failure.
+     */
+    PREREQ_MISSING,
+    /** Game not installed (or test not applicable) — never a suite failure. */
+    SKIPPED,
+    /** Anything else (setup failure, cancelled, internal error). */
+    ERROR,}
 
 data class TestSpec(
     val id: String,
@@ -230,6 +240,29 @@ data class FirstFailure(
     /** Why it failed first, in one or two sentences (may quote output tail). */
     val reason: String,
 )
+
+/**
+ * Pure mapping of vk-compute-test exit codes to (outcome, reason).
+ * Gate B2: the headless compute test uses distinct exit codes per failing
+ * step so the report can say exactly what failed. Host-unit-testable.
+ * Exit codes: 0=pass, 9=no Vulkan loader, 10=instance, 11=no devices,
+ * 12=device, 13=compute.
+ */
+internal fun vkComputeExitMeaning(exit: Int): Pair<TestOutcome, String> = when (exit) {
+    0 -> TestOutcome.REACHED_MENU to
+        "PASS: instance + device enumeration + vector-add compute verified"
+    9 -> TestOutcome.PREREQ_MISSING to
+        "Vulkan loader (libvulkan.so.1) not found in guest — environmental, not a GPU failure"
+    10 -> TestOutcome.CRASH to
+        "vkCreateInstance failed or instance entry points missing"
+    11 -> TestOutcome.CRASH to
+        "no physical devices enumerated by the Vulkan loader"
+    12 -> TestOutcome.CRASH to
+        "no compute queue family or vkCreateDevice failed"
+    13 -> TestOutcome.CRASH to
+        "compute failed (shader module / pipeline / buffers / dispatch / readback verify)"
+    else -> TestOutcome.CRASH to "unexpected exit code"
+}
 
 data class CompatReportData(
     val schemaVersion: Int = CompatReport.SCHEMA_VERSION,

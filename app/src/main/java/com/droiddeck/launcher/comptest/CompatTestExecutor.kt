@@ -76,7 +76,7 @@ class CompatTestExecutor(
                 emptyList(), "PREREQ_MISSING: Linux runtime not installed",
             )
         }
-        // BUG-3 diagnostic: the selected Linux driver must be a loadable glibc
+// BUG-3 diagnostic: the selected Linux driver must be a loadable glibc
         // aarch64 ICD. A bionic selection can never work in the guest — report it
         // as PREREQ_MISSING (not a GPU failure) with the reason spelled out.
         // (The auto-switch to the bundled glibc driver is Gate A2's migration;
@@ -90,8 +90,20 @@ class CompatTestExecutor(
             )
         }
         if (spec.id == "stage0-env") return runStage0Probe(spec, ctl, validation)
-
-        val argv = guestArgv(spec.id)
+// Gate B2: vkcube needs a display server. Without one, its failure is
+        // environmental — report PREREQ_MISSING ("display not available"),
+        // never a GPU failure. Headless GPU bring-up is covered by vk-compute-test.
+        if (spec.id == "vkcube") {
+            val display = probeDisplay()
+            if (!display.reachable) {
+                return CompatTestRunner.TestRunOutcome(
+                    TestOutcome.PREREQ_MISSING, emptyList(),
+                    "display not available — ${display.detail}. " +
+                        "GPU bring-up is tested separately by vk-compute-test; " +
+                        "this is not a GPU/driver failure.",
+                )
+            }
+        }        val argv = guestArgv(spec.id)
             ?: return CompatTestRunner.TestRunOutcome(
                 TestOutcome.PrereqMissing("Unknown system check '${spec.id}'"),
                 emptyList(), "PREREQ_MISSING: unknown check id '${spec.id}'",
@@ -125,7 +137,7 @@ class CompatTestExecutor(
             }
         } catch (e: CompatCancelled) {
             return CompatTestRunner.TestRunOutcome(
-                TestOutcome.Cancelled, emptyList(), "Cancelled by user",
+TestOutcome.Cancelled, emptyList(), "Cancelled by user",
             ).withPayload(payload)
         } catch (t: Throwable) {
             // GuestCommand failures surface as exceptions: no process ran, so this
@@ -135,7 +147,21 @@ class CompatTestExecutor(
                 "Guest command failed before/without a process exit: " +
                     "${t.javaClass.simpleName}: ${t.message}".take(400),
             ).withPayload(payload)
+TestOutcome.CRASH, emptyList(),
+                "Guest command failed: ${t.javaClass.simpleName}: ${t.message}".take(500),
+            )
         }
+        val frames = parseFrameTimes(lines)
+        // Gate B2: the headless compute test uses distinct exit codes per
+        // failing step — surface them plainly instead of a bare "CRASH".
+        if (spec.id == "vk-compute-test") {
+            return computeTestOutcome(exit, lines)
+        }
+        val outcome = when {
+            spec.id == "vulkaninfo" && exit == 0 -> TestOutcome.REACHED_MENU
+            exit == 0 && frames.isNotEmpty() -> TestOutcome.REACHED_MENU
+            exit == 0 -> TestOutcome.REACHED_MENU
+            else -> TestOutcome.CRASH        }
         // Gate B3: classify the raw exit code; a plain non-zero exit is FAIL_EXIT,
         // 127 is NOT_FOUND, >128 is SIGNAL. Never CRASH.
         val outcome = TestOutcome.fromExitCode(exit)
@@ -164,7 +190,7 @@ class CompatTestExecutor(
             .withPayload(payload)
     }
 
-    /** Env exported to every guest stage (recorded per-stage for diagnostics). */
+/** Env exported to every guest stage (recorded per-stage for diagnostics). */
     private fun buildGuestEnv(): Map<String, String> {
         val env = LinkedHashMap<String, String>()
         runCatching {
@@ -176,7 +202,105 @@ class CompatTestExecutor(
                 val mgr = LinuxVulkanDriverManager(context)
                 val so = File(mgr.getDriverDir(driverId), mgr.getLibraryName(driverId))
                 if (so.isFile) env["COMPTEST_DRIVER_SO"] = so.absolutePath
-            }
+/**
+     * Maps vk-compute-test's distinct exit codes to outcomes with plain-language
+     * notes. Exit 9 (no Vulkan loader) is environmental; 10–13 are driver/GPU
+     * issues at the step named. Never a bare "CRASH".
+     */
+    private fun computeTestOutcome(
+        exit: Int,
+        lines: List<String>,
+    ): CompatTestRunner.TestRunOutcome {
+        val tail = lines.takeLast(5).joinToString(" | ").take(400)
+        val (outcome, reason) = vkComputeExitMeaning(exit)
+        val note = buildString {
+            append("vk-compute-test exit=$exit: $reason")
+            if (tail.isNotEmpty()) append("; tail: $tail")
+        }.take(500)
+        return CompatTestRunner.TestRunOutcome(outcome, emptyList(), note)
+    }
+
+    /**
+     * Display-server reachability probe for vkcube (Gate B2).
+     *
+     * Runs inside the guest: checks DISPLAY/WAYLAND_DISPLAY, resolves the
+     * socket path, and attempts a real AF_UNIX connect() (via python3 when
+     * available, else socket-existence). Exit 0 = reachable, 1 = no display
+     * variables, 2 = socket missing or unconnectable.
+     */
+    private fun probeDisplay(): DisplayProbe {
+        val lines = ArrayList<String>()
+        val exit = try {
+            GuestCommand.run(
+                context,
+                listOf("/bin/sh", "-c", DISPLAY_PROBE_SCRIPT),
+                logName = "comptest-display-probe",
+            ) { line -> synchronized(lines) { if (lines.size < 100) lines.add(line) } }
+        } catch (t: Throwable) {
+            return DisplayProbe(false, "display probe itself failed: ${t.message}".take(300))
+        }
+        val detail = lines.joinToString("; ").take(400)
+        return when (exit) {
+            0 -> DisplayProbe(true, "display server reachable ($detail)")
+            1 -> DisplayProbe(
+                false,
+                "no DISPLAY or WAYLAND_DISPLAY in the guest environment ($detail)",
+            )
+            else -> DisplayProbe(
+                false,
+                "display socket missing or not connectable (probe exit=$exit; $detail)",
+            )
+        }
+    }
+
+    private data class DisplayProbe(val reachable: Boolean, val detail: String)
+
+    /**
+     * Guest command lines per system check. NEEDS-REAL-MALI: binary names and
+     * display-server assumptions (X/Wayland inside the session) are unverified.
+     */
+    private fun guestArgv(checkId: String): List<String>? {
+        // D3D cubes and the headless compute test: ensure the payload is
+        // installed in the guest first.
+        if (checkId == "d3d9-cube" || checkId == "d3d11-cube" || checkId == "vk-compute-test") {
+            ensureComptestPayload()
+        }
+        return when (checkId) {
+            // vk-compute-test: headless GPU bring-up; needs no display.
+            // Exit codes: 0=pass, 9=no loader, 10=instance, 11=no devices,
+            // 12=device, 13=compute. See computeTestOutcome().
+            "vk-compute-test" -> listOf("/opt/comptest/vk-compute-test")
+            // vkcube: run N frames offscreen-ish; parse its fps readout into frame times.
+            "vkcube" -> listOf("/usr/bin/vkcube", "--c", "600")
+            "vulkaninfo" -> listOf("/usr/bin/vulkaninfo")
+            // D3D9/D3D11 sample cubes: installed to /opt/comptest by ensureComptestPayload().
+            "d3d9-cube" -> listOf("/opt/comptest/d3d9-cube")
+            "d3d11-cube" -> listOf("/opt/comptest/d3d11-cube")
+            else -> null
+        }
+    }
+
+    /**
+     * Copies the D3D Tier-0 payload (wrappers + .exe) from APK assets into the
+     * guest's /opt/comptest. Runs once per process; best-effort, never throws.
+     */
+    private fun ensureComptestPayload() {
+        if (comptestPayloadDone) return
+        synchronized(this) {
+            if (comptestPayloadDone) return
+            comptestPayloadDone = true
+        }
+        try {
+            val am = context.assets
+            val files = am.list("comptest") ?: return
+            if (files.isEmpty()) return
+            // Stage to a host-visible dir, then move into the guest via proot.
+            val stage = java.io.File(context.filesDir, "comptest-payload").apply { mkdirs() }
+            for (n in files) {
+                am.open("comptest/$n").use { inp ->
+                    java.io.File(stage, n).outputStream().use { inp.copyTo(it) }
+                }
+                java.io.File(stage, n).setExecutable(true)            }
         }
         return env
     }
@@ -290,7 +414,7 @@ class CompatTestExecutor(
 
     companion object {
         /**
-         * Guest-side Stage 0 probe script. Best-effort: every section prints
+* Guest-side Stage 0 probe script. Best-effort: every section prints
          * something even when a tool is missing. VK_DRIVER_FILES and
          * COMPTEST_DRIVER_SO arrive via extraEnv (see buildGuestEnv).
          */
@@ -320,7 +444,50 @@ echo "--- storage ---"; df -h / /data 2>&1 | head -10
 echo "--- memory ---"; (free -m 2>/dev/null || cat /proc/meminfo 2>/dev/null | head -5) 2>&1
 echo "--- vulkan loader files ---"; ls /usr/share/vulkan/icd.d/ 2>&1 | head; ls /etc/vulkan/icd.d/ 2>&1 | head
 """
-
+* POSIX sh snippet for the display-server reachability probe (Gate B2).
+         * Exit 0 = a display server is reachable; 1 = no DISPLAY/WAYLAND_DISPLAY;
+         * 2 = socket missing or connect() failed.
+         */
+        internal const val DISPLAY_PROBE_SCRIPT = """
+            probe_sock() {
+              if command -v python3 >/dev/null 2>&1; then
+                python3 - "$1" 2>/dev/null <<'PYEOF'
+            import socket, sys
+            s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+            s.settimeout(3)
+            try:
+                s.connect(sys.argv[1])
+            except Exception as e:
+                print("connect failed: %s" % e)
+                sys.exit(1)
+            finally:
+                s.close()
+            print("connect ok")
+            PYEOF
+                return $?
+              fi
+              [ -S "$1" ]
+            }
+            if [ -n "$WAYLAND_DISPLAY" ]; then
+              case "$WAYLAND_DISPLAY" in
+                /*) SOCK="$WAYLAND_DISPLAY" ;;
+                *) SOCK="${XDG_RUNTIME_DIR:-/tmp}/$WAYLAND_DISPLAY" ;;
+              esac
+              echo "wayland socket: $SOCK"
+              if probe_sock "$SOCK"; then echo "WAYLAND_REACHABLE"; exit 0;
+              else echo "WAYLAND_UNREACHABLE"; exit 2; fi
+            elif [ -n "$DISPLAY" ]; then
+              DNUM=$(printf '%s' "$DISPLAY" | sed -n 's/.*:\([0-9][0-9]*\)\(\..*\)\{0,1\}$/\1/p')
+              if [ -z "$DNUM" ]; then echo "DISPLAY unparsable: $DISPLAY"; exit 2; fi
+              SOCK="/tmp/.X11-unix/X$DNUM"
+              echo "X socket: $SOCK"
+              if probe_sock "$SOCK"; then echo "X_REACHABLE"; exit 0;
+              else echo "X_UNREACHABLE"; exit 2; fi
+            else
+              echo "NO_DISPLAY_VARS"
+              exit 1
+            fi
+        """.trimIndent()
         /** Builds the report environment block from app + driver state. No Steam login needed. */
         fun environmentOf(context: Context): EnvironmentInfo {
             val driver = activeDriver(context)
