@@ -80,7 +80,7 @@ class CompatReportTest {
             "vkcube (Vulkan cube)",
             "REACHED_MENU",
             "60.0",
-            "45.0",
+            "47.0",
         )) assertTrue("missing: $needle", md.contains(needle))
     }
 

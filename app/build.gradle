@@ -244,5 +244,8 @@ dependencies {
     testImplementation 'junit:junit:4.13.2'
     testImplementation 'org.robolectric:robolectric:4.16.1'
     testImplementation 'androidx.compose.ui:ui-test-junit4'
+    // Real org.json for unit tests: android.jar stubs return null with
+    // testOptions.unitTests.returnDefaultValues=true, breaking JSON parsing tests.
+    testImplementation 'org.json:json:20231013'
     testRuntimeOnly 'com.github.luben:zstd-jni:1.5.2-3@jar'
 }
