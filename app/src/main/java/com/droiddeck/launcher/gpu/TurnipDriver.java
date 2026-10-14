@@ -24,6 +24,29 @@ import java.util.List;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 
+/**
+ * The Vulkan driver the in-app compositor runs on. It has to be Turnip: the system Adreno driver
+ * does not implement VK_EXT_image_drm_format_modifier, so importing the dma-bufs gamescope hands
+ * over fails and the session renders nothing. Two builds ship in the apk, one per Adreno
+ * generation, and the GPU decides which is unpacked - unless the user has imported an AdrenoTools
+ * zip of their own and chosen it, which then wins.
+ *
+ * <p>The guest's own Turnip is a different copy entirely - a glibc build inside the rootfs, or an
+ * imported one ({@link LinuxVulkanDriverManager}). This one is the bionic build the app process
+ * loads through adrenotools, and it is what every session ends in: whatever draws inside the
+ * runtime, this is the driver that puts the frame on the panel.
+ *
+ * <p>On a Mali (MediaTek) GPU no Turnip can run, so Auto picks no bundled build and the compositor
+ * loads the system Vulkan driver - Arm's, which implements the dma-buf import Adreno's lacks on
+ * recent DDKs. An imported driver chosen by hand still wins.
+ *
+ * <p>Every driver, bundled or imported, lives under {@code files/graphics_driver/<id>/} with a
+ * {@code meta.json} whose {@code libraryName} names the .so beside it - the AdrenoTools layout.
+ * The import path is ported from Bannerlator's {@code AdrenotoolsManager} (GPL-3.0), including
+ * the refusal of zips that belong in the Linux runtime list: a "-Linux" (glibc) Turnip names no
+ * library on purpose, and installed here it would put the compositor on the system Vulkan - a
+ * black screen wearing a driver's name.
+ */
 public final class TurnipDriver {
     private static final String TAG = "TurnipDriver";
     private static final String DRIVER_A6XX = "turnip26.3.0-a6xx";
@@ -280,6 +303,10 @@ public final class TurnipDriver {
             if (forced.startsWith("a8")) return DRIVER_A8XX;
             if (forced.startsWith("a7")) return DRIVER_A7XX;
             if (forced.startsWith("a6")) return DRIVER_A6XX;
+        }
+        if (com.droiddeck.launcher.core.DeviceSupport.mali()) {
+            Log.i(TAG, "Mali GPU: no Turnip runs here, the compositor uses the system Vulkan driver");
+            return null;
         }
         String model = gpuModel();
         Log.i(TAG, "gpu model: " + (model == null ? "unknown" : model));

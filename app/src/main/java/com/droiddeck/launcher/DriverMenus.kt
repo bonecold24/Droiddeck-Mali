@@ -63,7 +63,8 @@ internal class DriverMenus(private val activity: Activity, private val ui: Handl
             DriverRow(id, it.label, activity.getString(if (linux) R.string.drivers_bundle_sets_display else R.string.drivers_bundle_sets_runtime), true, DriverRow.BUNDLE)
         }
         linuxRows = LinuxVulkanDriver.optionValues(activity).map { id ->
-            if (id.isEmpty()) DriverRow("", activity.getString(R.string.gpu_runtime_default), activity.getString(R.string.drivers_runtime_builtin), false)
+            if (id.isEmpty()) DriverRow("", activity.getString(R.string.gpu_runtime_default),
+                activity.getString(if (gpu.family == GpuInfo.Family.MALI) R.string.drivers_runtime_builtin_mali else R.string.drivers_runtime_builtin), false)
             else bundleRow(id, linux = true) ?: DriverRow(
                 id, lm.getDriverName(id),
                 listOfNotNull(
@@ -80,7 +81,8 @@ internal class DriverMenus(private val activity: Activity, private val ui: Handl
         androidRows = buildList {
             add(DriverRow(
                 TurnipDriver.AUTO, activity.getString(R.string.gpu_auto_by_gpu),
-                if (auto == "system") activity.getString(R.string.drivers_system_vulkan) else activity.getString(R.string.drivers_bundled, td.displayName(auto)),
+                if (auto == "system") activity.getString(if (gpu.family == GpuInfo.Family.MALI) R.string.drivers_system_vulkan_mali else R.string.drivers_system_vulkan)
+                else activity.getString(R.string.drivers_bundled, td.displayName(auto)),
                 false,
             ))
             for (id in td.visibleBundled()) add(DriverRow(id, td.displayName(id), td.driverVersion(id), true, DriverRow.BUNDLED))
