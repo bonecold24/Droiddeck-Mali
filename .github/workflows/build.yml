@@ -321,6 +321,23 @@ jobs:
           sudo chown -R "$(id -u):$(id -g)" app/src/main/assets/linuxfs
           ls -l app/src/main/assets/linuxfs/x86_64 app/src/main/assets/linuxfs/i386
 
+      - name: Bundle the PanVK Mali driver
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          # The 24.8MB driver .so stays out of git history; CI injects it here.
+          mkdir -p /tmp/driver-pkg
+          gh release download driver-v0.1.0-rc3 -R "$GITHUB_REPOSITORY" \
+            -p "panvk-kbase-g720-v0.1.0-rc3-universal+local1.zip" \
+            -O /tmp/driver-pkg/driver.zip
+          echo "2a0cd04978beafefb206a33331a78ce69f91aa1768d7815a15e98bb23f8c8bf0  /tmp/driver-pkg/driver.zip" | sha256sum -c -
+          mkdir -p app/src/main/assets/driver-bundles
+          unzip -q -o /tmp/driver-pkg/driver.zip -d app/src/main/assets/driver-bundles/
+          test -f "app/src/main/assets/driver-bundles/panvk-kbase-g720-v0.1.0-rc3-universal+local1/libvulkan_panfrost.so"
+          ls -la app/src/main/assets/driver-bundles/panvk-kbase-g720-v0.1.0-rc3-universal+local1/ | head -8
+          rm -rf /tmp/driver-pkg
+
       - name: Bundle the droiddeck-esync packs
         env:
           GH_TOKEN: ${{ github.token }}
