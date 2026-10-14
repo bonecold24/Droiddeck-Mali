@@ -518,6 +518,10 @@ fun ComponentsPage(
     val installedRows: @Composable ColumnScope.(String, Boolean) -> Unit = { l, right ->
         when (l) {
             GPU_TAB -> {
+                if (gpu.mali) {
+                    EmptyLine(stringResource(R.string.gpu_mali_hint))
+                    MaliDiagnosticsBlock()
+                }
                 val autoKey = "gpu:auto"
                 ChoiceLine(
                     stringResource(R.string.common_auto), stringResource(R.string.gpu_auto_keeps), gpu.auto, removable = false,
@@ -1112,6 +1116,45 @@ private fun RowGroup(title: String, content: @Composable ColumnScope.() -> Unit)
 @Composable
 private fun EmptyLine(text: String) {
     Text(text, fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp))
+}
+
+/**
+ * Mali driver diagnostics (W3): driver name/version, Vulkan API version, extension
+ * count, kbase UAPI, GPU id, fallback-chain position and the driver package's
+ * BUILD-PROVENANCE summary. Collected off the UI thread; every row degrades to
+ * "unknown" with a note instead of crashing when the kernel interface is unreadable.
+ */
+@Composable
+private fun MaliDiagnosticsBlock() {
+    val colors = MaterialTheme.colorScheme
+    val ctx = LocalContext.current
+    var report by remember { mutableStateOf<com.droiddeck.launcher.gpu.MaliDiagnosticsReport?>(null) }
+    LaunchedEffect(Unit) {
+        report = withContext(Dispatchers.IO) { com.droiddeck.launcher.gpu.MaliDiagnostics.collect(ctx) }
+    }
+    Column(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 4.dp)) {
+        Text(
+            stringResource(R.string.mali_diag_title), fontSize = 14.sp, fontWeight = FontWeight.SemiBold,
+            color = colors.onBackground, modifier = Modifier.padding(bottom = 4.dp),
+        )
+        val r = report
+        if (r == null) {
+            Text(stringResource(R.string.mali_diag_loading), fontSize = 13.sp, color = colors.onSurfaceVariant)
+        } else {
+            for ((label, value) in r.rows()) {
+                Row(Modifier.fillMaxWidth().padding(vertical = 3.dp)) {
+                    Text(
+                        label, fontSize = 12.sp, color = colors.onSurfaceVariant,
+                        modifier = Modifier.width(110.dp),
+                    )
+                    Text(
+                        value, fontSize = 13.sp, color = colors.onBackground,
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+            }
+        }
+    }
 }
 
 @Composable

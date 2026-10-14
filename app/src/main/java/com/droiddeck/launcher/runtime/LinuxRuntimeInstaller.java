@@ -7,7 +7,7 @@ import android.util.Log;
 import com.droiddeck.launcher.R;
 import com.droiddeck.launcher.core.ArchivePaths;
 import com.droiddeck.launcher.core.Downloader;
-import com.droiddeck.launcher.core.Hashes;
+import com.droiddeck.launcher.core.DownloadManager;
 import com.droiddeck.launcher.core.FileUtils;
 
 import org.apache.commons.compress.archivers.tar.TarArchiveEntry;
@@ -239,21 +239,34 @@ public final class LinuxRuntimeInstaller {
             emptyTrash(LinuxRuntime.rootDir(context).getParentFile());
             String downloading = context.getString(R.string.rtinst_downloading);
             if (listener != null) listener.onProgress(Step.DOWNLOADING, downloading, 0);
-            boolean ok = Downloader.downloadFile(release.url, archive, true, (fraction) -> {
-                if (listener != null) {
-                    listener.onProgress(Step.DOWNLOADING, downloading,
-                            fraction < 0 ? -1 : Math.round(fraction * 100f));
+            DownloadManager.Spec spec = new DownloadManager.Spec(
+                    release.url,
+                    archive,
+                    release.sha256,
+                    release.size > 0 ? release.size : null,
+                    4, 1_000L, 30_000L,
+                    (fraction) -> {
+                        if (listener != null) {
+                            listener.onProgress(Step.DOWNLOADING, downloading,
+                                    fraction < 0 ? -1 : Math.round(fraction * 100f));
+                        }
+                        return kotlin.Unit.INSTANCE;
+                    },
+                    (phase) -> {
+                        if (listener != null && phase == DownloadManager.Phase.VERIFYING) {
+                            listener.onProgress(Step.VERIFYING, context.getString(R.string.rtinst_verifying), -1);
+                        }
+                        return kotlin.Unit.INSTANCE;
+                    });
+            DownloadManager.Result result = DownloadManager.download(spec,
+                    DownloadManager.defaultFetcher(), DownloadManager.defaultSpaceChecker(), DownloadManager.defaultSleeper());
+            if (result instanceof DownloadManager.Result.Failure) {
+                DownloadManager.Result.Failure failure = (DownloadManager.Result.Failure) result;
+                Log.w(TAG, "download failed: " + failure.getReason() + " " + failure.getDetail());
+                if (failure.getReason() == DownloadManager.FailureReason.INSUFFICIENT_SPACE
+                        && listener != null) {
+                    listener.onProgress(Step.DOWNLOADING, context.getString(R.string.rtinst_no_space, failure.getDetail()), -1);
                 }
-            });
-            if (!ok) {
-                Log.w(TAG, "download failed");
-                return false;
-            }
-
-            if (listener != null) listener.onProgress(Step.VERIFYING, context.getString(R.string.rtinst_verifying), -1);
-            String actual = Hashes.sha256(archive);
-            if (!release.sha256.equalsIgnoreCase(actual)) {
-                Log.w(TAG, "checksum mismatch: wanted " + release.sha256 + ", got " + actual);
                 return false;
             }
 

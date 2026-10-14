@@ -1493,6 +1493,8 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
         return try {
             var enosys = 0
             var fexMissing = false
+            var noGpu = false
+            var turnipRan = false
             val size = log.length()
             java.io.RandomAccessFile(log, "r").use { f ->
                 val start = maxOf(0L, size - 512L * 1024)
@@ -1502,11 +1504,23 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
                 String(bytes, Charsets.ISO_8859_1).lineSequence().forEach { line ->
                     if (line.contains("Function not implemented")) enosys++
                     if (line.contains(FEX_MISSING)) fexMissing = true
+                    if (line.contains("failed to find physical device") || line.contains("VK_ERROR_INCOMPATIBLE_DRIVER")) noGpu = true
+                    if (line.startsWith("TU: ")) turnipRan = true
                 }
             }
             if (fexMissing) {
                 val what = com.droiddeck.launcher.frontend.Library.nameForProgram(SessionState.program) ?: getString(R.string.session_end_program)
                 EndHint(getString(R.string.session_end_fex_missing, what), evenOnSuccess = true)
+            } else if (noGpu && com.droiddeck.launcher.core.DeviceSupport.mali()) {
+                // On a Mali (MediaTek): gamescope finding no Vulkan device, which is the runtime's
+                // Turnip refusing a GPU that is not an Adreno - the session needs an imported Mali
+                // driver first.
+                EndHint(when {
+                    com.droiddeck.launcher.gpu.LinuxVulkanDriver.resolveIcdPath(this, com.droiddeck.launcher.session.SessionPrefs.linuxDriver(this)) == null ->
+                        getString(R.string.session_mali_no_driver)
+                    turnipRan -> getString(R.string.session_mali_turnip_ran)
+                    else -> getString(R.string.session_mali_no_usable_gpu)
+                })
             } else if (enosys >= 8) {
                 EndHint(resources.getQuantityString(R.plurals.session_hint_enosys, enosys, enosys,
                     getString(R.string.perf_title), getString(R.string.perf_seccomp), getString(R.string.perf_xalia)))

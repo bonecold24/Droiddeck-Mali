@@ -9,8 +9,15 @@ object CpuCores {
         FileUtils.readString(File("/sys/devices/system/cpu/cpu$core/cpufreq/cpuinfo_max_freq"))
             ?.trim()?.toLongOrNull()?.let { it / 1_000_000.0 }
 
-    fun parse(list: String): Set<Int> =
-        list.split(',').mapNotNull { it.trim().toIntOrNull() }.filter { it in all }.toSet()
+    fun parse(list: String): Set<Int> = parseAny(list).filter { it in all }.toSet()
+
+    /**
+     * Parse without reference to this device's core count: tokens must be
+     * plausible core numbers (0..63). Used to sanitize stored profiles before
+     * the device-aware [parse] intersects them with real cores at launch.
+     */
+    fun parseAny(list: String): Set<Int> =
+        list.split(',').mapNotNull { it.trim().toIntOrNull() }.filter { it in 0..63 }.toSet()
 
     fun format(cores: Set<Int>): String = cores.sorted().joinToString(",")
 

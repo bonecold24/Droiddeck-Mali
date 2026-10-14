@@ -81,7 +81,10 @@ internal fun SteamHome(s: FrontEndState, a: FrontEndActions, modifier: Modifier)
     val back = stringResource(R.string.hop_from_play)
     val extras = SheetExtras(
         frameGen = { FrameGenGroup(s, a) },
-        performance = { PerformanceLink(a, "steam", SheetTab.SESSION) },
+        performance = {
+            PerformanceLink(a, "steam", SheetTab.SESSION)
+            CompatTestLink(a)
+        },
         drivers = { summary -> DriversLink(a, summary, "steam", back) },
         account = { host ->
             SettingsGroup(stringResource(R.string.setup_account)) {
@@ -117,6 +120,9 @@ internal fun SteamHome(s: FrontEndState, a: FrontEndActions, modifier: Modifier)
         },
         button = { click ->
             PrimaryButton(stringResource(R.string.games_play_steam), enabled = !s.busy, main = true, large = true, icon = Icons.Filled.PlayArrow, modifier = Modifier.testTag("play-steam"), onClick = click)
+        },
+        beside = {
+            PrimaryButton(stringResource(R.string.tier0_checks), enabled = !s.busy, modifier = Modifier.testTag("tier0-checks"), onClick = a.onCompatTest)
         },
         rows = { tab -> a.modeSheet(mode, tab, extras) },
     )

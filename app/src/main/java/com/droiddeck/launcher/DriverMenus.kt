@@ -46,6 +46,7 @@ internal class DriverMenus(private val activity: Activity, private val ui: Handl
     fun state() = GpuDriversState(
         gpuName = gpu.displayName(activity), gpuFamily = gpu.family.label(activity), soc = gpu.soc, supportText = gpu.supportText(activity),
         supported = gpu.support == GpuInfo.Support.TESTED, unsupported = gpu.support == GpuInfo.Support.UNSUPPORTED,
+        mali = gpu.family == GpuInfo.Family.MALI,
         auto = mode == SessionPrefs.GPU_DRIVERS_AUTO, pairs = pairRows, busy = pairBusy, percent = pairPercent,
         autoStatus = autoStatus, releaseStatus = releaseStatus.ifEmpty { activity.getString(R.string.drivers_not_checked) }, checking = releaseChecking,
         linuxRows = linuxRows, linuxSelected = linuxSelected, androidRows = androidRows, androidSelected = androidSelected,
@@ -63,7 +64,8 @@ internal class DriverMenus(private val activity: Activity, private val ui: Handl
             DriverRow(id, it.label, activity.getString(if (linux) R.string.drivers_bundle_sets_display else R.string.drivers_bundle_sets_runtime), true, DriverRow.BUNDLE)
         }
         linuxRows = LinuxVulkanDriver.optionValues(activity).map { id ->
-            if (id.isEmpty()) DriverRow("", activity.getString(R.string.gpu_runtime_default), activity.getString(R.string.drivers_runtime_builtin), false)
+            if (id.isEmpty()) DriverRow("", activity.getString(R.string.gpu_runtime_default),
+                activity.getString(if (gpu.family == GpuInfo.Family.MALI) R.string.drivers_runtime_builtin_mali else R.string.drivers_runtime_builtin), false)
             else bundleRow(id, linux = true) ?: DriverRow(
                 id, lm.getDriverName(id),
                 listOfNotNull(
@@ -80,7 +82,8 @@ internal class DriverMenus(private val activity: Activity, private val ui: Handl
         androidRows = buildList {
             add(DriverRow(
                 TurnipDriver.AUTO, activity.getString(R.string.gpu_auto_by_gpu),
-                if (auto == "system") activity.getString(R.string.drivers_system_vulkan) else activity.getString(R.string.drivers_bundled, td.displayName(auto)),
+                if (auto == "system") activity.getString(if (gpu.family == GpuInfo.Family.MALI) R.string.drivers_system_vulkan_mali else R.string.drivers_system_vulkan)
+                else activity.getString(R.string.drivers_bundled, td.displayName(auto)),
                 false,
             ))
             for (id in td.visibleBundled()) add(DriverRow(id, td.displayName(id), td.driverVersion(id), true, DriverRow.BUNDLED))
@@ -254,16 +257,17 @@ internal class DriverMenus(private val activity: Activity, private val ui: Handl
         val name = activity.displayNameOf(uri)
         Thread({
             var bundle: DriverBundle.Bundle? = null
+            var linuxId: String? = null
             val problem = try {
                 when {
                     DriverBundle.isBundle(activity, uri) -> bundle = DriverBundle.install(activity, uri)
-                    linux == true -> LinuxVulkanDriverManager(activity).installDriver(uri, name)
+                    linux == true -> linuxId = LinuxVulkanDriverManager(activity).installDriver(uri, name)
                     linux == false -> TurnipDriver(activity).installFromZip(uri, name)
                     else -> try {
                         TurnipDriver(activity).installFromZip(uri, name)
                     } catch (display: IllegalArgumentException) {
                         try {
-                            LinuxVulkanDriverManager(activity).installDriver(uri, name)
+                            linuxId = LinuxVulkanDriverManager(activity).installDriver(uri, name)
                         } catch (runtime: IllegalArgumentException) {
                             throw IllegalArgumentException(activity.getString(R.string.drivers_not_a_driver))
                         }
@@ -277,8 +281,19 @@ internal class DriverMenus(private val activity: Activity, private val ui: Handl
                 activity.getString(R.string.drivers_import_failed, e.message)
             }
             ui.post {
+                // A Mali has no runtime driver of its own: the first one imported is the one to
+                // draw with, without a second trip to the drop-down.
+                val maliPick = linuxId != null && gpu.family == GpuInfo.Family.MALI &&
+                    LinuxVulkanDriver.resolveIcdPath(activity, SessionPrefs.linuxDriver(activity)) == null
+                if (maliPick) {
+                    SessionPrefs.setLinuxDriver(activity, linuxId!!)
+                    setMode(false)
+                }
                 val done = bundle?.let { useBundle(it) }
-                    ?: name?.let { activity.getString(R.string.comp_imported, it) } ?: activity.getString(R.string.drivers_imported_unnamed)
+                    ?: name?.let {
+                        activity.getString(R.string.comp_imported, it) +
+                            if (maliPick) activity.getString(R.string.drivers_imported_and_selected) else ""
+                    } ?: activity.getString(R.string.drivers_imported_unnamed)
                 android.widget.Toast.makeText(
                     activity, problem ?: done,
                     if (problem != null || bundle != null) android.widget.Toast.LENGTH_LONG else android.widget.Toast.LENGTH_SHORT,

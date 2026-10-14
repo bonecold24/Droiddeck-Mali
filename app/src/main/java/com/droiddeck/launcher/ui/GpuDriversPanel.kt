@@ -81,6 +81,8 @@ class GpuDriversState(
     val supportText: String = "",
     val supported: Boolean = true,
     val unsupported: Boolean = false,
+    /** A Mali: no Turnip pair fits it, its runtime driver is picked under Advanced. */
+    val mali: Boolean = false,
     val auto: Boolean = true,
     val pairs: List<PairRow> = emptyList(),
     val busy: String? = null,

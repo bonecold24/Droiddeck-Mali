@@ -12,7 +12,8 @@ public final class LinuxVulkanDriver {
 
     public static final String HELP_TEXT =
             "The driver the Steam client, the games it launches and the desktop's programs render on, "
-            + "inside the Linux runtime. Imported \"-Linux\" Turnip zips only: these are Linux processes "
+            + "inside the Linux runtime. Imported glibc drivers only - a \"-Linux\" Turnip zip, or on a Mali "
+            + "(MediaTek) GPU a glibc PanVK build for kbase (libvulkan_panfrost.so): these are Linux processes "
             + "and cannot load an Android or Wayland driver. Frames still reach the screen through the "
             + "display driver below. Takes effect at the next session start.";
 
@@ -21,7 +22,13 @@ public final class LinuxVulkanDriver {
     public static List<String> optionValues(Context context) {
         ArrayList<String> values = new ArrayList<>();
         values.add("");
-        values.addAll(new LinuxVulkanDriverManager(context).enumerateInstalledDrivers());
+        LinuxVulkanDriverManager m = new LinuxVulkanDriverManager(context);
+        for (String id : m.enumerateInstalledDrivers()) {
+            // A bionic (Android) driver package is verified and registered, but it cannot back
+            // the Linux runtime: Linux processes cannot load a bionic library. It stays
+            // visible in driver diagnostics instead.
+            if (m.isLinuxRuntimeUsable(id)) values.add(id);
+        }
         return values;
     }
 
@@ -34,8 +41,18 @@ public final class LinuxVulkanDriver {
     }
 
     public static String resolveIcdPath(Context context, String value) {
+        if ((value == null || value.isEmpty()) && com.droiddeck.launcher.core.DeviceSupport.mali()) {
+            // The runtime's own driver is Turnip, which finds no Adreno here: the session would
+            // run on nothing (or on llvmpipe). Said in the log a bug report carries.
+            Log.w(TAG, "Mali GPU with the runtime's Turnip: import a glibc Mali driver (PanVK for kbase) "
+                    + "under \"Linux runtime driver\", or the session has no GPU to draw on");
+        }
         if (value == null || value.isEmpty()) return null;
         LinuxVulkanDriverManager m = new LinuxVulkanDriverManager(context);
+        if (!m.isLinuxRuntimeUsable(value)) {
+            Log.w(TAG, "imported driver \"" + value + "\" is not a glibc Linux driver; using the runtime's own driver");
+            return null;
+        }
         String icd = m.getIcdPath(value);
         if (icd == null) {
             Log.w(TAG, "imported Linux driver \"" + value + "\" is gone; using the runtime's own driver");

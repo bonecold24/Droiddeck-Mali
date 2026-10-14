@@ -225,31 +225,22 @@ public final class PadBridge {
         int slot = slotFor(event.getDevice());
         PadState pad = stateFor(slot);
         boolean pressed = event.getAction() == KeyEvent.ACTION_DOWN;
-        switch (event.getKeyCode()) {
-            case KeyEvent.KEYCODE_BUTTON_A: pad.press(0, pressed); break;
-            case KeyEvent.KEYCODE_BUTTON_B: pad.press(1, pressed); break;
-            case KeyEvent.KEYCODE_BUTTON_X: pad.press(2, pressed); break;
-            case KeyEvent.KEYCODE_BUTTON_Y: pad.press(3, pressed); break;
-            case KeyEvent.KEYCODE_BUTTON_L1: pad.press(4, pressed); break;
-            case KeyEvent.KEYCODE_BUTTON_R1: pad.press(5, pressed); break;
-            case KeyEvent.KEYCODE_BUTTON_SELECT:
-                if (selectSteam) pad.press(PadState.GUIDE, pressed);
-                else pad.press(6, pressed);
-                break;
-            case KeyEvent.KEYCODE_BACK: pad.press(6, pressed); break;
-            case KeyEvent.KEYCODE_BUTTON_START:
-            case KeyEvent.KEYCODE_MENU: pad.press(7, pressed); break;
-            case KeyEvent.KEYCODE_BUTTON_THUMBL: pad.press(8, pressed); break;
-            case KeyEvent.KEYCODE_BUTTON_THUMBR: pad.press(9, pressed); break;
-            case KeyEvent.KEYCODE_BUTTON_MODE:
-            case KeyEvent.KEYCODE_HOME: pad.press(PadState.GUIDE, pressed); break;
-            case KeyEvent.KEYCODE_BUTTON_L2: pad.leftTrigger = pressed ? 1f : 0f; break;
-            case KeyEvent.KEYCODE_BUTTON_R2: pad.rightTrigger = pressed ? 1f : 0f; break;
-            case KeyEvent.KEYCODE_DPAD_UP: pad.up = pressed; break;
-            case KeyEvent.KEYCODE_DPAD_RIGHT: pad.right = pressed; break;
-            case KeyEvent.KEYCODE_DPAD_DOWN: pad.down = pressed; break;
-            case KeyEvent.KEYCODE_DPAD_LEFT: pad.left = pressed; break;
-            default: return false;
+        // The keycode -> pad-action table lives in GamepadButtons (unit-tested);
+        // this only applies the action to the pad's state.
+        GamepadButtons.Action action = GamepadButtons.actionFor(event.getKeyCode(), selectSteam);
+        if (action == null) return false;
+        if (action instanceof GamepadButtons.Action.Button) {
+            pad.press(((GamepadButtons.Action.Button) action).getIndex(), pressed);
+        } else if (action instanceof GamepadButtons.Action.Trigger) {
+            if (((GamepadButtons.Action.Trigger) action).getLeft()) pad.leftTrigger = pressed ? 1f : 0f;
+            else pad.rightTrigger = pressed ? 1f : 0f;
+        } else if (action instanceof GamepadButtons.Action.Dpad) {
+            switch (((GamepadButtons.Action.Dpad) action).getDirection()) {
+                case UP: pad.up = pressed; break;
+                case RIGHT: pad.right = pressed; break;
+                case DOWN: pad.down = pressed; break;
+                case LEFT: pad.left = pressed; break;
+            }
         }
         noteDevice(event.getDevice(), slot);
         if (pressed) notePlayerInput();
