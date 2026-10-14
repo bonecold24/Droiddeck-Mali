@@ -81,7 +81,10 @@ internal fun SteamHome(s: FrontEndState, a: FrontEndActions, modifier: Modifier)
     val back = stringResource(R.string.hop_from_play)
     val extras = SheetExtras(
         frameGen = { FrameGenGroup(s, a) },
-        performance = { PerformanceLink(a, "steam", SheetTab.SESSION) },
+        performance = {
+            PerformanceLink(a, "steam", SheetTab.SESSION)
+            CompatTestLink(a)
+        },
         drivers = { summary -> DriversLink(a, summary, "steam", back) },
         account = { host ->
             SettingsGroup(stringResource(R.string.setup_account)) {

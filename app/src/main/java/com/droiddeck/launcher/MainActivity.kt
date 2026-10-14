@@ -672,6 +672,9 @@ class MainActivity : ComponentActivity() {
                         onSaveImport = { sg -> importSaves(sg.name) { GameSaves.game(sg) } },
                         onSaveExport = { sg, layout -> exportSaves(sg.name, layout) { GameSaves.game(sg) } },
                         onPerformance = { refreshCores(); showComponents = false; showMapping = false; showPerformance = true },
+                        onCompatTest = {
+                            startActivity(Intent(this, com.droiddeck.launcher.comptest.CompatTestActivity::class.java))
+                        },
                         onRoms = { showRoms = true },
                         onFiles = { startActivity(Intent(this, com.droiddeck.launcher.files.FileManagerActivity::class.java)) },
                         onBrowseFiles = { dir ->
