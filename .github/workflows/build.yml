@@ -321,22 +321,29 @@ jobs:
           sudo chown -R "$(id -u):$(id -g)" app/src/main/assets/linuxfs
           ls -l app/src/main/assets/linuxfs/x86_64 app/src/main/assets/linuxfs/i386
 
-      - name: Bundle the PanVK Mali driver
+      - name: Bundle the PanVK Mali driver (upstream default + local alternative)
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
-          # The 24.8MB driver .so stays out of git history; CI injects it here.
-          mkdir -p /tmp/driver-pkg
+          # Gate A3: upstream-tested Android binary is the DEFAULT.
+          UPSTREAM_ANDROID_URL="https://github.com/zenithblue-oss/panvk-kbase-android/releases/download/panvk-kbase-v0.1.0-rc3/libvulkan_panfrost-android-aarch64.so"
+          UPSTREAM_ANDROID_SHA256="b46b9f0416f207a05482349dffb37b6f3d84c20762151c623774831ce3939445"
+          mkdir -p /tmp/driver-pkg app/src/main/assets/driver-bundles/panvk-kbase-upstream-android
+          curl -sSfL "$UPSTREAM_ANDROID_URL" -o /tmp/driver-pkg/upstream-android.so
+          echo "$UPSTREAM_ANDROID_SHA256  /tmp/driver-pkg/upstream-android.so" | sha256sum -c -
+          cp /tmp/driver-pkg/upstream-android.so app/src/main/assets/driver-bundles/panvk-kbase-upstream-android/libvulkan_panfrost.so
+          # Local build kept as an OPTIONAL alternative (untested on devices).
           gh release download driver-v0.1.0-rc3 -R "$GITHUB_REPOSITORY" \
             -p "panvk-kbase-g720-v0.1.0-rc3-universal+local1.zip" \
             -O /tmp/driver-pkg/driver.zip
           echo "2a0cd04978beafefb206a33331a78ce69f91aa1768d7815a15e98bb23f8c8bf0  /tmp/driver-pkg/driver.zip" | sha256sum -c -
-          mkdir -p app/src/main/assets/driver-bundles
           unzip -q -o /tmp/driver-pkg/driver.zip -d app/src/main/assets/driver-bundles/
           test -f "app/src/main/assets/driver-bundles/panvk-kbase-g720-v0.1.0-rc3-universal+local1/libvulkan_panfrost.so"
-          ls -la app/src/main/assets/driver-bundles/panvk-kbase-g720-v0.1.0-rc3-universal+local1/ | head -8
+          test -f "app/src/main/assets/driver-bundles/panvk-kbase-upstream-android/libvulkan_panfrost.so"
+          ls -la app/src/main/assets/driver-bundles/ | head -10
           rm -rf /tmp/driver-pkg
+
 
       - name: Bundle the glibc PanVK driver (Linux guest)
         env:
@@ -392,6 +399,23 @@ jobs:
             sed -i "s/EXE_PLACEHOLDER/$t-cube.exe/" app/src/main/assets/comptest/$t-cube
             chmod +x app/src/main/assets/comptest/$t-cube
           done
+          ls -la app/src/main/assets/comptest/
+
+      - name: Build vk-compute-test (aarch64 glibc, headless)
+        run: |
+          set -euo pipefail
+          # Gate B2: headless Vulkan compute smoke test. Needs no display server;
+          # runs before vkcube in Tier 0 to separate GPU bring-up from display bring-up.
+          # Vulkan is dlopen()ed at runtime, so only the headers are needed at build time.
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq gcc-aarch64-linux-gnu libvulkan-dev
+          mkdir -p app/src/main/assets/comptest
+          aarch64-linux-gnu-gcc -O2 -Wall -Wextra -o app/src/main/assets/comptest/vk-compute-test \
+            tools/comptest/vk-compute-test.c -ldl
+          aarch64-linux-gnu-strip --strip-unneeded app/src/main/assets/comptest/vk-compute-test
+          file app/src/main/assets/comptest/vk-compute-test
+          # Sanity: must be an aarch64 glibc (SYSV) binary, not bionic/Android.
+          aarch64-linux-gnu-readelf -d app/src/main/assets/comptest/vk-compute-test | grep -i NEEDED
           ls -la app/src/main/assets/comptest/
 
       - name: Bundle the droiddeck-esync packs

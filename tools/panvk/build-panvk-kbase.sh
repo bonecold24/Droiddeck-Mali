@@ -127,16 +127,40 @@ ninja -C "$MESASRC/build-glibc" src/panfrost/vulkan/libvulkan_panfrost.so
 # Package: the library and a meta.json in LinuxVulkanDriverManager's schema.
 rm -rf out && mkdir out
 "$NDKBIN/llvm-strip" --strip-debug -o out/libvulkan_panfrost.so "$MESASRC/build-glibc/src/panfrost/vulkan/libvulkan_panfrost.so"
+# ICD manifest from the Mesa build.
+ICD_SRC=$(find "$MESASRC/build-glibc" -name 'panfrost_icd.aarch64.json' | head -1)
+[ -n "$ICD_SRC" ] || { echo "BUILD-FAIL: panfrost_icd.aarch64.json not found" >&2; exit 1; }
+cp "$ICD_SRC" out/panvk_kbase_icd.aarch64.json
 glibc=$(readelf -V out/libvulkan_panfrost.so | grep -o 'GLIBC_[0-9.]*' | sort -uV | tail -1 | sed 's/GLIBC_//')
 srcpin=$(git -C "$MESASRC" rev-parse --short HEAD)
+so_sha=$(sha256sum out/libvulkan_panfrost.so | cut -d' ' -f1)
+PKGVER="0.1.0-rc3-glibc+local1"
 cat > out/meta.json <<EOF
 {
   "schemaVersion": 1,
   "kind": "linux-vulkan-icd",
   "name": "PanVK kbase (glibc) for DroidDeck-Mali",
+  "libraryName": "libvulkan_panfrost.so",
+  "packageVersion": "$PKGVER",
   "driverVersion": "PanVK kbase-CSF (${srcpin} + DroidDeck-Mali patches)",
+  "abi": "linux-aarch64-glibc",
+  "backend": "panvk-kbase",
+  "profile": "g720-v12-csf",
   "minGlibc": "$glibc",
   "libc": "glibc"
+}
+EOF
+cat > out/MANIFEST.json <<EOF
+{
+  "profile": "g720-v12-csf",
+  "abi": "linux-aarch64-glibc",
+  "binarySha256": "$so_sha",
+  "files": [
+    "libvulkan_panfrost.so",
+    "panvk_kbase_icd.aarch64.json",
+    "meta.json",
+    "MANIFEST.json"
+  ]
 }
 EOF
 python3 - "$W" <<'PY'
@@ -144,6 +168,8 @@ import sys, zipfile
 w = sys.argv[1]
 with zipfile.ZipFile(f"{w}/PanVK-kbase-glibc-DroidDeck.zip", "w", zipfile.ZIP_DEFLATED) as z:
     z.write(f"{w}/out/libvulkan_panfrost.so", "libvulkan_panfrost.so")
+    z.write(f"{w}/out/panvk_kbase_icd.aarch64.json", "panvk_kbase_icd.aarch64.json")
     z.write(f"{w}/out/meta.json", "meta.json")
+    z.write(f"{w}/out/MANIFEST.json", "MANIFEST.json")
 PY
-echo "built $W/PanVK-kbase-glibc-DroidDeck.zip (needs glibc $glibc)"
+echo "built $W/PanVK-kbase-glibc-DroidDeck.zip (needs glibc $glibc, sha256 $so_sha)"

@@ -131,7 +131,7 @@ internal class CompatTestViewModel(private val activity: CompatTestActivity) {
                     activity.runOnUiThread {
                         rows = rows.map {
                             if (it.spec.id == result.specId)
-                                it.copy(status = result.outcome.name, result = result)
+                                it.copy(status = result.outcome.label(), result = result)
                             else it
                         }
                     }
@@ -180,13 +180,15 @@ internal class CompatTestViewModel(private val activity: CompatTestActivity) {
     }
 
     fun share() {
-        if (runId.isNotEmpty()) runCatching { CompatTestExport.shareLatest(activity, runId) }
+        if (runId.isNotEmpty()) runCatching {
+            CompatTestExport.shareLatest(activity, runId, rows.map { it.spec.id })
+        }
     }
 
     private fun summarize(results: List<TestResult>): String {
         val counts = results.groupingBy { it.outcome }.eachCount()
-        return counts.entries.sortedBy { it.key.ordinal }
-            .joinToString(" · ") { "${it.key.name}: ${it.value}" }
+        return counts.entries.sortedBy { it.key.sortOrder }
+            .joinToString(" · ") { "${it.key.label()}: ${it.value}" }
     }
 }
 
@@ -252,7 +254,7 @@ private fun ColumnScope.DoneBody(vm: CompatTestViewModel) {
         Button(onClick = { vm.share() }, modifier = Modifier.weight(1f)) { Text("Share report") }
         OutlinedButton(onClick = { vm.start() }, modifier = Modifier.weight(1f)) { Text("Run again") }
     }
-    Text("Report saved as JSON + Markdown (share sends both).",
+    Text("Report saved as JSON + Markdown. Share sends one ZIP with the report and all per-stage logs.",
         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
 }
 
@@ -279,7 +281,7 @@ private fun TestRow(row: RowState) {
                 row.result?.let { r ->
                     val fps = r.avgFps?.let { " · %.0f fps avg".format(Locale.US, it) } ?: ""
                     val low = r.onePercentLowFps?.let { " (1%% low %.0f)".format(Locale.US, it) } ?: ""
-                    Text(r.outcome.name + fps + low, style = MaterialTheme.typography.bodySmall)
+                    Text(r.outcome.label() + fps + low, style = MaterialTheme.typography.bodySmall)
                     if (!r.note.isNullOrBlank()) Text(r.note.take(160),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -295,18 +297,20 @@ private fun TestRow(row: RowState) {
     }
 }
 
-private fun statusGlyph(status: String): String = when (status) {
-    "pending" -> "○"
-    "running" -> "▶"
-    "REACHED_MENU", "REACHED_GAMEPLAY" -> "●"
-    "SKIPPED" -> "–"
+private fun statusGlyph(status: String): String = when {
+    status == "pending" -> "○"
+    status == "running" -> "▶"
+    status == "CANCELLED" || status == "SKIPPED" -> "–"
+    status == "PASS" || status == "REACHED_MENU" || status == "REACHED_GAMEPLAY" -> "●"
+    status.startsWith("PREREQ_MISSING") -> "⚠"
     else -> "✕"
 }
 
 @Composable
-private fun statusColor(status: String): Color = when (status) {
-    "REACHED_MENU", "REACHED_GAMEPLAY" -> Color(0xFF69F0AE)
-    "SKIPPED", "pending" -> Color.Gray
-    "running" -> Color(0xFF82B1FF)
+private fun statusColor(status: String): Color = when {
+    status == "PASS" || status == "REACHED_MENU" || status == "REACHED_GAMEPLAY" -> Color(0xFF69F0AE)
+    status == "SKIPPED" || status == "pending" || status == "CANCELLED" -> Color.Gray
+    status == "running" -> Color(0xFF82B1FF)
+    status.startsWith("PREREQ_MISSING") -> Color(0xFFFFD54F)
     else -> Color(0xFFFF8A80)
 }

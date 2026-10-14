@@ -3,18 +3,34 @@ package com.droiddeck.launcher.comptest
 /**
  * Default compatibility-test suite definition.
  *
- * Ordering contract: system checks first (vkcube → vulkaninfo → D3D9 cube → D3D11 cube),
- * then Tier 1/2 game entries. Games that are requested but not installed stay in the
- * suite as specs — the executor records them as SKIPPED so a missing game can never
- * fail the suite. Pure; host-unit-testable.
+* Ordering contract: Stage 0 environment probe first, then system checks
+ * (vkcube → vulkaninfo → D3D9 cube → D3D11 cube), then Tier 1/2 game entries.
+ * Games that are requested but not installed stay in the suite as specs — the
+ * executor records them as SKIPPED so a missing game can never fail the suite.
+* Ordering contract (Gate B2): Stage 0 environment probe (owned by B1/A4,
+ * runs before this list when implemented) → vk-compute-test (headless GPU
+ * bring-up, no display) → vkcube (needs a display) → vulkaninfo →
+ * D3D9 cube → D3D11 cube, then Tier 1/2 game entries. Games that are
+ * requested but not installed stay in the suite as specs — the executor
+ * records them as SKIPPED so a missing game can never fail the suite. * Pure; host-unit-testable.
  */
 object CompatTestSuite {
     data class InstalledGame(val gameId: Long, val name: String)
 
     fun systemChecks(): List<TestSpec> = listOf(
         TestSpec(
+id = "stage0-env", label = "Stage 0 environment probe", kind = TestKind.SYSTEM_CHECK,
+            description = "Records kernel, device props, SELinux, /dev/mali0, ICD selection, " +
+                "driver files, storage/RAM before any GPU test runs.",
+id = "vk-compute-test", label = "vk-compute-test (headless GPU)", kind = TestKind.SYSTEM_CHECK,
+            description = "Headless Vulkan compute smoke test: instance, device enumeration, " +
+                "vector-add compute shader, readback verify. Needs no display server.",            timeoutSec = 60,
+        ),
+        TestSpec(
             id = "vkcube", label = "vkcube (Vulkan cube)", kind = TestKind.SYSTEM_CHECK,
-            description = "Renders the Vulkan cube through the active ICD for ~10s.",
+            description = "Renders the Vulkan cube through the active ICD for ~10s. " +
+                "Requires a reachable display server; without one it reports " +
+                "PREREQ_MISSING (display not available), not a GPU failure.",
             timeoutSec = 60,
         ),
         TestSpec(
