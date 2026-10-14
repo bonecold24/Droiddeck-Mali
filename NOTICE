@@ -1,0 +1,27 @@
+NOTICE — DroidDeck-Mali
+=========================
+
+This project is a fork of DroidDeck and incorporates work from the following
+upstream projects. Their licenses and copyright notices are retained in the
+corresponding files.
+
+1. DroidDeck — https://github.com/Droid-Deck/DroidDeck
+   Copyright (c) DroidDeck contributors. Licensed under GPL-3.0.
+   The base application: Steam-on-Android runtime, Linux userland, UI.
+
+2. emir34-34/droiddeck (branch mediatek-mali-support) — https://github.com/emir34-34/droiddeck
+   Copyright (c) emir34-34 and contributors. Licensed under GPL-3.0.
+   The MediaTek/Mali support implementation ported into this fork
+   (Mali GPU detection, glibc ICD import path, /dev/mali0 handling,
+   Mali devfreq overlay, Mali-safe defaults).
+
+3. Mesa / PanVK — https://gitlab.freedesktop.org/mesa/mesa
+   PanVK is the open-source Vulkan driver for Mali GPUs. Used via the
+   panvk-kbase-g720 driver packages (separate repository); not vendored here.
+
+Trademarks: Steam and Proton are property of Valve Corporation.
+This project is not affiliated with or endorsed by Valve.
+"Android" is a trademark of Google LLC.
+
+No Valve binaries (Steam client, Proton) are bundled in this repository or its
+APKs; they are downloaded from official Valve sources at runtime.
