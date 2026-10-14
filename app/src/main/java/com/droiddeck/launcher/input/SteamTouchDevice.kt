@@ -23,9 +23,7 @@ class SteamTouchDevice private constructor(private val buffer: ByteBuffer) {
     @Synchronized
     fun setControls(buttons: Long, sticks: ShortArray, pads: ShortArray) {
         val next = report.copyOf()
-        for (i in 0 until 8) next[i] = (buttons ushr (8 * i)).toByte()
-        for (i in 0 until 4) putShort(next, 8 + 2 * i, sticks[i])
-        for (i in 0 until 6) putShort(next, 16 + 2 * i, pads[i])
+        SteamTouchReport.encodeInto(next, buttons, sticks, pads)
         publish(next)
     }
 
