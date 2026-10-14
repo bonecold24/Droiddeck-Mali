@@ -29,7 +29,7 @@ class FpsStatsTest {
         val frames = List(99) { 1000.0 / 60.0 } + listOf(100.0)
         val s = FpsStats.compute(frames)!!
         assert(close(s.maxFrameTimeMs, 100.0))
-        assert(close(s.onePercentLowFps, 10.0), "1% low should be 10 fps, was ${s.onePercentLowFps}")
+        assert(close(s.onePercentLowFps, 10.0)) { "1% low should be 10 fps, was ${s.onePercentLowFps}" }
         // avg fps over all 100 frames
         val mean = (99 * (1000.0 / 60.0) + 100.0) / 100.0
         assert(close(s.avgFps, 1000.0 / mean))
@@ -39,7 +39,7 @@ class FpsStatsTest {
         // 1000 frames: 990 at 16.666ms, 10 at 50ms -> worst 1% = ten 50ms frames => 20 fps
         val frames = List(990) { 1000.0 / 60.0 } + List(10) { 50.0 }
         val s = FpsStats.compute(frames)!!
-        assert(close(s.onePercentLowFps, 20.0), "was ${s.onePercentLowFps}")
+        assert(close(s.onePercentLowFps, 20.0)) { "was ${s.onePercentLowFps}" }
         assert(s.avgFps > 20.0)
     }
 
