@@ -1602,6 +1602,7 @@
     <string name="rtinst_removing_leftovers">Removing runtime leftovers</string>
     <string name="rtinst_downloading">Downloading</string>
     <string name="rtinst_verifying">Verifying</string>
+    <string name="rtinst_no_space">Not enough free space: %1$s</string>
     <string name="rtinst_extracting">Extracting</string>
     <string name="rtinst_channel_description">Shows while the Linux runtime is installed or removed</string>
     <string name="rtinst_title_installing">Installing the Linux runtime</string>

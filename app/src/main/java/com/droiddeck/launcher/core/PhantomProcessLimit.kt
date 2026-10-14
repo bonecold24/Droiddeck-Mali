@@ -44,6 +44,18 @@ object PhantomProcessLimit {
         else value == if (enabled) "true" else "false"
     }
 
+    /** Why a [verified] check failed, so the fix UI can say something actionable. */
+    enum class VerifyHint { OK, EMPTY_OUTPUT, NOT_SET_VALUE, WRONG_VALUE }
+
+    fun verifyFailureHint(output: String, enabled: Boolean, sdk: Int = Build.VERSION.SDK_INT): VerifyHint {
+        if (verified(output, enabled, sdk)) return VerifyHint.OK
+        val value = output.trim()
+        if (value.isEmpty()) return VerifyHint.EMPTY_OUTPUT
+        // Both `settings get global` and `device_config get` print "null" when unset.
+        if (value.equals("null", ignoreCase = true)) return VerifyHint.NOT_SET_VALUE
+        return VerifyHint.WRONG_VALUE
+    }
+
     fun adbCommand(enabled: Boolean, sdk: Int = Build.VERSION.SDK_INT): String =
         shellCommands(enabled, sdk).joinToString(" && ") { "adb shell $it" }
 
