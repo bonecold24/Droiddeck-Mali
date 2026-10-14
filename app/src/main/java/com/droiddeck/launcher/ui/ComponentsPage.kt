@@ -518,6 +518,7 @@ fun ComponentsPage(
     val installedRows: @Composable ColumnScope.(String, Boolean) -> Unit = { l, right ->
         when (l) {
             GPU_TAB -> {
+                if (gpu.mali) EmptyLine(stringResource(R.string.gpu_mali_hint))
                 val autoKey = "gpu:auto"
                 ChoiceLine(
                     stringResource(R.string.common_auto), stringResource(R.string.gpu_auto_keeps), gpu.auto, removable = false,
