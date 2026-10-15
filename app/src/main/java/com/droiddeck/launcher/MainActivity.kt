@@ -530,6 +530,10 @@ class MainActivity : ComponentActivity() {
         // Glibc PanVK for the Linux guest (assets/linux-drivers): what the
         // Tier-0 guest checks and Proton actually load.
         com.droiddeck.launcher.gpu.GlibcDriverBundle.ensureImportedAsync(this)
+        // If the selected Linux driver is missing, bionic, or invalid (e.g. v2
+        // state with bionic selected), migrate to the bundled glibc driver.
+        // A manually chosen valid glibc driver is kept.
+        com.droiddeck.launcher.gpu.GlibcDriverBundle.ensureValidSelection(this)
         setContent {
             DroidDeckTheme(theme, appScale = appScale) {
             com.droiddeck.launcher.ui.FocusGlideHost(androidx.compose.ui.Modifier.fillMaxSize().exposeTestTags()) {

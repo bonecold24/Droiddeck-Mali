@@ -81,6 +81,12 @@ class CompatTestExecutor(
         // as PREREQ_MISSING (not a GPU failure) with the reason spelled out.
         // (The auto-switch to the bundled glibc driver is Gate A2's migration;
         // this check is the diagnostic half and stays correct with or without it.)
+        //
+        // Directive #7 Task 1: ensure the selection is valid before Stage 0.
+        // If the user is still on the v2 bionic selection (or has no selection),
+        // migrate to the bundled glibc driver now. A manually chosen valid
+        // glibc driver is kept.
+        com.droiddeck.launcher.gpu.GlibcDriverBundle.ensureValidSelection(context)
         val validation = validateLinuxDriver(context)
         if (validation != null && !validation.usable && spec.id != "stage0-env") {
             return CompatTestRunner.TestRunOutcome(
@@ -220,6 +226,27 @@ class CompatTestExecutor(
             out += "usable=${validation.usable}"
             out += "reason=${validation.reason}"
             out += "detail=${validation.detail}"
+        }
+        // Directive #7 Task 1: list every directory under linux_vulkan_drivers
+        // with its ABI, marking the selected one.
+        out += "===== Linux driver directories ====="
+        try {
+            val mgr = com.droiddeck.launcher.gpu.LinuxVulkanDriverManager(context)
+            val selectedId = com.droiddeck.launcher.gpu.SessionPrefs.linuxDriver(context).orEmpty()
+            val baseDir = java.io.File(context.applicationContext.filesDir, "linux_vulkan_drivers")
+            if (baseDir.exists()) {
+                baseDir.listFiles { f -> f.isDirectory }?.sortedBy { it.name }?.forEach { dir ->
+                    val id = dir.name
+                    val abi = runCatching { mgr.getAbi(id) }.getOrDefault("?")
+                    val usable = runCatching { mgr.isLinuxRuntimeUsable(id) }.getOrDefault(false)
+                    val marker = if (id == selectedId) " [SELECTED]" else ""
+                    out += "  $id: abi=$abi usable=$usable$marker"
+                }
+            } else {
+                out += "  (linux_vulkan_drivers directory not found)"
+            }
+        } catch (t: Throwable) {
+            out += "  (failed to list driver directories: ${t.message})"
         }
         val outcome = if (exit == 0) TestOutcome.Pass else TestOutcome.fromExitCode(exit)
         return CompatTestRunner.TestRunOutcome(
