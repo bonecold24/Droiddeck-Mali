@@ -100,10 +100,15 @@ internal class CompatTestViewModel(private val activity: CompatTestActivity) {
 
     fun start() {
         if (phase == Phase.RUNNING) return
-        // Gate A1: install Trixie runtime overlay before Stage 0.
-        // Idempotent via marker file; v2->v3.1 upgrades get it automatically.
+        // Directive #8: the Trixie overlay install path is removed from the
+        // default flow — the real guest is Arch Linux ARM (glibc 2.43), not
+        // Debian Bullseye. Instead, check for overlay damage from preview-2
+        // (which installed the overlay with no backup) and repair it.
         runCatching {
-            com.droiddeck.launcher.gpu.GlibcDriverBundle.ensureRuntimeOverlayInstalled(activity)
+            val restored = com.droiddeck.launcher.gpu.GlibcDriverBundle.checkAndRepairOverlayDamage(activity)
+            if (restored.isNotEmpty()) {
+                android.util.Log.i("CompatTest", "Overlay damage repaired: ${restored.size} files restored")
+            }
         }
         val specs = rows.map { it.spec }
         if (specs.isEmpty()) return

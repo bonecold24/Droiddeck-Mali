@@ -471,6 +471,16 @@ echo "--- package manager ---"
 if [ -d /var/lib/dpkg ]; then echo "dpkg: present"; else echo "dpkg: absent"; fi
 if [ -d /var/lib/pacman ]; then echo "pacman: present"; else echo "pacman: absent"; fi
 echo "--- overlay marker ---"; ls -l /opt/droiddeck/.trixie-overlay-installed /root/.trixie-overlay-installed 2>&1 | head -5
+echo "--- overlay damage check (Directive #8) ---"
+echo "ldd version:"; ldd --version 2>&1 | head -1
+echo "loader symlink:"; ls -l /lib/ld-linux-aarch64.so.1 /usr/lib/ld-linux-aarch64.so.1 2>&1
+echo "libc:"; ls -l /usr/lib/libc.so.6 2>&1
+if command -v pacman >/dev/null 2>&1; then
+  echo "pacman -Q glibc:"; pacman -Q glibc 2>&1
+  echo "pacman -Qkk glibc (modified files):"; pacman -Qkk glibc 2>&1 | head -20
+else
+  echo "pacman: not found in guest"
+fi
 echo "--- icd.d ---"; ls -l /usr/share/vulkan/icd.d/ /etc/vulkan/icd.d/ 2>&1 | head -20
 echo "--- implicit_layer.d ---"; ls -l /usr/share/vulkan/implicit_layer.d/ /etc/vulkan/implicit_layer.d/ 2>&1 | head -20
 """

@@ -139,6 +139,17 @@ object GlibcDriverBundle {
      * Verified via QEMU: dlopen(RTLD_NOW) + dlsym(vk_icdGetInstanceProcAddr) PASS.
      */
     fun ensureRuntimeOverlayInstalled(context: Context): Boolean {
+        // Directive #8: DISABLED. The Trixie overlay was built for a Debian
+        // Bullseye guest, but the real guest is Arch Linux ARM (glibc 2.43).
+        // Installing Debian Trixie libraries (glibc 2.41) would downgrade the
+        // guest. The driver already loads on the stock guest (QEMU VERIFIED).
+        // Use checkAndRepairOverlayDamage() instead to undo preview-2 damage.
+        Log.i(TAG, "Trixie overlay install is disabled (guest is Arch, not Bullseye)")
+        return true
+    }
+
+    @Deprecated("Disabled per Directive #8; use checkAndRepairOverlayDamage()")
+    private fun ensureRuntimeOverlayInstalledImpl(context: Context): Boolean {
         val app = context.applicationContext
         val prefs = app.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         val overlayMarker = File(app.filesDir, "linuxfs/.trixie-overlay-installed")
@@ -282,5 +293,153 @@ object GlibcDriverBundle {
             while (n > 0) { md.update(buf, 0, n); n = inp.read(buf) }
         }
         return md.digest().joinToString("") { "%02x".format(it) }
+    }
+
+    /**
+     * Directive #8.1: check for Trixie overlay damage on a non-Bullseye guest
+     * and repair it on startup.
+     *
+     * Preview-2 ran ensureRuntimeOverlayInstalled() on the Arch Linux ARM guest
+     * (glibc 2.43) with no backup. The Debian Trixie overlay (glibc 2.41)
+     * would downgrade critical libraries.
+     *
+     * Detection: the overlay marker file exists at linuxfs/.trixie-overlay-installed.
+     * (The Stage 0 guest probe also reports pacman -Qkk glibc for confirmation.)
+     *
+     * Repair: for every path in the overlay manifest (assets/runtime-overlay/
+     * trixie-runtime-overlay.tar), restore the original file from the
+     * linuxfs-r9 rootfs image. The image is downloaded only if not cached.
+     * The marker is deleted after a successful repair. Returns the list of
+     * restored relative paths (empty if nothing to repair).
+     */
+    fun checkAndRepairOverlayDamage(context: Context): List<String> {
+        val app = context.applicationContext
+        val restored = ArrayList<String>()
+        try {
+            val rootfs = File(app.filesDir, "linuxfs")
+            val marker = File(rootfs, ".trixie-overlay-installed")
+            if (!marker.exists()) {
+                // Also check the legacy app-side marker location.
+                val legacyMarker = File(app.filesDir, "linuxfs/.trixie-overlay-installed")
+                if (!legacyMarker.exists()) return restored
+            }
+            Log.w(TAG, "Trixie overlay marker found on non-Bullseye guest; repairing...")
+
+            // List the overlay manifest paths from the APK asset.
+            val manifestPaths = ArrayList<String>()
+            app.assets.open("runtime-overlay/trixie-runtime-overlay.tar").use { inp ->
+                // Parse tar headers manually (no external tar dependency).
+                val buf = ByteArray(512)
+                val input = java.io.BufferedInputStream(inp)
+                while (true) {
+                    var read = 0
+                    while (read < 512) {
+                        val n = input.read(buf, read, 512 - read)
+                        if (n < 0) break
+                        read += n
+                    }
+                    if (read < 512) break
+                    if (buf.all { it == 0.toByte() }) break // end of archive
+                    val name = String(buf, 0, 100).trim { it <= ' ' }.trimEnd('\u0000')
+                    if (name.isNotEmpty() && !name.endsWith("/")) manifestPaths.add(name)
+                    // Skip file data: size is octal at offset 124, 12 bytes.
+                    val sizeStr = String(buf, 124, 12).trim { it <= ' ' }.trimEnd('\u0000')
+                    val size = sizeStr.toLongOrNull(8) ?: 0L
+                    var skipped = 0L
+                    val toSkip = ((size + 511) / 512) * 512
+                    while (skipped < toSkip) skipped += input.skip(toSkip - skipped)
+                }
+            }
+            Log.i(TAG, "Overlay manifest has ${manifestPaths.size} file paths to restore")
+
+            // Obtain the original rootfs image (cached or downloaded).
+            val rootfsImage = getOrDownloadRootfsImage(app)
+                ?: run {
+                    Log.e(TAG, "Cannot repair overlay damage: rootfs image unavailable")
+                    return restored
+                }
+
+            // Extract only the manifest paths from the image into a temp dir,
+            // then copy them over the damaged files.
+            val tmpRestore = File(app.cacheDir, "overlay-repair").apply {
+                deleteRecursively(); mkdirs()
+            }
+            try {
+                // Use tar with explicit file list (zstd-compressed tar).
+                val pb = ProcessBuilder(
+                    listOf("sh", "-c",
+                        "zstd -d -c '${rootfsImage.absolutePath}' | tar -x -C '${tmpRestore.absolutePath}' " +
+                            manifestPaths.joinToString(" ") { "'$it'" })
+                ).redirectErrorStream(true)
+                val proc = pb.start()
+                val out = proc.inputStream.bufferedReader().readText()
+                val rc = proc.waitFor()
+                if (rc != 0) {
+                    Log.e(TAG, "Rootfs selective extract failed (rc=$rc): ${out.take(500)}")
+                    return restored
+                }
+                for (relPath in manifestPaths) {
+                    val src = File(tmpRestore, relPath)
+                    if (!src.exists()) {
+                        Log.w(TAG, "Original not in rootfs image, skipping: $relPath")
+                        continue
+                    }
+                    val dst = File(rootfs, relPath)
+                    try {
+                        dst.parentFile?.mkdirs()
+                        // Preserve symlinks.
+                        if (java.nio.file.Files.isSymbolicLink(src.toPath())) {
+                            val target = java.nio.file.Files.readSymbolicLink(src.toPath())
+                            dst.delete()
+                            java.nio.file.Files.createSymbolicLink(dst.toPath(), target)
+                        } else {
+                            src.copyTo(dst, overwrite = true)
+                            // Restore executable bit for loader/libs.
+                            if (relPath.contains("ld-linux") || relPath.endsWith(".so") || relPath.contains(".so.")) {
+                                dst.setExecutable(true, false)
+                            }
+                        }
+                        restored.add(relPath)
+                    } catch (e: Exception) {
+                        Log.w(TAG, "Failed to restore $relPath: ${e.message}")
+                    }
+                }
+            } finally {
+                tmpRestore.deleteRecursively()
+            }
+
+            // Delete the marker so we don't repair again.
+            marker.delete()
+            File(app.filesDir, "linuxfs/.trixie-overlay-installed").delete()
+            Log.i(TAG, "Overlay damage repair complete: ${restored.size} files restored")
+        } catch (t: Throwable) {
+            Log.e(TAG, "Overlay damage repair failed: ${t.message}", t)
+        }
+        return restored
+    }
+
+    /**
+     * Returns the cached linuxfs-r9 rootfs image, downloading it if necessary.
+     * Returns null if the download fails.
+     */
+    private fun getOrDownloadRootfsImage(app: Context): File? {
+        val cached = File(app.filesDir, "linuxfs-r9.tar.zst")
+        if (cached.isFile && cached.length() > 100_000_000) {
+            Log.i(TAG, "Using cached rootfs image (${cached.length()} bytes)")
+            return cached
+        }
+        return try {
+            Log.i(TAG, "Downloading linuxfs-r9 rootfs image for overlay repair...")
+            val url = java.net.URL(
+                "https://github.com/Droid-Deck/DroidDeck-Components/releases/download/linuxfs-r9/linuxfs.tar.zst")
+            url.openStream().use { inp ->
+                cached.outputStream().use { out -> inp.copyTo(out) }
+            }
+            if (cached.length() > 100_000_000) cached else null
+        } catch (t: Throwable) {
+            Log.e(TAG, "Rootfs image download failed: ${t.message}")
+            cached.delete()
+            null
+        }
     }
 }
