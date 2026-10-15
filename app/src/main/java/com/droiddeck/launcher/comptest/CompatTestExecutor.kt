@@ -100,8 +100,9 @@ class CompatTestExecutor(
         // The .md "Stage diagnostics" section is populated via withDiagnostics.
         fun prereqMissing(reason: String, detail: String): CompatTestRunner.TestRunOutcome {
             val logName = "comptest-${spec.id}"
+            // Write to the shared log dir; the exporter scopes by runId separately.
             runCatching {
-                val logDir = File(context.applicationContext.filesDir, "comptest-logs/$runId")
+                val logDir = File(context.applicationContext.filesDir, "comptest-logs")
                 logDir.mkdirs()
                 File(logDir, "$logName.log").writeText("PREREQ_MISSING: $detail\n")
             }
@@ -330,7 +331,7 @@ class CompatTestExecutor(
         out += "===== Linux driver directories ====="
         try {
             val mgr = com.droiddeck.launcher.gpu.LinuxVulkanDriverManager(context)
-            val selectedId = com.droiddeck.launcher.gpu.SessionPrefs.linuxDriver(context).orEmpty()
+            val selectedId = SessionPrefs.linuxDriver(context).orEmpty()
             val baseDir = java.io.File(context.applicationContext.filesDir, "linux_vulkan_drivers")
             if (baseDir.exists()) {
                 baseDir.listFiles { f -> f.isDirectory }?.sortedBy { it.name }?.forEach { dir ->
