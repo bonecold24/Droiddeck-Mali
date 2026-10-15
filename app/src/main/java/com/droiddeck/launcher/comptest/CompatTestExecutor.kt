@@ -95,6 +95,30 @@ class CompatTestExecutor(
                 "PREREQ_MISSING: ${validation.detail}",
             )
         }
+        // Directive #7 Task 6: every PREREQ_MISSING stage gets a log with the reason.
+        // Write the reason to the stage log file before returning.
+        // The .md "Stage diagnostics" section is populated via withDiagnostics.
+        fun prereqMissing(reason: String, detail: String): CompatTestRunner.TestRunOutcome {
+            val logName = "comptest-${spec.id}"
+            runCatching {
+                val logDir = File(context.applicationContext.filesDir, "comptest-logs/$runId")
+                logDir.mkdirs()
+                File(logDir, "$logName.log").writeText("PREREQ_MISSING: $detail\n")
+            }
+            return CompatTestRunner.TestRunOutcome(
+                TestOutcome.PrereqMissing(reason),
+                emptyList(),
+                "PREREQ_MISSING: $detail",
+            ).withDiagnostics(
+                commandLine = "(prereq check, no guest command run)",
+                envVars = emptyMap(),
+                exitCode = -1,
+                outputTail = listOf("PREREQ_MISSING: $detail"),
+                outputLinesTotal = 1,
+                logFile = "$logName.log",
+            )
+        }
+
         if (spec.id == "stage0-env") return runStage0Probe(spec, ctl, validation)
 
         // Directive #7 Task 4/5: vkcube needs a display. Probe for one first;
@@ -103,18 +127,17 @@ class CompatTestExecutor(
         if (spec.id == "vkcube") {
             val displayProbe = probeDisplay()
             if (!displayProbe.available) {
-                return CompatTestRunner.TestRunOutcome(
-                    TestOutcome.PrereqMissing("Display not available: ${displayProbe.reason}"),
-                    emptyList(),
-                    "PREREQ_MISSING: ${displayProbe.detail}",
+                return prereqMissing(
+                    "Display not available: ${displayProbe.reason}",
+                    displayProbe.detail,
                 )
             }
         }
 
         val argv = guestArgv(spec.id)
-            ?: return CompatTestRunner.TestRunOutcome(
-                TestOutcome.PrereqMissing("Unknown system check '${spec.id}'"),
-                emptyList(), "PREREQ_MISSING: unknown check id '${spec.id}'",
+            ?: return prereqMissing(
+                "Unknown system check '${spec.id}'",
+                "unknown check id '${spec.id}'",
             )
         // BUG-5: the D3D payload install is no longer silent. If it failed, the
         // D3D stages cannot run — PREREQ_MISSING with the recorded reason.
