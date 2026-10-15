@@ -391,6 +391,44 @@ jobs:
           ls -la app/src/main/assets/linux-drivers/panvk-kbase-glibc/ | head -8
           rm -rf /tmp/glibc-driver-pkg
 
+      - name: Verify payload manifest (fail if assets missing)
+        run: |
+          set -euo pipefail
+          echo "=== Payload Manifest ==="
+          check_asset() {
+            local path="$1"
+            if [ ! -f "$path" ]; then
+              echo "::error::Missing required asset: $path"
+              exit 1
+            fi
+            local size=$(stat -c%s "$path")
+            local sha=$(sha256sum "$path" | awk '{print $1}')
+            echo "$path | ${size} bytes | SHA256: $sha"
+          }
+          # Bionic driver + ICD (Android)
+          check_asset "app/src/main/assets/driver-bundles/panvk-kbase-upstream-android/libvulkan_panfrost.so"
+          # Glibc driver + ICD (Linux guest) — bug (a) fix: must be present
+          check_asset "app/src/main/assets/linux-drivers/panvk-kbase-glibc/libvulkan_panfrost.so"
+          check_asset "app/src/main/assets/linux-drivers/panvk-kbase-glibc/panfrost_icd.aarch64.json"
+          # Overlay — bug (b) fix: CI produces .tar, code expects .tar
+          check_asset "app/src/main/assets/runtime-overlay/trixie-runtime-overlay.tar"
+          check_asset "app/src/main/assets/runtime-overlay/trixie-runtime-overlay.sha256"
+          # Compute test (if present)
+          if [ -f "app/src/main/assets/comptest/vk-compute-test" ]; then
+            check_asset "app/src/main/assets/comptest/vk-compute-test"
+          else
+            echo "SKIP: app/src/main/assets/comptest/vk-compute-test (not present)"
+          fi
+          # D3D cubes (if present)
+          for cube in d3d9-cube.exe d3d11-cube.exe; do
+            if [ -f "app/src/main/assets/comptest/$cube" ]; then
+              check_asset "app/src/main/assets/comptest/$cube"
+            else
+              echo "SKIP: app/src/main/assets/comptest/$cube (not present)"
+            fi
+          done
+          echo "=== All required assets present ==="
+
       - name: Build D3D Tier-0 cubes (mingw-w64)
         run: |
           set -euo pipefail

@@ -152,8 +152,10 @@ object GlibcDriverBundle {
                 Log.w(TAG, "Linux guest not installed; skipping overlay")
                 return false
             }
-            app.assets.open("runtime-overlay/trixie-runtime-overlay.tar.gz").use { inp ->
-                val tmpTar = File(app.cacheDir, "trixie-overlay.tar.gz")
+            // The APK contains trixie-runtime-overlay.tar (decompressed by the build).
+            // CI verifies the .tar.gz SHA before bundling; the asset is the .tar.
+            app.assets.open("runtime-overlay/trixie-runtime-overlay.tar").use { inp ->
+                val tmpTar = File(app.cacheDir, "trixie-overlay.tar")
                 tmpTar.outputStream().use { inp.copyTo(it) }
                 val expectedSha = app.assets.open("runtime-overlay/trixie-runtime-overlay.sha256")
                     .bufferedReader().readText().trim()
@@ -168,7 +170,7 @@ object GlibcDriverBundle {
                 val tmpExtract = File(app.cacheDir, "trixie-overlay-extract").apply {
                     deleteRecursively(); mkdirs()
                 }
-                val proc = ProcessBuilder("tar", "-xzf", tmpTar.absolutePath, "-C", tmpExtract.absolutePath)
+                val proc = ProcessBuilder("tar", "-xf", tmpTar.absolutePath, "-C", tmpExtract.absolutePath)
                     .redirectErrorStream(true).start()
                 val out = proc.inputStream.bufferedReader().readText()
                 val rc = proc.waitFor()
