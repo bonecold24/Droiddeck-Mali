@@ -759,7 +759,7 @@ jobs:
 
   sign:
     needs: build
-    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main' && github.event.inputs.skip_tests != 'true'
     permissions:
       contents: read
       actions: read
