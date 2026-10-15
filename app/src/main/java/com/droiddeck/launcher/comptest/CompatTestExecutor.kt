@@ -172,12 +172,28 @@ class CompatTestExecutor(
         runCatching {
             val driverId = SessionPrefs.linuxDriver(context).orEmpty()
             if (driverId.isNotEmpty()) {
-                val icd = LinuxVulkanDriverManager(context).getIcdPath(driverId)
-                if (icd != null) env["VK_DRIVER_FILES"] = icd
-                // Pass the driver .so path so the Stage 0 probe can ls -l it.
                 val mgr = LinuxVulkanDriverManager(context)
+                val icd = mgr.getIcdPath(driverId)
                 val so = File(mgr.getDriverDir(driverId), mgr.getLibraryName(driverId))
-                if (so.isFile) env["COMPTEST_DRIVER_SO"] = so.absolutePath
+                // Directive #7 Task 2: the /data/user/0/... paths are NOT visible
+                // inside the proot guest. Copy the ICD and .so into the guest
+                // filesystem at /opt/comptest/ and use the guest-side paths.
+                val guestDir = File(context.applicationContext.filesDir, "linuxfs/opt/comptest")
+                guestDir.mkdirs()
+                if (icd != null) {
+                    val srcIcd = File(icd)
+                    if (srcIcd.isFile) {
+                        val dstIcd = File(guestDir, srcIcd.name)
+                        srcIcd.copyTo(dstIcd, overwrite = true)
+                        env["VK_DRIVER_FILES"] = "/opt/comptest/${dstIcd.name}"
+                    }
+                }
+                if (so.isFile) {
+                    val dstSo = File(guestDir, so.name)
+                    so.copyTo(dstSo, overwrite = true)
+                    dstSo.setExecutable(true, false)
+                    env["COMPTEST_DRIVER_SO"] = "/opt/comptest/${dstSo.name}"
+                }
             }
         }
         return env
@@ -336,9 +352,13 @@ else
 fi
 echo "--- kbase version nodes ---"
 for p in /sys/module/mali_kbase/version /sys/devices/platform/mali_kbase/uapi_version; do echo "${'$'}p: ${'$'}(cat "${'$'}p" 2>&1)"; done
-echo "--- ICD selection ---"; echo "VK_DRIVER_FILES=${'$'}VK_DRIVER_FILES"
-if [ -n "${'$'}VK_DRIVER_FILES" ]; then echo "--- ICD json ---"; cat "${'$'}VK_DRIVER_FILES" 2>&1 | head -30; fi
-echo "--- glibc driver .so ---"; ls -l "${'$'}COMPTEST_DRIVER_SO" 2>&1
+echo "--- ICD selection (guest-visible) ---"; echo "VK_DRIVER_FILES=${'$'}VK_DRIVER_FILES"
+echo "--- ICD json ls -l (guest) ---"; ls -l "${'$'}VK_DRIVER_FILES" 2>&1
+if [ -n "${'$'}VK_DRIVER_FILES" ]; then echo "--- ICD json content ---"; cat "${'$'}VK_DRIVER_FILES" 2>&1 | head -30; fi
+echo "--- glibc driver .so (guest) ---"; echo "COMPTEST_DRIVER_SO=${'$'}COMPTEST_DRIVER_SO"
+echo "--- driver .so ls -l (guest) ---"; ls -l "${'$'}COMPTEST_DRIVER_SO" 2>&1
+echo "--- vulkaninfo --summary (VK_LOADER_DEBUG=driver) ---"
+VK_LOADER_DEBUG=driver vulkaninfo --summary 2>&1 | head -50
 echo "--- storage ---"; df -h / /data 2>&1 | head -10
 echo "--- memory ---"; (free -m 2>/dev/null || cat /proc/meminfo 2>/dev/null | head -5) 2>&1
 echo "--- vulkan loader files ---"; ls /usr/share/vulkan/icd.d/ 2>&1 | head; ls /etc/vulkan/icd.d/ 2>&1 | head
