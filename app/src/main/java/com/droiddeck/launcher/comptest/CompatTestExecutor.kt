@@ -146,11 +146,24 @@ class CompatTestExecutor(
             ensureComptestPayload()
         } else null
         if (payload != null && !payload.ok) {
-            return CompatTestRunner.TestRunOutcome(
-                TestOutcome.PrereqMissing("D3D payload install failed: ${payload.reason}"),
-                emptyList(),
-                "PREREQ_MISSING: payload install to ${payload.guestPath} failed: ${payload.reason}",
-            ).withPayload(payload)
+            return prereqMissing(
+                "D3D payload install failed: ${payload.reason}",
+                "payload install to ${payload.guestPath} failed: ${payload.reason}",
+            )
+        }
+        // Directive #9.E: D3D cubes are Windows .exe files needing Wine/Proton.
+        // The Arch guest (linuxfs-r9) has no Wine/Proton installed. Report
+        // PREREQ_MISSING with the missing pieces, not a GPU failure.
+        if (spec.id == "d3d9-cube" || spec.id == "d3d11-cube") {
+            val wineCheck = checkWineAvailable()
+            if (!wineCheck.available) {
+                return prereqMissing(
+                    "Wine/Proton not available: ${wineCheck.reason}",
+                    "D3D cubes need Wine/Proton to run Windows .exe files. " +
+                    "Missing: ${wineCheck.missing.joinToString(", ")}. " +
+                    "The Arch guest (linuxfs-r9) ships no Wine/Proton/DXVK.",
+                )
+            }
         }
 
         val logName = "comptest-${spec.id}"
@@ -246,6 +259,40 @@ class CompatTestExecutor(
             }
         } catch (t: Throwable) {
             DisplayProbe(false, "probe failed", "${t.javaClass.simpleName}: ${t.message}")
+        }
+    }
+
+    /**
+     * Directive #9.E: check for Wine/Proton in the guest.
+     * The D3D cubes are Windows PE .exe files; they need a Wine/Proton
+     * build to run. The Arch guest (linuxfs-r9) ships none.
+     */
+    private data class WineCheck(val available: Boolean, val reason: String, val missing: List<String>)
+
+    private fun checkWineAvailable(): WineCheck {
+        return try {
+            val out = ArrayList<String>()
+            GuestCommand.run(
+                context,
+                listOf("/bin/sh", "-c", """
+                    for b in wine wine64 proton; do
+                        if command -v ${'$'}b >/dev/null 2>&1; then echo "FOUND:${'$'}b"; fi
+                    done
+                    ls /opt/wine* /usr/local/bin/wine* 2>/dev/null | head -5
+                    echo "DONE"
+                """.trimIndent()),
+                logName = "comptest-wine-check",
+                extraEnv = buildGuestEnv(),
+            ) { line -> synchronized(out) { out.add(line) } }
+            val found = out.filter { it.startsWith("FOUND:") }.map { it.removePrefix("FOUND:") }
+            if (found.isNotEmpty()) {
+                WineCheck(true, "found: ${found.joinToString(", ")}", emptyList())
+            } else {
+                WineCheck(false, "no wine/wine64/proton in PATH",
+                    listOf("wine or wine64 binary", "proton", "DXVK (for D3D11)"))
+            }
+        } catch (t: Throwable) {
+            WineCheck(false, "check failed: ${t.message}", listOf("wine/proton (check failed)"))
         }
     }
 
