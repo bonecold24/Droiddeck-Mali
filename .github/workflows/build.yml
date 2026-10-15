@@ -16,6 +16,15 @@ on:
       - 'LICENSE'
       - '.gitignore'
   workflow_dispatch:
+    inputs:
+      skip_tests:
+        description: 'Skip unit tests (for preview builds)'
+        required: false
+        default: 'false'
+        type: choice
+        options:
+          - 'true'
+          - 'false'
 
 permissions:
   contents: read
@@ -596,6 +605,7 @@ jobs:
         run: python3 -m unittest discover -s tools/tests -p 'test_*.py'
 
       - name: Unit tests
+        if: ${{ github.event.inputs.skip_tests != 'true' }}
         run: ./gradlew testReleaseUnitTest --console=plain -PndkVersion="$NDK_VERSION"
 
       - name: Sign with the testkey (v1 + v2 + v3)
@@ -610,6 +620,15 @@ jobs:
             --v1-signing-enabled true --v2-signing-enabled true --v3-signing-enabled true \
             --out "$APK" "$APK.aligned"
           rm -f "$APK.aligned" "$APK.idsig"
+
+      - name: Rename APK for preview (if skip_tests)
+        if: ${{ github.event.inputs.skip_tests == 'true' }}
+        run: |
+          set -euo pipefail
+          APK=$(find app/build/outputs/apk -name '*.apk' | head -1)
+          DIR=$(dirname "$APK")
+          mv "$APK" "$DIR/droiddeck-mali-v3-preview-UNTESTED.apk"
+          echo "Renamed to droiddeck-mali-v3-preview-UNTESTED.apk"
 
       - name: Check the signature
         run: |
