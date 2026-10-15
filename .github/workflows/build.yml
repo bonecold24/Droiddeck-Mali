@@ -354,21 +354,16 @@ jobs:
           rm -rf /tmp/driver-pkg
 
 
-      - name: Bundle the Trixie runtime overlay (Linux guest)
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Bundle the Trixie overlay manifest (Linux guest)
         run: |
           set -euo pipefail
-          # Trixie overlay: libc6 2.41, libwayland-client 1.24.0, SPIRV-Tools.
-          # Verified via QEMU dlopen+dlsym on ci-debian-bullseye-r1.
-          OVERLAY_URL="https://github.com/bonecold24/Droiddeck-Mali/releases/download/trixie-overlay-v1/trixie-runtime-overlay.tar.gz"
-          OVERLAY_SHA256="e62b7c63a704ad63c8a914bf364f74f9efdcdff2cfbce24eef3caac1a24af73d"
-          mkdir -p app/src/main/assets/runtime-overlay
-          curl -sSfL "$OVERLAY_URL" -o /tmp/trixie-overlay.tar.gz
-          echo "$OVERLAY_SHA256  /tmp/trixie-overlay.tar.gz" | sha256sum -c -
-          cp /tmp/trixie-overlay.tar.gz app/src/main/assets/runtime-overlay/trixie-runtime-overlay.tar.gz
-          echo "$OVERLAY_SHA256" > app/src/main/assets/runtime-overlay/trixie-runtime-overlay.sha256
-          rm -f /tmp/trixie-overlay.tar.gz
+          # Directive #8: the 43MB Trixie overlay tar is NOT bundled. The guest
+          # is Arch Linux ARM (not Bullseye), so the overlay is obsolete.
+          # Only the manifest (347 paths) is bundled, for the preview-2 damage
+          # repair path (checkAndRepairOverlayDamage).
+          # The manifest is committed at app/src/main/assets/runtime-overlay/trixie-overlay-manifest.txt
+          test -f app/src/main/assets/runtime-overlay/trixie-overlay-manifest.txt
+          wc -l app/src/main/assets/runtime-overlay/trixie-overlay-manifest.txt
 
 
       - name: Bundle the glibc PanVK driver (Linux guest)
@@ -427,9 +422,8 @@ jobs:
           # Glibc driver + ICD (Linux guest) — bug (a) fix: must be present
           check_asset "app/src/main/assets/linux-drivers/panvk-kbase-glibc/libvulkan_panfrost.so"
           check_asset "app/src/main/assets/linux-drivers/panvk-kbase-glibc/panfrost_icd.aarch64.json"
-          # Overlay — CI bundles .tar.gz; APK build decompresses to .tar
-          check_asset "app/src/main/assets/runtime-overlay/trixie-runtime-overlay.tar.gz"
-          check_asset "app/src/main/assets/runtime-overlay/trixie-runtime-overlay.sha256"
+          # Overlay manifest (for preview-2 damage repair); the 43MB tar is NOT bundled (Directive #8)
+          check_asset "app/src/main/assets/runtime-overlay/trixie-overlay-manifest.txt"
           # Compute test (if present)
           if [ -f "app/src/main/assets/comptest/vk-compute-test" ]; then
             check_asset "app/src/main/assets/comptest/vk-compute-test"

@@ -326,28 +326,12 @@ object GlibcDriverBundle {
             Log.w(TAG, "Trixie overlay marker found on non-Bullseye guest; repairing...")
 
             // List the overlay manifest paths from the APK asset.
+            // Directive #8: only the manifest (347 paths) is bundled, not the 43MB tar.
             val manifestPaths = ArrayList<String>()
-            app.assets.open("runtime-overlay/trixie-runtime-overlay.tar").use { inp ->
-                // Parse tar headers manually (no external tar dependency).
-                val buf = ByteArray(512)
-                val input = java.io.BufferedInputStream(inp)
-                while (true) {
-                    var read = 0
-                    while (read < 512) {
-                        val n = input.read(buf, read, 512 - read)
-                        if (n < 0) break
-                        read += n
-                    }
-                    if (read < 512) break
-                    if (buf.all { it == 0.toByte() }) break // end of archive
-                    val name = String(buf, 0, 100).trim { it <= ' ' }.trimEnd('\u0000')
-                    if (name.isNotEmpty() && !name.endsWith("/")) manifestPaths.add(name)
-                    // Skip file data: size is octal at offset 124, 12 bytes.
-                    val sizeStr = String(buf, 124, 12).trim { it <= ' ' }.trimEnd('\u0000')
-                    val size = sizeStr.toLongOrNull(8) ?: 0L
-                    var skipped = 0L
-                    val toSkip = ((size + 511) / 512) * 512
-                    while (skipped < toSkip) skipped += input.skip(toSkip - skipped)
+            app.assets.open("runtime-overlay/trixie-overlay-manifest.txt").bufferedReader().useLines { lines ->
+                lines.forEach { line ->
+                    val path = line.trim()
+                    if (path.isNotEmpty() && !path.endsWith("/")) manifestPaths.add(path)
                 }
             }
             Log.i(TAG, "Overlay manifest has ${manifestPaths.size} file paths to restore")
