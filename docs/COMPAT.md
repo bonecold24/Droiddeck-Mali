@@ -96,10 +96,15 @@ claim.
 
 ### What Wine/Proton is in the v3 guest (VERIFIED-CI via repo inspection)
 
-**None.** The guest rootfs is a plain `debian:bullseye` Docker image
+**None.** The CI build environment uses a plain `debian:bullseye` Docker image
 (`public.ecr.aws/docker/library/debian:bullseye`, pinned by SHA-256 in
 `tools/linuxfs/debian-image.env`, published as release
-`ci-debian-bullseye-r1`). It contains no Wine, no Proton, and no DXVK.
+`ci-debian-bullseye-r1`). This is the **x86_64 CI build container only** —
+it is NOT the phone guest.
+
+The actual phone guest rootfs is **Arch Linux ARM** (linuxfs-r9 from
+DroidDeck-Components, 790MB, glibc 2.43, Mesa 26.2.2). It contains no Wine,
+no Proton, and no DXVK bundled — those are downloaded separately.
 The `tools/linuxfs/overlay/` adds DroidDeck tooling only:
 
 - `droiddeck-proton-run` — runs a Windows program **with the Proton the

@@ -1,8 +1,18 @@
-# Trixie Runtime Overlay — Engineering Documentation
+# Trixie Runtime Overlay — OBSOLETE FOR THE ARCH GUEST
 
-## Purpose
+> **Directive #8 (2026-10-15): This overlay is obsolete.** The real guest
+> rootfs (linuxfs-r9) is **Arch Linux ARM** (glibc 2.43), not Debian Bullseye.
+> The PanVK driver requires GLIBC_2.38+; the guest's 2.43 already satisfies
+> this (QEMU dlopen VERIFIED-EMULATOR with no overlay). Installing Debian
+> Trixie libraries (glibc 2.41) would **downgrade** the guest.
+>
+> The install path is disabled in `GlibcDriverBundle.ensureRuntimeOverlayInstalled()`.
+> `checkAndRepairOverlayDamage()` repairs preview-2 damage instead.
+> This document is kept for historical reference only.
 
-The Trixie Runtime Overlay upgrades the Debian Bullseye (glibc 2.31) Linux guest on the phone to glibc 2.41, enabling the upstream PanVK glibc driver (which requires GLIBC_2.38+) to `dlopen()` successfully.
+## Purpose (historical)
+
+The Trixie Runtime Overlay was designed to upgrade a Debian Bullseye (glibc 2.31) Linux guest to glibc 2.41. This premise was wrong for the actual Arch guest.
 
 **Target device:** Xiaomi 14T Pro (rothko / 2407FPN8EG), Dimensity 9300+, Immortalis-G720 MC12.
 
