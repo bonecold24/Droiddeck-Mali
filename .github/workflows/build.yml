@@ -410,8 +410,8 @@ jobs:
           # Glibc driver + ICD (Linux guest) — bug (a) fix: must be present
           check_asset "app/src/main/assets/linux-drivers/panvk-kbase-glibc/libvulkan_panfrost.so"
           check_asset "app/src/main/assets/linux-drivers/panvk-kbase-glibc/panfrost_icd.aarch64.json"
-          # Overlay — bug (b) fix: CI produces .tar, code expects .tar
-          check_asset "app/src/main/assets/runtime-overlay/trixie-runtime-overlay.tar"
+          # Overlay — CI bundles .tar.gz; APK build decompresses to .tar
+          check_asset "app/src/main/assets/runtime-overlay/trixie-runtime-overlay.tar.gz"
           check_asset "app/src/main/assets/runtime-overlay/trixie-runtime-overlay.sha256"
           # Compute test (if present)
           if [ -f "app/src/main/assets/comptest/vk-compute-test" ]; then
