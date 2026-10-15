@@ -190,6 +190,19 @@ internal class CompatTestViewModel(private val activity: CompatTestActivity) {
         }
     }
 
+    fun repairRuntime() {
+        Thread {
+            val ok = com.droiddeck.launcher.gpu.GlibcDriverBundle.repairGuestRuntime(activity)
+            activity.runOnUiThread {
+                android.widget.Toast.makeText(
+                    activity,
+                    if (ok) "Guest runtime repaired from backup" else "Repair failed: no backup found",
+                    android.widget.Toast.LENGTH_LONG
+                ).show()
+            }
+        }.start()
+    }
+
     private fun summarize(results: List<TestResult>): String {
         val counts = results.groupingBy { it.outcome }.eachCount()
         return counts.entries.sortedBy { it.key.sortOrder }
@@ -259,7 +272,17 @@ private fun ColumnScope.DoneBody(vm: CompatTestViewModel) {
         Button(onClick = { vm.share() }, modifier = Modifier.weight(1f)) { Text("Share report") }
         OutlinedButton(onClick = { vm.start() }, modifier = Modifier.weight(1f)) { Text("Run again") }
     }
+    Spacer(Modifier.height(8.dp))
+    OutlinedButton(
+        onClick = { vm.repairRuntime() },
+        modifier = Modifier.fillMaxWidth(),
+        colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFFFFB74D))
+    ) {
+        Text("Repair guest runtime")
+    }
     Text("Report saved as JSON + Markdown. Share sends one ZIP with the report and all per-stage logs.",
+        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    Text("Repair restores the original Bullseye loader/libs from backup (use if the Trixie overlay breaks the guest).",
         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
 }
 

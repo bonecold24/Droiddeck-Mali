@@ -194,6 +194,45 @@ object GlibcDriverBundle {
                     // Install to /lib to ensure our versions win.
                     listOf(File(rootfs, "lib/aarch64-linux-gnu"), File(rootfs, "usr/lib/aarch64-linux-gnu"))
                 }
+                // BACKUP: Save original loader and libraries before replacement.
+                // This enables the "Repair guest runtime" button to restore the original state.
+                val backupDir = File(app.filesDir, "linuxfs-backup").apply { mkdirs() }
+                val backupMarker = File(backupDir, ".backup-complete")
+                if (!backupMarker.exists()) {
+                    Log.i(TAG, "Creating backup of original runtime...")
+                    // Backup the loader symlink target
+                    val origLd = File(rootfs, "lib/ld-linux-aarch64.so.1")
+                    if (origLd.exists()) {
+                        val backupLd = File(backupDir, "ld-linux-aarch64.so.1")
+                        try {
+                            if (java.nio.file.Files.isSymbolicLink(origLd.toPath())) {
+                                val target = java.nio.file.Files.readSymbolicLink(origLd.toPath())
+                                java.nio.file.Files.createSymbolicLink(backupLd.toPath(), target)
+                            } else {
+                                origLd.copyTo(backupLd, overwrite = true)
+                            }
+                            Log.i(TAG, "Backed up loader")
+                        } catch (e: Exception) {
+                            Log.w(TAG, "Failed to backup loader: ${e.message}")
+                        }
+                    }
+                    // Backup existing libraries that will be overwritten
+                    val libBackupDir = File(backupDir, "libs").apply { mkdirs() }
+                    for (dstDir in dstDirs) {
+                        if (dstDir.exists()) {
+                            dstDir.listFiles { f -> f.name.endsWith(".so") || f.name.contains(".so.") }?.forEach { orig ->
+                                try {
+                                    orig.copyTo(File(libBackupDir, orig.name), overwrite = true)
+                                } catch (e: Exception) {
+                                    Log.w(TAG, "Failed to backup ${orig.name}: ${e.message}")
+                                }
+                            }
+                        }
+                    }
+                    backupMarker.createNewFile()
+                    Log.i(TAG, "Backup complete")
+                }
+
                 for (dstDir in dstDirs) {
                     dstDir.mkdirs()
                     srcLib.listFiles { f -> f.name.endsWith(".so") || f.name.contains(".so.") }?.forEach { src ->
@@ -263,5 +302,82 @@ object GlibcDriverBundle {
             while (n > 0) { md.update(buf, 0, n); n = inp.read(buf) }
         }
         return md.digest().joinToString("") { "%02x".format(it) }
+    }
+
+    /**
+     * Repairs the guest runtime by restoring the original loader and libraries
+     * from the backup created during overlay installation.
+     * Returns true if repair succeeded, false otherwise.
+     */
+    fun repairGuestRuntime(context: Context): Boolean {
+        val app = context.applicationContext
+        return try {
+            val rootfs = File(app.filesDir, "linuxfs")
+            val backupDir = File(app.filesDir, "linuxfs-backup")
+            val backupMarker = File(backupDir, ".backup-complete")
+
+            if (!backupMarker.exists()) {
+                Log.w(TAG, "No backup found; cannot repair")
+                return false
+            }
+            if (!rootfs.exists()) {
+                Log.w(TAG, "Linux guest not installed; nothing to repair")
+                return false
+            }
+
+            Log.i(TAG, "Repairing guest runtime from backup...")
+
+            // Restore the loader
+            val backupLd = File(backupDir, "ld-linux-aarch64.so.1")
+            if (backupLd.exists()) {
+                val dstLd = File(rootfs, "lib/ld-linux-aarch64.so.1")
+                try {
+                    if (java.nio.file.Files.isSymbolicLink(backupLd.toPath())) {
+                        val target = java.nio.file.Files.readSymbolicLink(backupLd.toPath())
+                        dstLd.delete()
+                        java.nio.file.Files.createSymbolicLink(dstLd.toPath(), target)
+                    } else {
+                        backupLd.copyTo(dstLd, overwrite = true)
+                    }
+                    Log.i(TAG, "Restored loader")
+                } catch (e: Exception) {
+                    Log.e(TAG, "Failed to restore loader: ${e.message}")
+                    return false
+                }
+            }
+
+            // Restore libraries
+            val libBackupDir = File(backupDir, "libs")
+            if (libBackupDir.exists()) {
+                val dstDirs = listOf(
+                    File(rootfs, "lib/aarch64-linux-gnu"),
+                    File(rootfs, "usr/lib/aarch64-linux-gnu")
+                )
+                libBackupDir.listFiles()?.forEach { backupLib ->
+                    for (dstDir in dstDirs) {
+                        val dst = File(dstDir, backupLib.name)
+                        if (dst.exists()) {
+                            try {
+                                backupLib.copyTo(dst, overwrite = true)
+                                dst.setExecutable(true, false)
+                            } catch (e: Exception) {
+                                Log.w(TAG, "Failed to restore ${backupLib.name}: ${e.message}")
+                            }
+                        }
+                    }
+                }
+                Log.i(TAG, "Restored libraries")
+            }
+
+            // Remove the overlay marker so it will be reinstalled on next run
+            val overlayMarker = File(app.filesDir, "linuxfs/.trixie-overlay-installed")
+            overlayMarker.delete()
+
+            Log.i(TAG, "Guest runtime repair complete")
+            true
+        } catch (e: Exception) {
+            Log.e(TAG, "Repair failed: ${e.message}", e)
+            false
+        }
     }
 }
