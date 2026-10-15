@@ -362,6 +362,17 @@ VK_LOADER_DEBUG=driver vulkaninfo --summary 2>&1 | head -50
 echo "--- storage ---"; df -h / /data 2>&1 | head -10
 echo "--- memory ---"; (free -m 2>/dev/null || cat /proc/meminfo 2>/dev/null | head -5) 2>&1
 echo "--- vulkan loader files ---"; ls /usr/share/vulkan/icd.d/ 2>&1 | head; ls /etc/vulkan/icd.d/ 2>&1 | head
+echo "--- guest distro proof ---"
+echo "--- /etc/os-release ---"; cat /etc/os-release 2>&1
+echo "--- ldd version ---"; ldd --version 2>&1 | head -1
+echo "--- loader ---"; ls -l /lib/ld-linux-aarch64.so.1 2>&1
+echo "--- libc ---"; ls -l /lib/aarch64-linux-gnu/libc.so.6 /usr/lib/aarch64-linux-gnu/libc.so.6 2>&1
+echo "--- package manager ---"
+if [ -d /var/lib/dpkg ]; then echo "dpkg: present"; else echo "dpkg: absent"; fi
+if [ -d /var/lib/pacman ]; then echo "pacman: present"; else echo "pacman: absent"; fi
+echo "--- overlay marker ---"; ls -l /opt/droiddeck/.trixie-overlay-installed /root/.trixie-overlay-installed 2>&1 | head -5
+echo "--- icd.d ---"; ls -l /usr/share/vulkan/icd.d/ /etc/vulkan/icd.d/ 2>&1 | head -20
+echo "--- implicit_layer.d ---"; ls -l /usr/share/vulkan/implicit_layer.d/ /etc/vulkan/implicit_layer.d/ 2>&1 | head -20
 """
 
         /** Builds the report environment block from app + driver state. No Steam login needed. */

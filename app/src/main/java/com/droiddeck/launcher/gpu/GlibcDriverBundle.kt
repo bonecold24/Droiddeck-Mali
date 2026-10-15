@@ -152,6 +152,25 @@ object GlibcDriverBundle {
                 Log.w(TAG, "Linux guest not installed; skipping overlay")
                 return false
             }
+            // Directive #7 Task 3: the overlay is Debian Trixie libraries for a
+            // Bullseye guest. The actual guest is Arch Linux ARM (glibc 2.43),
+            // which already satisfies the driver's GLIBC_2.38+ requirement.
+            // Installing the overlay would DOWNGRADE glibc 2.43 -> 2.41.
+            // Skip the overlay unless the guest is Debian Bullseye.
+            val osRelease = File(rootfs, "etc/os-release")
+            val isBullseye = runCatching {
+                osRelease.readText().contains("bullseye", ignoreCase = true)
+            }.getOrDefault(false)
+            if (!isBullseye) {
+                val id = runCatching {
+                    osRelease.readText().lineSequence()
+                        .firstOrNull { it.startsWith("ID=") }?.substringAfter("=")
+                        ?.trim('"')
+                }.getOrNull() ?: "unknown"
+                Log.i(TAG, "Guest is '$id', not Debian Bullseye; skipping Trixie overlay " +
+                    "(guest glibc already satisfies driver requirements)")
+                return true
+            }
             // The APK contains trixie-runtime-overlay.tar (decompressed by the build).
             // CI verifies the .tar.gz SHA before bundling; the asset is the .tar.
             app.assets.open("runtime-overlay/trixie-runtime-overlay.tar").use { inp ->
