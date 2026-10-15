@@ -20,8 +20,16 @@ object CompatTestSuite {
             timeoutSec = 60,
         ),
         TestSpec(
+            id = "vk-compute-test", label = "vk-compute-test (headless GPU)", kind = TestKind.SYSTEM_CHECK,
+            description = "Headless Vulkan compute smoke test: instance, device enum, " +
+                "vector-add shader, readback verify. No display needed; runs before vkcube " +
+                "to separate GPU bring-up from display bring-up.",
+            timeoutSec = 60,
+        ),
+        TestSpec(
             id = "vkcube", label = "vkcube (Vulkan cube)", kind = TestKind.SYSTEM_CHECK,
-            description = "Renders the Vulkan cube through the active ICD for ~10s.",
+            description = "Renders the Vulkan cube through the active ICD for ~10s. " +
+                "Requires a working display; reports PREREQ_MISSING if none.",
             timeoutSec = 60,
         ),
         TestSpec(

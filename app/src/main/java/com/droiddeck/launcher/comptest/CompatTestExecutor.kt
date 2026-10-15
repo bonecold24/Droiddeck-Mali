@@ -97,6 +97,20 @@ class CompatTestExecutor(
         }
         if (spec.id == "stage0-env") return runStage0Probe(spec, ctl, validation)
 
+        // Directive #7 Task 4/5: vkcube needs a display. Probe for one first;
+        // report PREREQ_MISSING (not a GPU failure) if none is available.
+        // The v2 error was "DISPLAY requires a valid value".
+        if (spec.id == "vkcube") {
+            val displayProbe = probeDisplay()
+            if (!displayProbe.available) {
+                return CompatTestRunner.TestRunOutcome(
+                    TestOutcome.PrereqMissing("Display not available: ${displayProbe.reason}"),
+                    emptyList(),
+                    "PREREQ_MISSING: ${displayProbe.detail}",
+                )
+            }
+        }
+
         val argv = guestArgv(spec.id)
             ?: return CompatTestRunner.TestRunOutcome(
                 TestOutcome.PrereqMissing("Unknown system check '${spec.id}'"),
@@ -164,6 +178,51 @@ class CompatTestExecutor(
                 logFile = "$logName.log",
             )
             .withPayload(payload)
+    }
+
+    /**
+     * Directive #7 Task 5: probe for a working display in the guest.
+     * vkcube needs DISPLAY or WAYLAND_DISPLAY with a reachable socket.
+     * Returns (available, reason, detail).
+     */
+    private data class DisplayProbe(val available: Boolean, val reason: String, val detail: String)
+
+    private fun probeDisplay(): DisplayProbe {
+        return try {
+            val out = ArrayList<String>()
+            val rc = GuestCommand.run(
+                context,
+                listOf("/bin/sh", "-c", """
+                    echo "DISPLAY=${'$'}DISPLAY"
+                    echo "WAYLAND_DISPLAY=${'$'}WAYLAND_DISPLAY"
+                    echo "XDG_RUNTIME_DIR=${'$'}XDG_RUNTIME_DIR"
+                    # Check X11 socket
+                    if [ -n "${'$'}DISPLAY" ]; then
+                        dnum=$(echo "${'$'}DISPLAY" | sed 's/.*:\([0-9]*\).*/\1/')
+                        if [ -S "/tmp/.X11-unix/X${'$'}dnum" ]; then echo "X11 socket: OK"; else echo "X11 socket: MISSING"; fi
+                    fi
+                    # Check Wayland socket
+                    if [ -n "${'$'}WAYLAND_DISPLAY" ] && [ -n "${'$'}XDG_RUNTIME_DIR" ]; then
+                        if [ -S "${'$'}XDG_RUNTIME_DIR/${'$'}WAYLAND_DISPLAY" ]; then echo "Wayland socket: OK"; else echo "Wayland socket: MISSING"; fi
+                    fi
+                    # Is gamescope/Xwayland running?
+                    if pgrep -x gamescope >/dev/null 2>&1; then echo "gamescope: running"; else echo "gamescope: not running"; fi
+                    if pgrep -x Xwayland >/dev/null 2>&1; then echo "Xwayland: running"; else echo "Xwayland: not running"; fi
+                """.trimIndent()),
+                logName = "comptest-display-probe",
+                extraEnv = buildGuestEnv(),
+            ) { line -> synchronized(out) { out.add(line) } }
+            val text = out.joinToString("\n")
+            val hasDisplay = text.contains("socket: OK")
+            if (hasDisplay) {
+                DisplayProbe(true, "display available", text.take(500))
+            } else {
+                DisplayProbe(false, "no reachable display socket",
+                    "DISPLAY/WAYLAND_DISPLAY unset or sockets missing. " + text.take(500))
+            }
+        } catch (t: Throwable) {
+            DisplayProbe(false, "probe failed", "${t.javaClass.simpleName}: ${t.message}")
+        }
     }
 
     /** Env exported to every guest stage (recorded per-stage for diagnostics). */
@@ -338,10 +397,27 @@ echo "--- uname ---"; uname -r 2>&1
 echo "--- /dev/mali0 ---"; ls -l /dev/mali0 2>&1
 if command -v python3 >/dev/null 2>&1; then
 python3 -c "
-import os, errno
+import os, errno, fcntl, struct
 try:
     fd = os.open('/dev/mali0', os.O_RDWR)
     print('mali0 open: OK fd=%d' % fd)
+    # KBASE_IOCTL_VERSION_CHECK: _IOR('m', 0, struct kbase_ioctl_version_check)
+    # struct: u16 major, u16 minor (4 bytes total)
+    try:
+        # _IOR('m', 0, 4) = 0x80046d00
+        buf = struct.pack('HH', 0, 0)
+        res = fcntl.ioctl(fd, 0x80046d00, buf)
+        major, minor = struct.unpack('HH', res)
+        print('kbase VERSION_CHECK: OK major=%d minor=%d' % (major, minor))
+    except OSError as e:
+        print('kbase VERSION_CHECK: FAIL errno=%d (%s)' % (e.errno, errno.errorcode.get(e.errno, '?')))
+    # KBASE_IOCTL_SET_FLAGS: _IOW('m', 1, u32) = 0x40046d01
+    # flags: 0x1 = KBASE_REG_MEM_FLAGS_NONE (just probe the ioctl)
+    try:
+        fcntl.ioctl(fd, 0x40046d01, struct.pack('I', 0))
+        print('kbase SET_FLAGS: OK')
+    except OSError as e:
+        print('kbase SET_FLAGS: FAIL errno=%d (%s)' % (e.errno, errno.errorcode.get(e.errno, '?')))
     os.close(fd)
 except OSError as e:
     print('mali0 open: FAIL errno=%d (%s)' % (e.errno, errno.errorcode.get(e.errno, '?')))
@@ -524,7 +600,10 @@ echo "--- implicit_layer.d ---"; ls -l /usr/share/vulkan/implicit_layer.d/ /etc/
      */
     private fun guestArgv(checkId: String): List<String>? {
         return when (checkId) {
+            // vk-compute-test: headless GPU bring-up, no display needed.
+            "vk-compute-test" -> listOf("/opt/comptest/vk-compute-test")
             // vkcube: run N frames offscreen-ish; parse its fps readout into frame times.
+            // Requires a display; the executor probes for one first (see runSystemCheck).
             "vkcube" -> listOf("/usr/bin/vkcube", "--c", "600")
             "vulkaninfo" -> listOf("/usr/bin/vulkaninfo")
             // D3D9/D3D11 sample cubes: installed to /opt/comptest by ensureComptestPayload().
