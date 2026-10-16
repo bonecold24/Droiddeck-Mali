@@ -3,6 +3,7 @@ package com.droiddeck.launcher.comptest
 import android.content.Context
 import android.util.Log
 import com.droiddeck.launcher.core.DownloadManager
+import com.droiddeck.launcher.runtime.GuestCommand
 import java.io.File
 
 /**
@@ -88,19 +89,26 @@ object ProtonManager {
         val spec = DownloadManager.Spec(
             url = PROTON_URL,
             destination = tarball,
-            expectedSize = PROTON_SIZE_BYTES,
+            expectedBytes = PROTON_SIZE_BYTES,
             // SHA-512 from the .sha512sum file; DownloadManager uses SHA-256,
             // so we verify size here and do a full check post-download.
+            progress = { fraction ->
+                // Convert fraction to bytes for the progress callback.
+                val downloaded = (fraction * PROTON_SIZE_BYTES).toLong()
+                progress(downloaded, PROTON_SIZE_BYTES)
+            },
         )
-        val result = DownloadManager.download(spec) { downloaded, total ->
-            progress(downloaded, total)
+        val result = DownloadManager.download(spec)
+        when (result) {
+            is DownloadManager.Result.Success -> {
+                Log.i(TAG, "Proton download complete: ${tarball.length()} bytes")
+                return tarball
+            }
+            is DownloadManager.Result.Failure -> {
+                Log.e(TAG, "Proton download failed: ${result.reason}: ${result.detail}")
+                return null
+            }
         }
-        if (!result.success) {
-            Log.e(TAG, "Proton download failed: ${result.error}")
-            return null
-        }
-        Log.i(TAG, "Proton download complete: ${tarball.length()} bytes")
-        return tarball
     }
 
     /**
