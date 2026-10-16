@@ -6,7 +6,8 @@ import org.junit.Test
 
 class CompatTestSuiteTest {
     private val systemIds = listOf(
-        "stage0-env", "vk-compute-test", "vkcube", "vulkaninfo", "d3d9-cube", "d3d11-cube",
+        "stage0-env", "vk-compute-test", "vk-render-test", "gamescope-headless",
+        "vkcube-gamescope", "vkcube", "vulkaninfo", "d3d9-cube", "d3d11-cube",
     )
 
     @Test fun systemChecksComeFirstInOrder() {
@@ -32,8 +33,8 @@ class CompatTestSuiteTest {
             CompatTestSuite.InstalledGame(gameId = 22L, name = "Stardew Valley"),
         )
         val suite = CompatTestSuite.build(games)
-        assertEquals(8, suite.size)
-        assertEquals(systemIds, suite.take(6).map { it.id })
+        assertEquals(11, suite.size)
+        assertEquals(systemIds, suite.take(9).map { it.id })
         val gameSpecs = suite.drop(6)
         assertTrue(gameSpecs.all { it.kind == TestKind.GAME_TEST })
         assertEquals(listOf(11L, 22L), gameSpecs.map { it.gameId })
@@ -48,7 +49,7 @@ class CompatTestSuiteTest {
             CompatTestSuite.gameSpec(33L, "Hades"),
         )
         val suite = CompatTestSuite.buildWithRequested(requested, installedIds = setOf(11L))
-        assertEquals(8, suite.size) // 6 system + 2 requested
+        assertEquals(11, suite.size) // 9 system + 2 requested
         val hades = suite.first { it.id == "game-33" }
         assertEquals(33L, hades.gameId)
     }
@@ -89,7 +90,7 @@ class CompatTestSuiteTest {
     @Test fun defaultTierGamesBuildIntoRequestedSuite() {
         val requested = CompatTestSuite.defaultTierGames()
         val suite = CompatTestSuite.buildWithRequested(requested, installedIds = setOf(440L, 570L))
-        assertEquals(6 + 7, suite.size) // 6 system checks + 7 requested
+        assertEquals(9 + 7, suite.size) // 9 system checks + 7 requested
         assertTrue(CompatTestSuite.isInstalled(suite.first { it.id == "game-440" }, setOf(440L, 570L)))
     }
 

@@ -159,6 +159,19 @@ android {
         unitTests.includeAndroidResources = true
     }
 
+    // Directive #11: always print test failures with full stacktraces to stdout,
+    // so CI logs show the exact failing test without needing admin API access.
+    tasks.withType<Test> {
+        testLogging {
+            events "failed"
+            exceptionFormat "full"
+            showExceptions true
+            showCauses true
+            showStackTraces true
+            showStandardStreams = true
+        }
+    }
+
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_17
         targetCompatibility JavaVersion.VERSION_17

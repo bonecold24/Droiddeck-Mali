@@ -804,6 +804,15 @@ jobs:
         if: ${{ github.event.inputs.skip_tests != 'true' }}
         run: ./gradlew testReleaseUnitTest --console=plain -PndkVersion="$NDK_VERSION"
 
+      - name: Dump test failures (if Unit tests failed)
+        if: failure()
+        run: |
+          echo "=== Test result XMLs with failures ==="
+          grep -rln "<failure" app/build/test-results/ 2>/dev/null | head -20 || true
+          echo ""
+          echo "=== Failure details ==="
+          grep -rn -B2 -A15 "<failure" app/build/test-results/ 2>/dev/null | head -100 || true
+
       - name: Sign with the testkey (v1 + v2 + v3)
         run: |
           set -euo pipefail
