@@ -408,6 +408,42 @@ jobs:
           assert "glibc" in meta["abi"].lower(), "meta.json abi is not glibc"
           print("package descriptors OK")
           PYEOF
+          # Directive #11 UPDATE: mark stale feature-matrix entries. The upstream
+          # runtime-feature-matrix.json says geometryShader/tessellationShader are
+          # upstreamImplemented=False, runtimeExposed=False, but the 2026-10-16
+          # device vulkaninfo (Xiaomi 14T Pro, MT6989, Mali-G720) shows both true.
+          # Do not delete the file; mark the entries as contradicted by the device.
+          # B0 (vk-render-test) settles whether they actually work; its result is
+          # recorded here when available.
+          python3 - <<'PYEOF'
+          import json, os
+          d = "app/src/main/assets/linux-drivers/panvk-kbase-glibc"
+          mp = os.path.join(d, "runtime-feature-matrix.json")
+          if os.path.exists(mp):
+              m = json.load(open(mp))
+              stale_note = {
+                  "stale": True,
+                  "contradictedBy": "device vulkaninfo 2026-10-16 (Xiaomi 14T Pro / MT6989 / Mali-G720-Immortalis MC12)",
+                  "deviceReports": True,
+                  "b0Result": "pending (vk-render-test not yet run on device)",
+              }
+              for key in ("geometryShader", "tessellationShader"):
+                  if key in m:
+                      if isinstance(m[key], dict):
+                          m[key].update(stale_note)
+                      else:
+                          m[key] = {"value": m[key], **stale_note}
+                      print(f"marked {key} as stale/contradicted")
+                  # Also check nested features dict
+                  feats = m.get("features", {})
+                  if key in feats and isinstance(feats[key], dict):
+                      feats[key].update(stale_note)
+                      print(f"marked features.{key} as stale/contradicted")
+              json.dump(m, open(mp, "w"), indent=2)
+              print("feature matrix staleness marked")
+          else:
+              print("no runtime-feature-matrix.json (skipped)")
+          PYEOF
           ls -la app/src/main/assets/linux-drivers/panvk-kbase-glibc/ | head -12
           rm -rf /tmp/glibc-driver-pkg
 
