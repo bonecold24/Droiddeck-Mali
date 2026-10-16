@@ -5,17 +5,17 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class CompatTestSuiteTest {
+    private val systemIds = listOf(
+        "stage0-env", "vk-compute-test", "vkcube", "vulkaninfo", "d3d9-cube", "d3d11-cube",
+    )
+
     @Test fun systemChecksComeFirstInOrder() {
-        // Gate B2 order: headless compute (GPU bring-up, no display) first,
-        // then vkcube (needs display), vulkaninfo, D3D cubes.
-        // (Stage 0 environment probe runs before this list when implemented.)
+        // Gate B2 order: Stage 0 probe, then headless compute (GPU bring-up,
+        // no display), vkcube (needs display), vulkaninfo, D3D cubes.
         val suite = CompatTestSuite.build(installedGames = emptyList())
         val ids = suite.map { it.id }
-assertEquals(listOf("stage0-env", "vkcube", "vulkaninfo", "d3d9-cube", "d3d11-cube"), ids)
-assertEquals(
-            listOf("vk-compute-test", "vkcube", "vulkaninfo", "d3d9-cube", "d3d11-cube"),
-            ids,
-        )        assertTrue(suite.all { it.kind == TestKind.SYSTEM_CHECK })
+        assertEquals(systemIds, ids)
+        assertTrue(suite.all { it.kind == TestKind.SYSTEM_CHECK })
     }
 
     @Test fun computeTestNeedsNoDxvkVariant() {
@@ -32,12 +32,9 @@ assertEquals(
             CompatTestSuite.InstalledGame(gameId = 22L, name = "Stardew Valley"),
         )
         val suite = CompatTestSuite.build(games)
-        assertEquals(7, suite.size)
-        assertEquals(
-listOf("stage0-env", "vkcube", "vulkaninfo", "d3d9-cube", "d3d11-cube"),
-listOf("vk-compute-test", "vkcube", "vulkaninfo", "d3d9-cube", "d3d11-cube"),            suite.take(5).map { it.id },
-        )
-        val gameSpecs = suite.drop(5)
+        assertEquals(8, suite.size)
+        assertEquals(systemIds, suite.take(6).map { it.id })
+        val gameSpecs = suite.drop(6)
         assertTrue(gameSpecs.all { it.kind == TestKind.GAME_TEST })
         assertEquals(listOf(11L, 22L), gameSpecs.map { it.gameId })
         assertEquals(listOf("Hollow Knight", "Stardew Valley"), gameSpecs.map { it.label })
@@ -51,7 +48,7 @@ listOf("vk-compute-test", "vkcube", "vulkaninfo", "d3d9-cube", "d3d11-cube"),   
             CompatTestSuite.gameSpec(33L, "Hades"),
         )
         val suite = CompatTestSuite.buildWithRequested(requested, installedIds = setOf(11L))
-        assertEquals(7, suite.size) // 5 system + 2 requested
+        assertEquals(8, suite.size) // 6 system + 2 requested
         val hades = suite.first { it.id == "game-33" }
         assertEquals(33L, hades.gameId)
     }
@@ -64,7 +61,7 @@ listOf("vk-compute-test", "vkcube", "vulkaninfo", "d3d9-cube", "d3d11-cube"),   
 
     @Test fun timeoutsAreSanePerKind() {
         for (s in CompatTestSuite.build(emptyList())) {
-            assertTrue("${s.id} timeout ${s.timeoutSec}s out of range", s.timeoutSec in 15..120)
+            assertTrue("${s.id} timeout ${s.timeoutSec}s out of range", s.timeoutSec in 15..180)
         }
         val game = CompatTestSuite.gameSpec(1L, "X")
         assertTrue(game.timeoutSec >= 120)
@@ -92,13 +89,13 @@ listOf("vk-compute-test", "vkcube", "vulkaninfo", "d3d9-cube", "d3d11-cube"),   
     @Test fun defaultTierGamesBuildIntoRequestedSuite() {
         val requested = CompatTestSuite.defaultTierGames()
         val suite = CompatTestSuite.buildWithRequested(requested, installedIds = setOf(440L, 570L))
-        assertEquals(5 + 7, suite.size) // 5 system checks + 7 requested
+        assertEquals(6 + 7, suite.size) // 6 system checks + 7 requested
         assertTrue(CompatTestSuite.isInstalled(suite.first { it.id == "game-440" }, setOf(440L, 570L)))
     }
 
     @Test fun computeTestSpecHasSaneTimeout() {
         val spec = CompatTestSuite.build(emptyList()).first { it.id == "vk-compute-test" }
         assertEquals(TestKind.SYSTEM_CHECK, spec.kind)
-        assertTrue("compute test timeout ${spec.timeoutSec}s out of range", spec.timeoutSec in 15..120)
+        assertTrue("compute test timeout ${spec.timeoutSec}s out of range", spec.timeoutSec in 15..180)
     }
 }

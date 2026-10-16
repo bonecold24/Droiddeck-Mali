@@ -5,56 +5,64 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * Gate B2: headless compute test exit-code mapping and display-probe script checks.
+ * Gate B2/B3: headless compute test exit-code taxonomy.
+ * The vk-compute-test binary uses exit codes 0/9/10/11/12/13; the runner maps
+ * them through TestOutcome.fromExitCode, which never labels anything CRASH.
  * Pure Kotlin; host-unit-testable.
  */
 class VkComputeTestTest {
 
     @Test fun exitZeroIsPass() {
-        val (outcome, reason) = vkComputeExitMeaning(0)
-        assertEquals(TestOutcome.REACHED_MENU, outcome)
-        assertTrue(reason.contains("PASS"))
+        assertEquals(TestOutcome.Pass, TestOutcome.fromExitCode(0))
+        assertEquals("PASS", TestOutcome.fromExitCode(0).label())
     }
 
-    @Test fun exitNineIsPrereqMissingNotGpuFailure() {
-        // No Vulkan loader in the guest is environmental — must not be labelled a GPU failure.
-        val (outcome, reason) = vkComputeExitMeaning(9)
-        assertEquals(TestOutcome.PREREQ_MISSING, outcome)
-        assertTrue(reason.contains("libvulkan.so.1"))
+    @Test fun exitNineIsFailExitNotCrash() {
+        // No Vulkan loader in the guest is environmental; the taxonomy still
+        // records the raw code — never a CRASH label (Gate B3).
+        val o = TestOutcome.fromExitCode(9)
+        assertEquals(TestOutcome.FailExit(9), o)
+        assertEquals("FAIL_EXIT(9)", o.label())
+        assertTrue(o.isFailure)
     }
 
-    @Test fun exitTenIsInstanceFailure() {
-        val (outcome, reason) = vkComputeExitMeaning(10)
-        assertEquals(TestOutcome.CRASH, outcome)
-        assertTrue(reason.contains("vkCreateInstance"))
+    @Test fun exitTenIsFailExit() {
+        assertEquals(TestOutcome.FailExit(10), TestOutcome.fromExitCode(10))
     }
 
-    @Test fun exitElevenIsNoDevices() {
-        val (outcome, reason) = vkComputeExitMeaning(11)
-        assertEquals(TestOutcome.CRASH, outcome)
-        assertTrue(reason.contains("no physical devices"))
+    @Test fun exitElevenIsFailExit() {
+        // 11 = no physical devices enumerated (expected with no Mali GPU).
+        assertEquals(TestOutcome.FailExit(11), TestOutcome.fromExitCode(11))
     }
 
-    @Test fun exitTwelveIsDeviceFailure() {
-        val (outcome, reason) = vkComputeExitMeaning(12)
-        assertEquals(TestOutcome.CRASH, outcome)
-        assertTrue(reason.contains("vkCreateDevice"))
+    @Test fun exitTwelveIsFailExit() {
+        assertEquals(TestOutcome.FailExit(12), TestOutcome.fromExitCode(12))
     }
 
-    @Test fun exitThirteenIsComputeFailure() {
-        val (outcome, reason) = vkComputeExitMeaning(13)
-        assertEquals(TestOutcome.CRASH, outcome)
-        assertTrue(reason.contains("compute failed"))
+    @Test fun exitThirteenIsFailExit() {
+        assertEquals(TestOutcome.FailExit(13), TestOutcome.fromExitCode(13))
     }
 
-    @Test fun unknownExitIsCrashWithPlainNote() {
-        val (outcome, reason) = vkComputeExitMeaning(42)
-        assertEquals(TestOutcome.CRASH, outcome)
-        assertTrue(reason.contains("unexpected"))
+    @Test fun exit127IsNotFound() {
+        assertEquals(TestOutcome.NotFound, TestOutcome.fromExitCode(127))
     }
 
-    @Test fun allDefinedCodesHaveDistinctReasons() {
-        val reasons = listOf(0, 9, 10, 11, 12, 13).map { vkComputeExitMeaning(it).second }
-        assertEquals(6, reasons.toSet().size)
+    @Test fun exitAbove128IsSignal() {
+        assertEquals(TestOutcome.Signal(11), TestOutcome.fromExitCode(139))
+    }
+
+    @Test fun allDefinedCodesAreDistinct() {
+        val labels = listOf(0, 9, 10, 11, 12, 13).map { TestOutcome.fromExitCode(it).label() }
+        assertEquals(6, labels.toSet().size)
+    }
+
+    @Test fun noExitCodeIs everLabelledCrash() {
+        // Gate B3: the word CRASH must never appear in any taxonomy label.
+        for (code in listOf(0, 1, 9, 10, 11, 12, 13, 42, 127, 139)) {
+            assertTrue(
+                "exit $code labelled ${TestOutcome.fromExitCode(code).label()}",
+                !TestOutcome.fromExitCode(code).label().contains("CRASH"),
+            )
+        }
     }
 }
