@@ -253,9 +253,10 @@ class CompatTestExecutor(
             if (!wineCheck.available) {
                 return prereqMissing(
                     "Wine/Proton not available: ${wineCheck.reason}",
-                    "D3D cubes need Wine/Proton to run Windows .exe files. " +
+                    "D3D cubes need DroidDeck-Proton (ARM64 Wine + DXVK) to run Windows .exe files. " +
                     "Missing: ${wineCheck.missing.joinToString(", ")}. " +
-                    "The Arch guest (linuxfs-r9) ships no Wine/Proton/DXVK.",
+                    "Download DroidDeck-Proton ${ProtonManager.PROTON_VERSION} (~596 MB) via the app's " +
+                    "Proton installer, or manually from: ${ProtonManager.PROTON_URL}",
                 )
             }
         }
@@ -386,6 +387,28 @@ class CompatTestExecutor(
     private data class WineCheck(val available: Boolean, val reason: String, val missing: List<String>)
 
     private fun checkWineAvailable(): WineCheck {
+        // Check for DroidDeck-Proton first (preferred: ARM64 Wine + DXVK + FEX).
+        if (ProtonManager.isInstalled(context)) {
+            return try {
+                val out = ArrayList<String>()
+                GuestCommand.run(
+                    context,
+                    listOf("/bin/sh", "-c",
+                        "test -x '${ProtonManager.GUEST_PROTON_DIR}/${ProtonManager.WINE_BIN}' && echo 'FOUND:proton-wine64' || echo 'MISSING'"),
+                    logName = "comptest-wine-check",
+                    extraEnv = buildGuestEnv(),
+                ) { line -> synchronized(out) { out.add(line) } }
+                if (out.any { it.contains("FOUND:proton-wine64") }) {
+                    WineCheck(true, "found: DroidDeck-Proton ${ProtonManager.PROTON_VERSION} (wine64 + DXVK)", emptyList())
+                } else {
+                    WineCheck(false, "Proton marker exists but guest binary missing",
+                        listOf("DroidDeck-Proton guest binary (re-extract needed)"))
+                }
+            } catch (t: Throwable) {
+                WineCheck(false, "Proton check failed: ${t.message}", listOf("DroidDeck-Proton (check failed)"))
+            }
+        }
+        // Fallback: check for system wine (unlikely on Arch ARM guest).
         return try {
             val out = ArrayList<String>()
             GuestCommand.run(
@@ -954,9 +977,11 @@ echo "--- implicit_layer.d ---"; ls -l /usr/share/vulkan/implicit_layer.d/ /etc/
             // Requires a display; the executor probes for one first (see runSystemCheck).
             "vkcube" -> listOf("/usr/bin/vkcube", "--c", "600")
             "vulkaninfo" -> listOf("/usr/bin/vulkaninfo")
-            // D3D9/D3D11 sample cubes: installed to /opt/comptest by ensureComptestPayload().
-            "d3d9-cube" -> listOf("/opt/comptest/d3d9-cube")
-            "d3d11-cube" -> listOf("/opt/comptest/d3d11-cube")
+            // D3D9/D3D11 sample cubes: Windows .exe files run via DroidDeck-Proton
+            // Wine + DXVK. The .exe files are installed to /opt/comptest by
+            // ensureComptestPayload().
+            "d3d9-cube" -> ProtonManager.wineCommand("/opt/comptest/d3d9-cube.exe")
+            "d3d11-cube" -> ProtonManager.wineCommand("/opt/comptest/d3d11-cube.exe")
             else -> null
         }
     }
