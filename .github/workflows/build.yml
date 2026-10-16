@@ -507,6 +507,14 @@ jobs:
           aarch64-linux-gnu-strip --strip-unneeded app/src/main/assets/comptest/vk-render-test
           file app/src/main/assets/comptest/vk-render-test
           aarch64-linux-gnu-readelf -d app/src/main/assets/comptest/vk-render-test | grep -i NEEDED
+          # B1: DRM-node LD_PRELOAD shim for Gamescope headless on /dev/mali0.
+          # Mirrors the rdev patch (tools/panvk/apply-droiddeck-patches.py) at
+          # runtime, without recompiling Mesa: fills VkPhysicalDeviceDrmPropertiesEXT
+          # from /dev/mali0's st_rdev so Gamescope finds a primary node.
+          aarch64-linux-gnu-gcc -O2 -shared -fPIC -Wall -Wextra \
+            -o app/src/main/assets/comptest/drm-shim.so \
+            tools/comptest/drm-shim.c -ldl
+          file app/src/main/assets/comptest/drm-shim.so
           # Verify the binary is in the asset payload check
           ls -la app/src/main/assets/comptest/
 

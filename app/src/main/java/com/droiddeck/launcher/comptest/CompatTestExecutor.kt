@@ -877,7 +877,7 @@ echo "--- implicit_layer.d ---"; ls -l /usr/share/vulkan/implicit_layer.d/ /etc/
             // no WSI, no swapchain — offscreen render only. Must run before B1.
             "vk-render-test" -> listOf(
                 "/bin/sh", "-c",
-                "VK_LOADER_DEBUG=driver exec /opt/comptest/vk-render-test"
+                "MESA_LOG_LEVEL=debug VK_LOADER_DEBUG=driver exec /opt/comptest/vk-render-test"
             )
             // Directive #11 B1: Gamescope headless prerequisite. Starts the
             // compositor, waits for its Wayland socket, records WAYLAND_DISPLAY.
@@ -890,8 +890,8 @@ echo "--- implicit_layer.d ---"; ls -l /usr/share/vulkan/implicit_layer.d/ /etc/
                 mkdir -p "${'$'}XDG_RUNTIME_DIR"; chmod 700 "${'$'}XDG_RUNTIME_DIR"
                 pkill -9 gamescope 2>/dev/null || true; sleep 1
                 rm -f /opt/comptest/gamescope.pid /opt/comptest/gamescope.env
-                echo "B1: starting gamescope --backend headless"
-                gamescope --backend headless -- /bin/true &
+                echo "B1: starting gamescope --backend headless (with drm-shim)"
+                LD_PRELOAD=/opt/comptest/drm-shim.so gamescope --backend headless -- /bin/true &
                 GSPID=${'$'}!
                 echo "${'$'}GSPID" > /opt/comptest/gamescope.pid
                 echo "B1: gamescope pid=${'$'}GSPID, waiting for Wayland socket..."
