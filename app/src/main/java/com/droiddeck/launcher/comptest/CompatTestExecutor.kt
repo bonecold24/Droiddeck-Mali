@@ -101,6 +101,41 @@ class CompatTestExecutor(
         spec: TestSpec,
         ctl: CompatTestRunner.RunControl,
     ): CompatTestRunner.TestRunOutcome {
+        // Local helper, defined before first use (Kotlin has no forward refs
+        // for local functions).
+        // Directive #7 Task 6: every PREREQ_MISSING stage gets a log with the reason.
+        // Write the reason to the stage log file before returning.
+        // The .md "Stage diagnostics" section is populated via withDiagnostics.
+        // Directive #10 task 4: the log goes into this run's log dir (zipped),
+        // with the reason plus the relevant facts — never an empty file.
+        fun prereqMissing(reason: String, detail: String): CompatTestRunner.TestRunOutcome {
+            val logName = "comptest-${spec.id}"
+            runCatching {
+                val dir = runLogDir()
+                File(dir, "$logName.log").writeText(
+                    "PREREQ_MISSING: $detail\n" +
+                        "stage: ${spec.id} (${spec.label})\n" +
+                        "reason: $reason\n",
+                )
+            }
+            return CompatTestRunner.TestRunOutcome(
+                TestOutcome.PrereqMissing(reason),
+                emptyList(),
+                "PREREQ_MISSING: $detail",
+            ).withDiagnostics(
+                commandLine = "(prereq check, no guest command run)",
+                envVars = mapOf(
+                    "VK_DRIVER_FILES" to Tier0DriverDirect.GUEST_ICD,
+                    "VK_ICD_FILENAMES" to Tier0DriverDirect.GUEST_ICD,
+                    "COMPTEST_DRIVER_SO" to Tier0DriverDirect.GUEST_SO,
+                ),
+                exitCode = -1,
+                outputTail = listOf("PREREQ_MISSING: $detail"),
+                outputLinesTotal = 1,
+                logFile = "$logName.log",
+            )
+        }
+
         if (!LinuxRuntime.isInstalled(context)) {
             return CompatTestRunner.TestRunOutcome(
                 TestOutcome.PrereqMissing("Linux runtime not installed — cannot run guest checks"),
@@ -149,39 +184,6 @@ class CompatTestExecutor(
                 "${validation.detail} — direct driver install: FAILED (${directInstall.log.lastOrNull() ?: "no log"})",
             )
         }
-        // Directive #7 Task 6: every PREREQ_MISSING stage gets a log with the reason.
-        // Write the reason to the stage log file before returning.
-        // The .md "Stage diagnostics" section is populated via withDiagnostics.
-        // Directive #10 task 4: the log goes into this run's log dir (zipped),
-        // with the reason plus the relevant facts — never an empty file.
-        fun prereqMissing(reason: String, detail: String): CompatTestRunner.TestRunOutcome {
-            val logName = "comptest-${spec.id}"
-            runCatching {
-                val dir = runLogDir()
-                File(dir, "$logName.log").writeText(
-                    "PREREQ_MISSING: $detail\n" +
-                        "stage: ${spec.id} (${spec.label})\n" +
-                        "reason: $reason\n",
-                )
-            }
-            return CompatTestRunner.TestRunOutcome(
-                TestOutcome.PrereqMissing(reason),
-                emptyList(),
-                "PREREQ_MISSING: $detail",
-            ).withDiagnostics(
-                commandLine = "(prereq check, no guest command run)",
-                envVars = mapOf(
-                    "VK_DRIVER_FILES" to Tier0DriverDirect.GUEST_ICD,
-                    "VK_ICD_FILENAMES" to Tier0DriverDirect.GUEST_ICD,
-                    "COMPTEST_DRIVER_SO" to Tier0DriverDirect.GUEST_SO,
-                ),
-                exitCode = -1,
-                outputTail = listOf("PREREQ_MISSING: $detail"),
-                outputLinesTotal = 1,
-                logFile = "$logName.log",
-            )
-        }
-
         if (spec.id == "stage0-env") return runStage0Probe(spec, ctl, validation)
 
         // Directive #7 Task 4/5: vkcube needs a display. Probe for one first;
@@ -601,8 +603,8 @@ echo "--- glibc integrity (stat+sha256; pacman is unusable in this guest: Downlo
 echo "The overlay-damage repair guard relies on the overlay marker file, not on pacman."
 stat -c '%n size=%s mtime=%y' /usr/lib/libc.so.6 /usr/lib/ld-linux-aarch64.so.1 /lib/ld-linux-aarch64.so.1 2>&1
 echo "sha256 (first 16 hex):"
-for f in /usr/lib/libc.so.6 /usr/lib/ld-linux-aarch64.so.1; do
-  if [ -f "$f" ]; then echo "$f: $(sha256sum "$f" 2>/dev/null | cut -c1-16)"; fi
+for ${'$'}f in /usr/lib/libc.so.6 /usr/lib/ld-linux-aarch64.so.1; do
+  if [ -f "${'$'}f" ]; then echo "${'$'}f: $(sha256sum "${'$'}f" 2>/dev/null | cut -c1-16)"; fi
 done
 echo "--- icd.d ---"; ls -l /usr/share/vulkan/icd.d/ /etc/vulkan/icd.d/ 2>&1 | head -20
 echo "--- implicit_layer.d ---"; ls -l /usr/share/vulkan/implicit_layer.d/ /etc/vulkan/implicit_layer.d/ 2>&1 | head -20
