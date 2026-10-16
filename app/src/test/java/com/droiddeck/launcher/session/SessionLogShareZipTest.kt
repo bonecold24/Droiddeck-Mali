@@ -25,7 +25,6 @@ class SessionLogShareZipTest {
      * build before test execution. Investigate the redactor vs this test's
      * expectations separately; do not ship secrets in shared zips.
      */
-    @Ignore("pre-existing failure: a test secret survives the scrub; investigate separately")
     @Test fun everyTextFileInTheZipIsScrubbedAndTheStoresAndToolsLogsComeAlong() {
         val logs = LinuxRuntime.logDir(app)
         val session = File(logs, "2026-10-08-01-steam").apply { mkdirs() }

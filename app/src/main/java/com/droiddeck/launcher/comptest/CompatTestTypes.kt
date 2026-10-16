@@ -51,6 +51,15 @@ sealed class TestOutcome {
         override val serialName = "PREREQ_MISSING"
         override val sortOrder = 20
     }
+    /**
+     * Directive #11 A2: a required harness precondition was violated (e.g. the
+     * /opt/comptest/icd.json was overwritten with a wrong library_path), so the
+     * stage never ran. A harness failure, never a GPU verdict.
+     */
+    data class FailPrecondition(val reason: String) : TestOutcome() {
+        override val serialName = "FAIL_PRECONDITION"
+        override val sortOrder = 21
+    }
     /** Not applicable (e.g. game not installed). Never a failure. */
     data object Skipped : TestOutcome() {
         override val serialName = "SKIPPED"
@@ -80,6 +89,7 @@ sealed class TestOutcome {
         is Signal -> "SIGNAL($number)"
         is Timeout -> "TIMEOUT"
         is PrereqMissing -> "PREREQ_MISSING"
+        is FailPrecondition -> "FAIL_PRECONDITION"
         is Skipped -> "SKIPPED"
         is ReachedMenu -> "REACHED_MENU"
         is ReachedGameplay -> "REACHED_GAMEPLAY"
@@ -90,7 +100,8 @@ sealed class TestOutcome {
     val isPass: Boolean get() = this is Pass || this is ReachedMenu || this is ReachedGameplay
     /** True when this is a genuine failure (not a skip or a cancel). */
     val isFailure: Boolean get() =
-        this is FailExit || this is NotFound || this is Signal || this is Timeout || this is PrereqMissing
+        this is FailExit || this is NotFound || this is Signal || this is Timeout ||
+            this is PrereqMissing || this is FailPrecondition
 
     companion object {
         /**

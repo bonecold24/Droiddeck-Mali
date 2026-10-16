@@ -152,14 +152,41 @@ class CompatTestExecutor(
             File(runLogDir(), "comptest-driver-install.log")
                 .writeText(directInstall.log.joinToString("\n") + "\n")
         }
+        // Directive #11 A2 Step 3: read the ICD back immediately after install
+        // and assert the direct-path library_path. This catches the v3-preview-4
+        // overwrite bug (imported ICD with Android-absolute path) at the source.
+        // (Also verified before every stage in buildGuestEnv.)
+        runCatching {
+            verifyDirectIcd(File(context.applicationContext.filesDir, "linuxfs/opt/comptest/icd.json"))
+        }.onFailure { t ->
+            if (t is IcdPreconditionException) {
+                return CompatTestRunner.TestRunOutcome(
+                    TestOutcome.FailPrecondition(t.message ?: "ICD precondition failed"),
+                    emptyList(),
+                    "FAIL_PRECONDITION: ${t.message}",
+                ).withDiagnostics(
+                    commandLine = "(ICD verification after direct install)",
+                    envVars = emptyMap(),
+                    exitCode = -1,
+                    outputTail = listOf("FAIL_PRECONDITION: ${t.message}"),
+                    outputLinesTotal = 1,
+                    logFile = "comptest-driver-install.log",
+                )
+            }
+        }
         // Snapshot the driver-manager import log (why the bundled driver did or
         // did not reach linux_vulkan_drivers) into this run's logs.
+        // Directive #11 A3: ALWAYS write the file, even when the import was
+        // skipped (driver already imported). The export zip must contain it.
         runCatching {
             val importLog = com.droiddeck.launcher.gpu.GlibcDriverBundle.drainImportLog()
-            if (importLog.isNotEmpty()) {
-                File(runLogDir(), "comptest-driver-import.log")
-                    .writeText(importLog.joinToString("\n") + "\n")
+            val text = if (importLog.isNotEmpty()) {
+                importLog.joinToString("\n") + "\n"
+            } else {
+                "import skipped: bundled glibc driver already present in " +
+                    "linux_vulkan_drivers (no import ran this session).\n"
             }
+            File(runLogDir(), "comptest-driver-import.log").writeText(text)
         }
         // BUG-3 diagnostic: the selected Linux driver must be a loadable glibc
         // aarch64 ICD. A bionic selection can never work in the guest — report it
@@ -231,9 +258,29 @@ class CompatTestExecutor(
         }
 
         val logName = "comptest-${spec.id}"
-        // Export the selected Linux Vulkan driver so the guest loader finds it.
-        // Without VK_DRIVER_FILES, vkcube/vulkaninfo see no Mali ICD and fail.
-        val extraEnv = buildGuestEnv()
+        // Directive #11 A2 Step 3: verify /opt/comptest/icd.json immediately
+        // before each stage launches. On mismatch the stage fails as
+        // FAIL_PRECONDITION (never a GPU verdict) with the actual ICD contents.
+        val extraEnv = try {
+            buildGuestEnv()
+        } catch (e: IcdPreconditionException) {
+            return CompatTestRunner.TestRunOutcome(
+                TestOutcome.FailPrecondition(e.message ?: "ICD precondition failed"),
+                emptyList(),
+                "FAIL_PRECONDITION: ${e.message}",
+            ).withDiagnostics(
+                commandLine = "(ICD verification before stage '${spec.id}')",
+                envVars = mapOf(
+                    "VK_DRIVER_FILES" to Tier0DriverDirect.GUEST_ICD,
+                    "VK_ICD_FILENAMES" to Tier0DriverDirect.GUEST_ICD,
+                    "COMPTEST_DRIVER_SO" to Tier0DriverDirect.GUEST_SO,
+                ),
+                exitCode = -1,
+                outputTail = listOf("FAIL_PRECONDITION: ${e.message}"),
+                outputLinesTotal = 1,
+                logFile = "$logName.log",
+            )
+        }
         val lines = ArrayList<String>()
         val exit: Int = try {
             GuestCommand.run(context, argv, logName = logName, extraEnv = extraEnv) { line ->
@@ -365,34 +412,43 @@ class CompatTestExecutor(
     /** Env exported to every guest stage (recorded per-stage for diagnostics). */
     private fun buildGuestEnv(): Map<String, String> {
         val env = LinkedHashMap<String, String>()
-        runCatching {
-            val driverId = SessionPrefs.linuxDriver(context).orEmpty()
-            if (driverId.isNotEmpty()) {
-                val mgr = LinuxVulkanDriverManager(context)
-                val icd = mgr.getIcdPath(driverId)
-                val so = File(mgr.getDriverDir(driverId), mgr.getLibraryName(driverId))
-                // Directive #7 Task 2: the /data/user/0/... paths are NOT visible
-                // inside the proot guest. Copy the ICD and .so into the guest
-                // filesystem at /opt/comptest/ and use the guest-side paths.
-                val guestDir = File(context.applicationContext.filesDir, "linuxfs/opt/comptest")
-                guestDir.mkdirs()
-                if (icd != null) {
-                    val srcIcd = File(icd)
-                    if (srcIcd.isFile) {
-                        val dstIcd = File(guestDir, srcIcd.name)
-                        srcIcd.copyTo(dstIcd, overwrite = true)
-                        env["VK_DRIVER_FILES"] = "/opt/comptest/${dstIcd.name}"
-                    }
-                }
-                if (so.isFile) {
-                    val dstSo = File(guestDir, so.name)
-                    so.copyTo(dstSo, overwrite = true)
-                    dstSo.setExecutable(true, false)
-                    env["COMPTEST_DRIVER_SO"] = "/opt/comptest/${dstSo.name}"
-                }
-            }
-        }
+        // Directive #11 A2: Tier0DriverDirect is the ONLY writer of
+        // /opt/comptest/icd.json during a comptest run. Do NOT copy the
+        // imported driver's ICD here — its library_path is an Android-absolute
+        // path (/data/user/0/...) that is invisible inside the proot guest and
+        // it overwrote the correct direct-path ICD (v3-preview-4 device bug).
+        // Read the ICD back and assert before every stage (Step 3).
+        val guestDir = File(context.applicationContext.filesDir, "linuxfs/opt/comptest")
+        verifyDirectIcd(File(guestDir, "icd.json"))
         return env
+    }
+
+    /**
+     * Directive #11 A2 Step 3: read /opt/comptest/icd.json back and assert
+     * library_path == /opt/comptest/libvulkan_panfrost.so. Throws
+     * [IcdPreconditionException] (becomes FAIL_PRECONDITION) on mismatch,
+     * logging the actual file contents.
+     */
+    private fun verifyDirectIcd(icdFile: File) {
+        val expected = Tier0DriverDirect.GUEST_SO
+        if (!icdFile.isFile) {
+            throw IcdPreconditionException(
+                "ICD precondition failed: ${icdFile.path} does not exist. " +
+                    "Tier0DriverDirect.install did not write it."
+            )
+        }
+        val text = runCatching { icdFile.readText() }.getOrElse {
+            throw IcdPreconditionException(
+                "ICD precondition failed: cannot read ${icdFile.path}: ${it.message}"
+            )
+        }
+        val actual = extractIcdLibraryPath(text)
+        if (actual != expected) {
+            throw IcdPreconditionException(
+                "ICD precondition failed: library_path='$actual' != '$expected'. " +
+                    "Actual icd.json contents:\n$text"
+            )
+        }
     }
 
     // ------------------------------------------------------- Stage 0 probe
@@ -497,7 +553,12 @@ class CompatTestExecutor(
         lines += "getprop ro.product.manufacturer=${sh("getprop ro.product.manufacturer")}"
         lines += "Build.MANUFACTURER=${Build.MANUFACTURER} Build.MODEL=${Build.MODEL} " +
             "Build.DEVICE=${Build.DEVICE} Build.HARDWARE=${Build.HARDWARE}"
-        lines += "SELinux getenforce=${sh("getenforce")}"
+        lines += "SELinux getenforce=${run {
+            val e = sh("getenforce")
+            // Directive #11 A4: the read is often denied (empty output).
+            // Print "unreadable (avc denied)" instead of a blank.
+            if (e.isBlank() || e == "<unavailable>") "unreadable (avc denied)" else e
+        }}"
         val avc = sh("logcat -d -b all 2>/dev/null | grep -i 'avc.*denied' | tail -20")
         lines += if (avc.isBlank() || avc == "<unavailable>") {
             "avc denied lines: none captured"
@@ -527,7 +588,39 @@ class CompatTestExecutor(
 
     private class CompatCancelled : RuntimeException()
 
+    /**
+     * Directive #11 A2: thrown when /opt/comptest/icd.json does not have the
+     * direct-path library_path. Caught in runSystemCheck and reported as
+     * FAIL_PRECONDITION with the actual ICD contents in the log.
+     */
+    class IcdPreconditionException(message: String) : RuntimeException(message)
+
     companion object {
+        /**
+         * Directive #11 A2: pure function extracting ICD.library_path from ICD
+         * JSON text. Returns "" when the JSON is invalid or the path is missing.
+         * Testable without Android.
+         */
+        fun extractIcdLibraryPath(icdJsonText: String): String = runCatching {
+            org.json.JSONObject(icdJsonText).getJSONObject("ICD").optString("library_path", "")
+        }.getOrDefault("")
+
+        /**
+         * Directive #11 A4: parse the Vulkan API version from vulkaninfo output.
+         * Matches `apiVersion = 1.4.363` in the human-readable dump. Returns
+         * null when not found. Testable without Android.
+         */
+        fun parseVulkanApiVersion(vulkaninfoText: String): String? {
+            // Human-readable: "apiVersion     = 1.4.363 (0x40514b)"
+            // JSON: "apiVersion": "1.4.363"
+            val human = Regex("""(?m)^\s*apiVersion\s*=\s*([\d.]+)""")
+                .find(vulkaninfoText)?.groupValues?.get(1)
+            if (human != null) return human
+            val json = Regex(""""apiVersion"\s*:\s*"([\d.]+)"""")
+                .find(vulkaninfoText)?.groupValues?.get(1)
+            return json
+        }
+
         /**
          * Guest-side Stage 0 probe script. Best-effort: every section prints
          * something even when a tool is missing. VK_DRIVER_FILES and
@@ -603,7 +696,7 @@ echo "--- glibc integrity (stat+sha256; pacman is unusable in this guest: Downlo
 echo "The overlay-damage repair guard relies on the overlay marker file, not on pacman."
 stat -c '%n size=%s mtime=%y' /usr/lib/libc.so.6 /usr/lib/ld-linux-aarch64.so.1 /lib/ld-linux-aarch64.so.1 2>&1
 echo "sha256 (first 16 hex):"
-for ${'$'}f in /usr/lib/libc.so.6 /usr/lib/ld-linux-aarch64.so.1; do
+for f in /usr/lib/libc.so.6 /usr/lib/ld-linux-aarch64.so.1; do
   if [ -f "${'$'}f" ]; then echo "${'$'}f: $(sha256sum "${'$'}f" 2>/dev/null | cut -c1-16)"; fi
 done
 echo "--- icd.d ---"; ls -l /usr/share/vulkan/icd.d/ /etc/vulkan/icd.d/ 2>&1 | head -20
@@ -613,6 +706,9 @@ echo "--- implicit_layer.d ---"; ls -l /usr/share/vulkan/implicit_layer.d/ /etc/
         /** Builds the report environment block from app + driver state. No Steam login needed. */
         fun environmentOf(context: Context): EnvironmentInfo {
             val driver = activeDriver(context)
+            // Directive #11 A4: capture the probe time so AVC denials can be
+            // filtered to the run window (5 min before/after the probe).
+            val probeStartMs = System.currentTimeMillis()
             return EnvironmentInfo(
                 appVersion = "${BuildConfig.VERSION_NAME} (${BuildConfig.BUILD_LABEL})",
                 appCommit = BuildConfig.SOURCE_COMMIT,
@@ -621,7 +717,12 @@ echo "--- implicit_layer.d ---"; ls -l /usr/share/vulkan/implicit_layer.d/ /etc/
                 // Directive #10 task 3: real kbase ioctl handshake in the guest
                 // (CSF first), plus avc-denial capture to separate SELinux from
                 // kernel EPERM. Replaces the old "not implemented" placeholder.
-                kbaseUapi = KbaseUapi.probe(context),
+                // Directive #11 A4: only denials inside the run window.
+                kbaseUapi = KbaseUapi.probe(
+                    context,
+                    runStartMs = probeStartMs - 300_000L,
+                    runEndMs = probeStartMs + 300_000L,
+                ),
                 deviceModel = "${Build.MANUFACTURER} ${Build.MODEL}".trim(),
                 soc = SocNames.label(),
                 driverValidation = validateLinuxDriver(context),
@@ -763,7 +864,12 @@ echo "--- implicit_layer.d ---"; ls -l /usr/share/vulkan/implicit_layer.d/ /etc/
     private fun guestArgv(checkId: String): List<String>? {
         return when (checkId) {
             // vk-compute-test: headless GPU bring-up, no display needed.
-            "vk-compute-test" -> listOf("/opt/comptest/vk-compute-test")
+            // Directive #11 A2 Step 4: VK_LOADER_DEBUG=driver so the loader log
+            // proves which ICD was used ("Searching for ICD drivers named ...").
+            "vk-compute-test" -> listOf(
+                "/bin/sh", "-c",
+                "VK_LOADER_DEBUG=driver exec /opt/comptest/vk-compute-test"
+            )
             // vkcube: run N frames offscreen-ish; parse its fps readout into frame times.
             // Requires a display; the executor probes for one first (see runSystemCheck).
             "vkcube" -> listOf("/usr/bin/vkcube", "--c", "600")
@@ -900,7 +1006,12 @@ except OSError as e:
     print('RESULT mali0 open errno=%d' % e.errno)
 """
 
-    fun probe(context: Context): String {
+    /**
+     * Directive #11 A4: probe with AVC filtering. Only includes denials whose
+     * timestamp falls inside [runStartMs, runEndMs], split into GPU-relevant
+     * vs other. Testable pure helpers in companion.
+     */
+    fun probe(context: Context, runStartMs: Long = 0L, runEndMs: Long = Long.MAX_VALUE): String {
         return try {
             val out = ArrayList<String>()
             GuestCommand.run(
@@ -908,23 +1019,76 @@ except OSError as e:
                 listOf("python3", "-c", PROBE.trimIndent()),
                 logName = "comptest-kbase-probe",
             ) { line -> synchronized(out) { out.add(line) } }
-            // Android side: avc denials mentioning mali/gpu after the probe, so
-            // SELinux can be told apart from a kernel EPERM.
-            val avc = runCatching {
+            // Android side: avc denials, filtered to the run window, so
+            // SELinux can be told apart from a kernel EPERM. Split into
+            // GPU/driver-relevant vs other.
+            val avcAll = runCatching {
                 val p = Runtime.getRuntime().exec(arrayOf(
                     "/system/bin/sh", "-c",
-                    "logcat -d -b all 2>/dev/null | grep -i 'avc' | grep -iE 'mali|gpu_device|ioctl' | tail -5",
+                    "logcat -d -b all -v threadtime 2>/dev/null | grep -i 'avc.*denied' | tail -30",
                 ))
                 val text = p.inputStream.bufferedReader().readText().trim()
                 p.waitFor()
                 text
             }.getOrDefault("")
+            val (relevant, other) = filterAvcByTime(avcAll, runStartMs, runEndMs)
             val result = out.firstOrNull { it.startsWith("RESULT") }?.removePrefix("RESULT ")?.trim()
                 ?: out.joinToString("; ").ifEmpty { "no probe output" }.take(200)
-            val avcNote = if (avc.isBlank()) "no avc denials" else "avc: ${avc.take(200)}"
+            val avcNote = buildString {
+                if (relevant.isEmpty() && other.isEmpty()) {
+                    append("no avc denials in run window")
+                } else {
+                    if (relevant.isNotEmpty()) append("avc(gpu): ${relevant.take(200)}")
+                    if (other.isNotEmpty()) {
+                        if (isNotEmpty()) append(" | ")
+                        append("avc(other): ${other.take(200)}")
+                    }
+                }
+            }
             "$result | $avcNote"
         } catch (t: Throwable) {
             "probe failed: ${t.javaClass.simpleName}: ${t.message}"
+        }
+    }
+
+    companion object {
+        /**
+         * Directive #11 A4: filter AVC denial lines to the run window and split
+         * into GPU-relevant (mali, vulkan, kbase, dri, gpu) vs other.
+         * Logcat threadtime format: "MM-DD HH:MM:SS.mmm ...".
+         * Returns (relevant, other) as semicolon-joined strings.
+         * Pure — unit-tested.
+         */
+        fun filterAvcByTime(avcText: String, runStartMs: Long, runEndMs: Long): Pair<String, String> {
+            if (avcText.isBlank()) return "" to ""
+            val relevant = ArrayList<String>()
+            val other = ArrayList<String>()
+            val tsRegex = Regex("""^(\d{2})-(\d{2})\s+(\d{2}):(\d{2}):(\d{2})\.(\d{3})""")
+            // Approximate: use current year, parse MM-DD HH:MM:SS.
+            val now = java.util.Calendar.getInstance()
+            val year = now.get(java.util.Calendar.YEAR)
+            for (line in avcText.lines()) {
+                val m = tsRegex.find(line) ?: continue
+                val (mm, dd, hh, min, ss) = m.destructured
+                val cal = java.util.Calendar.getInstance().apply {
+                    set(year, mm.toInt() - 1, dd.toInt(), hh.toInt(), min.toInt(), ss.toInt())
+                    set(java.util.Calendar.MILLISECOND, m.groupValues[6].toInt())
+                }
+                val ts = cal.timeInMillis
+                // Handle year boundary: if ts is in the future vs run window,
+                // assume last year.
+                val adjustedTs = if (ts > runEndMs + 86400000L) ts - 31536000000L else ts
+                if (adjustedTs < runStartMs || adjustedTs > runEndMs) continue
+                val lower = line.lowercase()
+                if (lower.contains("mali") || lower.contains("vulkan") ||
+                    lower.contains("kbase") || lower.contains("/dri/") ||
+                    lower.contains("gpu_device") || lower.contains("renderd")) {
+                    relevant += line.trim()
+                } else {
+                    other += line.trim()
+                }
+            }
+            return relevant.joinToString("; ") to other.joinToString("; ")
         }
     }
 }

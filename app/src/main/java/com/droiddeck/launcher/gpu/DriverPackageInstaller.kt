@@ -131,6 +131,18 @@ object DriverPackageInstaller {
             if (!dir.isDirectory) return id
             // Same binary already installed: reuse the id (idempotent reinstall).
             if (readMeta(dir)?.optString("binarySha256") == pkg.binarySha256) return id
+            // Directive #11 A5: the existing dir is unusable (wrong binary or
+            // broken meta). Remove it and reuse the base id instead of
+            // creating a "-2" suffixed duplicate.
+            val usable = try {
+                LinuxDriverValidation.validateDriverDir(dir, pkg.libraryName).valid
+            } catch (e: Exception) { false }
+            if (!usable) {
+                android.util.Log.i("DriverPackageInstaller",
+                    "removing unusable driver dir '$id' to reuse the id")
+                runCatching { dir.deleteRecursively() }
+                return id
+            }
             id = "$base-$n"
             n++
         }

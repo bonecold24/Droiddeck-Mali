@@ -66,6 +66,9 @@ object GlibcDriverBundle {
             is LinuxDriverMigration.Decision.Unavailable ->
                 Log.w(TAG, "no valid Linux driver and no bundled driver available; leaving '$current'")
         }
+        // Directive #11 A5: clean up unusable, non-selected driver dirs.
+        // (Runs after migration so the newly selected driver is protected.)
+        runCatching { cleanupUnusableDrivers(app) }
     }
 
     /**
@@ -83,6 +86,44 @@ object GlibcDriverBundle {
         val result = LinuxDriverValidation.validateDriverDir(mgr.getDriverDir(id), mgr.getLibraryName(id))
         if (!result.valid) Log.i(TAG, "selection '$id' failed validation (${result.reason}); migrating")
         return result.valid
+    }
+
+    /**
+     * Directive #11 A5: remove driver directories that are unusable AND not
+     * selected. Logs one line per removal. Never removes the selected driver.
+     * The bionic (Android) driver is unusable for the Linux guest; it is only
+     * kept if it is the current selection (it never is after migration).
+     * Returns the list of removed ids.
+     */
+    fun cleanupUnusableDrivers(context: Context): List<String> {
+        val app = context.applicationContext
+        val mgr = LinuxVulkanDriverManager(app)
+        val selected = SessionPrefs.linuxDriver(app)
+        val removed = ArrayList<String>()
+        val driversRoot = java.io.File(app.filesDir, "linux_vulkan_drivers")
+        val dirs = driversRoot.listFiles { f -> f.isDirectory } ?: return removed
+        for (dir in dirs) {
+            val id = dir.name
+            if (id == selected) continue
+            // Unusable: not a valid glibc driver for the guest.
+            val usable = try {
+                mgr.isInstalled(id) && mgr.isLinuxRuntimeUsable(id) &&
+                    LinuxDriverValidation.validateDriverDir(
+                        mgr.getDriverDir(id), mgr.getLibraryName(id)
+                    ).valid
+            } catch (e: Exception) { false }
+            if (!usable) {
+                val abi = runCatching { mgr.getAbi(id) }.getOrDefault("unknown")
+                runCatching { dir.deleteRecursively() }.onSuccess {
+                    val msg = "cleanup: removed unusable driver '$id' (abi=$abi, not selected)"
+                    ilog(msg)
+                    removed += id
+                }.onFailure {
+                    ilog("cleanup: failed to remove '$id': ${it.message}")
+                }
+            }
+        }
+        return removed
     }
 
     /**

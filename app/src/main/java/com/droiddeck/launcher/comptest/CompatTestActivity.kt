@@ -113,7 +113,9 @@ internal class CompatTestViewModel(private val activity: CompatTestActivity) {
         val specs = rows.map { it.spec }
         if (specs.isEmpty()) return
         runId = SimpleDateFormat("yyyyMMdd-HHmmss", Locale.US).format(Date())
-        val env = environment ?: CompatTestExecutor.environmentOf(activity)
+        // Directive #11 A4: env is a var so the Vulkan API version can be
+        // filled in from the vulkaninfo log after that stage runs.
+        var env = environment ?: CompatTestExecutor.environmentOf(activity)
         val games = CompatTestGames.listInstalled(activity)
         val installedIds = games.map { it.gameId }.toSet()
         val executor = CompatTestExecutor(activity, installedIds, { env }, runId)
@@ -124,6 +126,26 @@ internal class CompatTestViewModel(private val activity: CompatTestActivity) {
             driver = { env.driverPackage },
             sink = object : CompatTestRunner.ResultsSink {
                 override fun onTestFinished(result: TestResult) {
+                    // Directive #11 A4: parse the Vulkan API version from the
+                    // vulkaninfo log as soon as that stage finishes.
+                    if (result.specId == "vulkaninfo") {
+                        runCatching {
+                            val logFile = java.io.File(
+                                CompatTestExport.runLogDir(activity, runId),
+                                "comptest-vulkaninfo.log"
+                            )
+                            if (logFile.isFile) {
+                                val api = CompatTestExecutor.parseVulkanApiVersion(
+                                    logFile.readText()
+                                )
+                                if (api != null) {
+                                    val updatedDriver = env.driverPackage.copy(vulkanApi = api)
+                                    env = env.copy(driverPackage = updatedDriver)
+                                    environment = env
+                                }
+                            }
+                        }
+                    }
                     // Persist partial results as we go — a killed run keeps its report.
                     val snapshot = synchronized(results) {
                         results.add(result)

@@ -6,9 +6,9 @@ object LogRedactor {
     private val JWT_BASE64 = Regex("ey[A-Za-z0-9_\\-]{6,}\\.[A-Za-z0-9_\\-]{6,}\\.[A-Za-z0-9_\\-]{6,}")
     private val GUID = Regex("\\b[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}\\b")
     private val SECRET_KV = Regex(
-        "(?i)\\b(access[_-]?token|refresh[_-]?token|auth[_-]?token|authtoken|token|authcode|" +
+        "(?i)(?<![A-Za-z0-9])(__token__|access[_-]?token|refresh[_-]?token|auth[_-]?token|authtoken|token|authcode|" +
             "auth[_-]?ticket|ticket|sessionid|steamloginsecure|webapikey|api[_-]?key|" +
-            "machine[_-]?auth(?:[_-]?token)?|machineauth|password|passwd|pwd|secret)" +
+            "machine[_-]?auth(?:[_-]?token)?|machineauth|password|passwd|pwd|secret)(__)?" +
             "(\\s*[=:]\\s*|=)([^\\s\"'<>&;,]{4,})"
     )
     private val GUARD_CODE = Regex(

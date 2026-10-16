@@ -42,4 +42,31 @@ class ShareZipTest {
             assertEquals(2, zf.entries().toList().size)
         }
     }
+
+    /**
+     * Directive #11 A3: the export zip must contain comptest-driver-import.log
+     * whenever an import step ran (or was skipped). The executor now always
+     * writes the file; the zip includes every .log in the run dir.
+     */
+    @Test fun zipContainsDriverImportLog() {
+        val tmp = createTempDir("sharezip3")
+        val json = java.io.File(tmp, "report.json").apply { writeText("{}") }
+        val md = java.io.File(tmp, "report.md").apply { writeText("# r") }
+        val installLog = java.io.File(tmp, "comptest-driver-install.log")
+            .apply { writeText("direct driver install: OK") }
+        // Even the "skipped" marker must be zipped (A3: say plainly in the
+        // report if the import was skipped).
+        val importLog = java.io.File(tmp, "comptest-driver-import.log")
+            .apply { writeText("import skipped: bundled glibc driver already present\n") }
+        val zip = java.io.File(tmp, "out.zip")
+        CompatTestExport.buildShareZip(zip, "run1", json, md, listOf(installLog, importLog))
+        ZipFile(zip).use { zf ->
+            val names = zf.entries().toList().map { it.name }
+            assertTrue(names.contains("logs/comptest-driver-install.log"))
+            assertTrue(names.contains("logs/comptest-driver-import.log"))
+            val importText = zf.getInputStream(zf.getEntry("logs/comptest-driver-import.log"))
+                .bufferedReader().readText()
+            assertTrue(importText.contains("import skipped"))
+        }
+    }
 }

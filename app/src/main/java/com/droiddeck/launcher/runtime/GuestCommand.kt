@@ -20,7 +20,12 @@ object GuestCommand {
         }
         log?.println("== ${java.util.Date()} ${argv.joinToString(" ")}")
         try {
-            return runLogged(context, argv, fakeRoot, linkDir, extraEnv) { line -> log?.println(line); log?.flush(); onLine(line) }
+            // Directive #11 A6: filter proot stdio warnings from the onLine
+            // callback (reports) but keep them in the raw log file.
+            return runLogged(context, argv, fakeRoot, linkDir, extraEnv) { line ->
+                log?.println(line); log?.flush()
+                if (!isProotStdioWarning(line)) onLine(line)
+            }
         } finally {
             log?.close()
         }
@@ -51,6 +56,15 @@ object GuestCommand {
             "VK_DRIVER_FILES=/opt/comptest/icd.json",
             "VK_ICD_FILENAMES=/opt/comptest/icd.json",
             "COMPTEST_DRIVER_SO=/opt/comptest/libvulkan_panfrost.so",
+            // Directive #11 A6: disable the DroidDeck VR implicit layer during
+            // comptest. It reports API 1.3 while the driver is 1.4, spamming
+            // loader warnings. (Bumping the layer requires rebuilding its .so.)
+            "VK_LOADER_LAYERS_DISABLE=VK_LAYER_DROIDDECK_vr",
+            // Directive #11 A6: PanVK probes /dev/dri/renderD103 first and warns
+            // "failed to query kernel driver version (VK_ERROR_INCOMPATIBLE_DRIVER)"
+            // before falling back to the kbase path (/dev/mali0). This is
+            // harmless — compute passes via the kbase fallback — and is
+            // expected driver behavior. Do NOT change the driver binary.
         )
         cmd += argv
         val builder = ProcessBuilder(cmd).directory(root).redirectErrorStream(true)
@@ -71,5 +85,15 @@ object GuestCommand {
         } finally {
             OrphanReaper.release(pid)
         }
+    }
+
+    /**
+     * Directive #11 A6: the proot "can't sanitize binding" warnings for
+     * /proc/self/fd stdio bindings. Pure — unit-tested.
+     */
+    fun isProotStdioWarning(line: String): Boolean {
+        val l = line.lowercase()
+        return l.contains("proot") && l.contains("sanitize") &&
+            (l.contains("/proc/self/fd") || l.contains("binding"))
     }
 }
