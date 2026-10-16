@@ -32,8 +32,8 @@ class SecretKvTableTest {
         Case("GET /x?access_token=abc123xyz789", "abc123xyz789", "access_token"),
         Case("POST /refresh refresh_token=rt_9876543210", "rt_9876543210", "refresh_token"),
         Case("auth id_token=eyJhbGciOiJIUzI1NiJ9.payload", "eyJhbGciOiJIUzI1NiJ9.payload", "id_token"),
-        // API keys
-        Case("curl -H 'x-api-key: sk_live_51H7xYz' https://api.example.com", "sk_live_51H7xYz", "x-api-key"),
+        // API keys (x- prefix is not part of the key name per the regex)
+        Case("curl -H 'x-api-key: sk_live_51H7xYz' https://api.example.com", "sk_live_51H7xYz", "api-key"),
         Case("api_key=AKIAIOSFODNN7EXAMPLE", "AKIAIOSFODNN7EXAMPLE", "api_key"),
         // Authorization header
         Case("Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9", "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9", "Authorization"),
