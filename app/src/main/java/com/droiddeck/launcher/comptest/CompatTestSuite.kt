@@ -35,6 +35,20 @@ object CompatTestSuite {
             timeoutSec = 60,
         ),
         TestSpec(
+            id = "gamescope-headless", label = "Gamescope headless (B1 prerequisite)", kind = TestKind.SYSTEM_CHECK,
+            description = "Directive #11 B1: starts Gamescope with --backend headless, " +
+                "waits for the Wayland socket, records WAYLAND_DISPLAY. Kills Gamescope " +
+                "afterwards. Distinguishes 'no compositor' from 'socket unreachable'.",
+            timeoutSec = 60,
+        ),
+        TestSpec(
+            id = "vkcube-gamescope", label = "vkcube under Gamescope headless (B1)", kind = TestKind.SYSTEM_CHECK,
+            description = "Directive #11 B1: runs vkcube --wsi wayland under the headless " +
+                "Gamescope compositor. Captures frame rate and proves WSI works. " +
+                "Requires the gamescope-headless stage to have started the compositor.",
+            timeoutSec = 60,
+        ),
+        TestSpec(
             id = "vkcube", label = "vkcube (Vulkan cube)", kind = TestKind.SYSTEM_CHECK,
             description = "Renders the Vulkan cube through the active ICD for ~10s. " +
                 "Requires a working display; reports PREREQ_MISSING if none.",

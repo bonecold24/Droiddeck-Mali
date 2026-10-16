@@ -879,6 +879,77 @@ echo "--- implicit_layer.d ---"; ls -l /usr/share/vulkan/implicit_layer.d/ /etc/
                 "/bin/sh", "-c",
                 "VK_LOADER_DEBUG=driver exec /opt/comptest/vk-render-test"
             )
+            // Directive #11 B1: Gamescope headless prerequisite. Starts the
+            // compositor, waits for its Wayland socket, records WAYLAND_DISPLAY.
+            // Kill any stale instance first (memory is tight on device).
+            "gamescope-headless" -> listOf(
+                "/bin/sh", "-c",
+                """
+                set -e
+                export XDG_RUNTIME_DIR=/tmp/runtime-root
+                mkdir -p "$XDG_RUNTIME_DIR"; chmod 700 "$XDG_RUNTIME_DIR"
+                pkill -9 gamescope 2>/dev/null || true; sleep 1
+                rm -f /opt/comptest/gamescope.pid /opt/comptest/gamescope.env
+                echo "B1: starting gamescope --backend headless"
+                gamescope --backend headless -- /bin/true &
+                GSPID=$!
+                echo "$GSPID" > /opt/comptest/gamescope.pid
+                echo "B1: gamescope pid=$GSPID, waiting for Wayland socket..."
+                for i in $(seq 1 20); do
+                  for sock in "$XDG_RUNTIME_DIR"/wayland-* "$XDG_RUNTIME_DIR"/gamescope-*; do
+                    if [ -S "$sock" ]; then
+                      WD=$(basename "$sock")
+                      echo "WAYLAND_DISPLAY=$WD" > /opt/comptest/gamescope.env
+                      echo "GAMESCOPE_PID=$GSPID" >> /opt/comptest/gamescope.env
+                      echo "B1: WAYLAND_DISPLAY=$WD"
+                      echo "B1: socket=$sock"
+                      echo "B1: gamescope headless READY"
+                      exit 0
+                    fi
+                  done
+                  sleep 0.5
+                done
+                echo "ERR: B1: no Wayland socket after 10s (gamescope may have crashed)"
+                kill -9 "$GSPID" 2>/dev/null || true
+                exit 1
+                """.trimIndent()
+            )
+            // Directive #11 B1: vkcube under headless Gamescope. Distinguishes
+            // "no compositor" (env file missing) from "socket unreachable".
+            // Logs free -m before/after (memory is tight). Kills Gamescope after.
+            "vkcube-gamescope" -> listOf(
+                "/bin/sh", "-c",
+                """
+                export XDG_RUNTIME_DIR=/tmp/runtime-root
+                if [ ! -f /opt/comptest/gamescope.env ]; then
+                  echo "ERR: B1: no compositor running (gamescope.env missing; run gamescope-headless first)"
+                  exit 1
+                fi
+                . /opt/comptest/gamescope.env
+                export WAYLAND_DISPLAY
+                SOCK="$XDG_RUNTIME_DIR/$WAYLAND_DISPLAY"
+                if [ ! -S "$SOCK" ]; then
+                  echo "ERR: B1: compositor running but socket unreachable: $SOCK"
+                  exit 1
+                fi
+                echo "B1: WAYLAND_DISPLAY=$WAYLAND_DISPLAY"
+                echo "B1: socket=$SOCK"
+                echo "B1: memory before:"
+                free -m | head -2
+                echo "B1: running vkcube --wsi wayland --c 120"
+                VK_LOADER_DEBUG=driver /usr/bin/vkcube --wsi wayland --c 120 2>&1
+                VCEXIT=$?
+                echo "B1: vkcube exit=$VCEXIT"
+                echo "B1: memory after:"
+                free -m | head -2
+                if [ -f /opt/comptest/gamescope.pid ]; then
+                  kill -9 $(cat /opt/comptest/gamescope.pid) 2>/dev/null || true
+                  rm -f /opt/comptest/gamescope.pid /opt/comptest/gamescope.env
+                  echo "B1: gamescope killed"
+                fi
+                exit $VCEXIT
+                """.trimIndent()
+            )
             // vkcube: run N frames offscreen-ish; parse its fps readout into frame times.
             // Requires a display; the executor probes for one first (see runSystemCheck).
             "vkcube" -> listOf("/usr/bin/vkcube", "--c", "600")
