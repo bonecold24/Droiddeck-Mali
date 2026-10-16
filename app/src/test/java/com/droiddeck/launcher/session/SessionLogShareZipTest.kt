@@ -104,4 +104,41 @@ class SessionLogShareZipTest {
         for (name in names) assertScrubbed(File(logs, name))
         assertEquals(listOf("Saves"), legacy.list()!!.toList())
     }
+
+    /**
+     * Directive #11 UPDATE: table-driven redactor test over the share-zip path.
+     * Writes each secret format to a log file, zips via SessionLogShare, and
+     * verifies the secret values are gone but key names remain.
+     */
+    @Test fun tableDrivenSecretsScrubbedInZip() {
+        val logs = LinuxRuntime.logDir(app)
+        val session = File(logs, "2026-10-16-01-steam").apply { mkdirs() }
+        val cases = listOf(
+            "api?__token__=exp=1~hmac=deadbeefcafe" to "deadbeefcafe",
+            "access_token=abc123xyz789" to "abc123xyz789",
+            "refresh_token=rt_9876543210" to "rt_9876543210",
+            "Authorization: Bearer bearer_secret_999" to "bearer_secret_999",
+            "password=SuperSecret123!" to "SuperSecret123!",
+            """{"token":"json_secret_abc123"}""" to "json_secret_abc123",
+            "GET /cb?token=url_token_12345" to "url_token_12345",
+        )
+        val content = cases.joinToString("\n") { (line, _) -> "log: $line" }
+        File(session, "session.log").writeText(content + "\n")
+
+        val zip = SessionLogShare.zipFolder(app, session)!!
+        val text = ZipFile(zip).use { z ->
+            z.entries().toList().associate { e ->
+                e.name to z.getInputStream(e).bufferedReader().readText()
+            }
+        }
+        val all = text.values.joinToString("\n")
+        for ((_, secret) in cases) {
+            assertFalse("secret '$secret' survived in zip", all.contains(secret))
+        }
+        // Key names must remain readable
+        assertTrue(all.contains("__token__") || all.contains("token"))
+        assertTrue(all.contains("access_token") || all.contains("token"))
+
+        SessionLogShare.clear(app)
+    }
 }
