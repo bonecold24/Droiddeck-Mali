@@ -56,7 +56,7 @@ class VkComputeTestTest {
         assertEquals(6, labels.toSet().size)
     }
 
-    @Test fun noExitCodeIs everLabelledCrash() {
+    @Test fun noExitCodeIsEverLabelledCrash() {
         // Gate B3: the word CRASH must never appear in any taxonomy label.
         for (code in listOf(0, 1, 9, 10, 11, 12, 13, 42, 127, 139)) {
             assertTrue(
