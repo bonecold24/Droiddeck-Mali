@@ -75,7 +75,10 @@ static int load_vulkan(void) {
     g_vk = dlopen("libvulkan.so.1", RTLD_NOW | RTLD_LOCAL);
     if (!g_vk) g_vk = dlopen("libvulkan.so", RTLD_NOW | RTLD_LOCAL);
     if (!g_vk) { fprintf(stderr, "ERR: dlopen failed: %s\n", dlerror()); return 9; }
-#define LOAD(n) do { p_##n = (PFN_##n)dlsym(g_vk, #n); if (!p_##n) return 9; } while(0)
+#define LOAD(n) do { \
+        p_##n = (PFN_##n)dlsym(g_vk, #n); \
+        if (!p_##n) { fprintf(stderr, "ERR: dlsym failed for %s: %s\n", #n, dlerror()); return 9; } \
+    } while(0)
     LOAD(vkCreateInstance); LOAD(vkDestroyInstance); LOAD(vkEnumeratePhysicalDevices);
     LOAD(vkGetPhysicalDeviceProperties); LOAD(vkGetPhysicalDeviceQueueFamilyProperties);
     LOAD(vkGetPhysicalDeviceMemoryProperties); LOAD(vkGetPhysicalDeviceFeatures);
@@ -111,6 +114,29 @@ static uint32_t find_mem(VkPhysicalDeviceMemoryProperties *mp, uint32_t bits, Vk
     for (uint32_t i = 0; i < mp->memoryTypeCount; i++)
         if ((bits & (1u << i)) && (mp->memoryTypes[i].propertyFlags & f) == f) return i;
     return UINT32_MAX;
+}
+
+/* Validate a memory type index; try fallback to any type if the preferred
+ * flags aren't available. Returns UINT32_MAX if nothing works. */
+static uint32_t pick_mem(VkPhysicalDeviceMemoryProperties *mp, uint32_t bits,
+                         VkMemoryPropertyFlags want, const char *what) {
+    uint32_t mi = find_mem(mp, bits, want);
+    if (mi == UINT32_MAX) {
+        mi = find_mem(mp, bits, 0);
+    }
+    if (mi == UINT32_MAX) {
+        fprintf(stderr, "ERR: no suitable memory type for %s (bits=0x%x)\n", what, bits);
+    }
+    return mi;
+}
+
+/* Check a VkResult from a setup call; print and return non-zero on failure. */
+static int check_vk(VkResult r, const char *what) {
+    if (r != VK_SUCCESS) {
+        fprintf(stderr, "ERR: %s failed: VkResult=%d\n", what, r);
+        return 1;
+    }
+    return 0;
 }
 
 /* Context shared across sub-tests */
@@ -574,57 +600,137 @@ int main(int argc, char **argv) {
                  VK_IMAGE_USAGE_TRANSFER_SRC_BIT |
                  VK_IMAGE_USAGE_TRANSFER_DST_BIT,
         .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED };
-    p_vkCreateImage(dev, &ii, NULL, &c.img);
+    if (check_vk(p_vkCreateImage(dev, &ii, NULL, &c.img), "vkCreateImage")) {
+        p_vkDestroyDevice(dev, NULL); p_vkDestroyInstance(inst, NULL); return 12;
+    }
     VkMemoryRequirements mr;
     p_vkGetImageMemoryRequirements(dev, c.img, &mr);
-    uint32_t mi = find_mem(&c.memProps, mr.memoryTypeBits,
-                           VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-    if (mi == UINT32_MAX) mi = find_mem(&c.memProps, mr.memoryTypeBits, 0);
+    uint32_t mi = pick_mem(&c.memProps, mr.memoryTypeBits,
+                           VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, "image");
+    if (mi == UINT32_MAX) {
+        p_vkDestroyImage(dev, c.img, NULL);
+        p_vkDestroyDevice(dev, NULL); p_vkDestroyInstance(inst, NULL); return 12;
+    }
     VkMemoryAllocateInfo mai = { .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
         .allocationSize = mr.size, .memoryTypeIndex = mi };
-    p_vkAllocateMemory(dev, &mai, NULL, &c.imgMem);
-    p_vkBindImageMemory(dev, c.img, c.imgMem, 0);
+    if (check_vk(p_vkAllocateMemory(dev, &mai, NULL, &c.imgMem), "vkAllocateMemory(image)")) {
+        p_vkDestroyImage(dev, c.img, NULL);
+        p_vkDestroyDevice(dev, NULL); p_vkDestroyInstance(inst, NULL); return 12;
+    }
+    if (check_vk(p_vkBindImageMemory(dev, c.img, c.imgMem, 0), "vkBindImageMemory")) {
+        p_vkDestroyImage(dev, c.img, NULL); p_vkFreeMemory(dev, c.imgMem, NULL);
+        p_vkDestroyDevice(dev, NULL); p_vkDestroyInstance(inst, NULL); return 12;
+    }
     VkImageViewCreateInfo vci = { .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
         .image = c.img, .viewType = VK_IMAGE_VIEW_TYPE_2D,
         .format = VK_FORMAT_R8G8B8A8_UNORM,
         .subresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 } };
     VkImageView view;
-    p_vkCreateImageView(dev, &vci, NULL, &view);
+    if (check_vk(p_vkCreateImageView(dev, &vci, NULL, &view), "vkCreateImageView")) {
+        p_vkDestroyImage(dev, c.img, NULL); p_vkFreeMemory(dev, c.imgMem, NULL);
+        p_vkDestroyDevice(dev, NULL); p_vkDestroyInstance(inst, NULL); return 12;
+    }
 
     /* Staging buffer */
     VkBufferCreateInfo bci = { .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
         .size = IMG_W * IMG_H * 4, .usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT,
         .sharingMode = VK_SHARING_MODE_EXCLUSIVE };
-    p_vkCreateBuffer(dev, &bci, NULL, &c.rbuf);
+    if (check_vk(p_vkCreateBuffer(dev, &bci, NULL, &c.rbuf), "vkCreateBuffer(staging)")) {
+        p_vkDestroyImageView(dev, view, NULL);
+        p_vkDestroyImage(dev, c.img, NULL); p_vkFreeMemory(dev, c.imgMem, NULL);
+        p_vkDestroyDevice(dev, NULL); p_vkDestroyInstance(inst, NULL); return 12;
+    }
     p_vkGetBufferMemoryRequirements(dev, c.rbuf, &mr);
-    mi = find_mem(&c.memProps, mr.memoryTypeBits,
-        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+    mi = pick_mem(&c.memProps, mr.memoryTypeBits,
+        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+        "staging buffer");
+    if (mi == UINT32_MAX) {
+        p_vkDestroyBuffer(dev, c.rbuf, NULL);
+        p_vkDestroyImageView(dev, view, NULL);
+        p_vkDestroyImage(dev, c.img, NULL); p_vkFreeMemory(dev, c.imgMem, NULL);
+        p_vkDestroyDevice(dev, NULL); p_vkDestroyInstance(inst, NULL); return 12;
+    }
     mai.allocationSize = mr.size; mai.memoryTypeIndex = mi;
-    p_vkAllocateMemory(dev, &mai, NULL, &c.rmem);
-    p_vkBindBufferMemory(dev, c.rbuf, c.rmem, 0);
+    if (check_vk(p_vkAllocateMemory(dev, &mai, NULL, &c.rmem), "vkAllocateMemory(staging)")) {
+        p_vkDestroyBuffer(dev, c.rbuf, NULL);
+        p_vkDestroyImageView(dev, view, NULL);
+        p_vkDestroyImage(dev, c.img, NULL); p_vkFreeMemory(dev, c.imgMem, NULL);
+        p_vkDestroyDevice(dev, NULL); p_vkDestroyInstance(inst, NULL); return 12;
+    }
+    if (check_vk(p_vkBindBufferMemory(dev, c.rbuf, c.rmem, 0), "vkBindBufferMemory(staging)")) {
+        p_vkFreeMemory(dev, c.rmem, NULL); p_vkDestroyBuffer(dev, c.rbuf, NULL);
+        p_vkDestroyImageView(dev, view, NULL);
+        p_vkDestroyImage(dev, c.img, NULL); p_vkFreeMemory(dev, c.imgMem, NULL);
+        p_vkDestroyDevice(dev, NULL); p_vkDestroyInstance(inst, NULL); return 12;
+    }
 
     /* Vertex buffer (full-screen triangle) */
     VkBuffer vbuf; VkDeviceMemory vmem;
     bci.size = sizeof(kFullTri); bci.usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;
-    p_vkCreateBuffer(dev, &bci, NULL, &vbuf);
+    if (check_vk(p_vkCreateBuffer(dev, &bci, NULL, &vbuf), "vkCreateBuffer(vertex)")) {
+        p_vkFreeMemory(dev, c.rmem, NULL); p_vkDestroyBuffer(dev, c.rbuf, NULL);
+        p_vkDestroyImageView(dev, view, NULL);
+        p_vkDestroyImage(dev, c.img, NULL); p_vkFreeMemory(dev, c.imgMem, NULL);
+        p_vkDestroyDevice(dev, NULL); p_vkDestroyInstance(inst, NULL); return 12;
+    }
     p_vkGetBufferMemoryRequirements(dev, vbuf, &mr);
-    mi = find_mem(&c.memProps, mr.memoryTypeBits,
-        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+    mi = pick_mem(&c.memProps, mr.memoryTypeBits,
+        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+        "vertex buffer");
+    if (mi == UINT32_MAX) {
+        p_vkDestroyBuffer(dev, vbuf, NULL);
+        p_vkFreeMemory(dev, c.rmem, NULL); p_vkDestroyBuffer(dev, c.rbuf, NULL);
+        p_vkDestroyImageView(dev, view, NULL);
+        p_vkDestroyImage(dev, c.img, NULL); p_vkFreeMemory(dev, c.imgMem, NULL);
+        p_vkDestroyDevice(dev, NULL); p_vkDestroyInstance(inst, NULL); return 12;
+    }
     mai.allocationSize = mr.size; mai.memoryTypeIndex = mi;
-    p_vkAllocateMemory(dev, &mai, NULL, &vmem);
-    p_vkBindBufferMemory(dev, vbuf, vmem, 0);
-    void *mm; p_vkMapMemory(dev, vmem, 0, sizeof(kFullTri), 0, &mm);
+    if (check_vk(p_vkAllocateMemory(dev, &mai, NULL, &vmem), "vkAllocateMemory(vertex)")) {
+        p_vkDestroyBuffer(dev, vbuf, NULL);
+        p_vkFreeMemory(dev, c.rmem, NULL); p_vkDestroyBuffer(dev, c.rbuf, NULL);
+        p_vkDestroyImageView(dev, view, NULL);
+        p_vkDestroyImage(dev, c.img, NULL); p_vkFreeMemory(dev, c.imgMem, NULL);
+        p_vkDestroyDevice(dev, NULL); p_vkDestroyInstance(inst, NULL); return 12;
+    }
+    if (check_vk(p_vkBindBufferMemory(dev, vbuf, vmem, 0), "vkBindBufferMemory(vertex)")) {
+        p_vkFreeMemory(dev, vmem, NULL); p_vkDestroyBuffer(dev, vbuf, NULL);
+        p_vkFreeMemory(dev, c.rmem, NULL); p_vkDestroyBuffer(dev, c.rbuf, NULL);
+        p_vkDestroyImageView(dev, view, NULL);
+        p_vkDestroyImage(dev, c.img, NULL); p_vkFreeMemory(dev, c.imgMem, NULL);
+        p_vkDestroyDevice(dev, NULL); p_vkDestroyInstance(inst, NULL); return 12;
+    }
+    void *mm;
+    if (check_vk(p_vkMapMemory(dev, vmem, 0, sizeof(kFullTri), 0, &mm), "vkMapMemory(vertex)")) {
+        p_vkFreeMemory(dev, vmem, NULL); p_vkDestroyBuffer(dev, vbuf, NULL);
+        p_vkFreeMemory(dev, c.rmem, NULL); p_vkDestroyBuffer(dev, c.rbuf, NULL);
+        p_vkDestroyImageView(dev, view, NULL);
+        p_vkDestroyImage(dev, c.img, NULL); p_vkFreeMemory(dev, c.imgMem, NULL);
+        p_vkDestroyDevice(dev, NULL); p_vkDestroyInstance(inst, NULL); return 12;
+    }
     memcpy(mm, kFullTri, sizeof(kFullTri));
     p_vkUnmapMemory(dev, vmem);
 
     VkPipelineLayoutCreateInfo pli = {
         .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO };
     VkPipelineLayout layout;
-    p_vkCreatePipelineLayout(dev, &pli, NULL, &layout);
+    if (check_vk(p_vkCreatePipelineLayout(dev, &pli, NULL, &layout), "vkCreatePipelineLayout")) {
+        p_vkFreeMemory(dev, vmem, NULL); p_vkDestroyBuffer(dev, vbuf, NULL);
+        p_vkFreeMemory(dev, c.rmem, NULL); p_vkDestroyBuffer(dev, c.rbuf, NULL);
+        p_vkDestroyImageView(dev, view, NULL);
+        p_vkDestroyImage(dev, c.img, NULL); p_vkFreeMemory(dev, c.imgMem, NULL);
+        p_vkDestroyDevice(dev, NULL); p_vkDestroyInstance(inst, NULL); return 12;
+    }
 
     VkCommandPoolCreateInfo pci = { .sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
         .queueFamilyIndex = gfx };
-    p_vkCreateCommandPool(dev, &pci, NULL, &c.pool);
+    if (check_vk(p_vkCreateCommandPool(dev, &pci, NULL, &c.pool), "vkCreateCommandPool")) {
+        p_vkDestroyPipelineLayout(dev, layout, NULL);
+        p_vkFreeMemory(dev, vmem, NULL); p_vkDestroyBuffer(dev, vbuf, NULL);
+        p_vkFreeMemory(dev, c.rmem, NULL); p_vkDestroyBuffer(dev, c.rbuf, NULL);
+        p_vkDestroyImageView(dev, view, NULL);
+        p_vkDestroyImage(dev, c.img, NULL); p_vkFreeMemory(dev, c.imgMem, NULL);
+        p_vkDestroyDevice(dev, NULL); p_vkDestroyInstance(inst, NULL); return 12;
+    }
 
     /* ---- Run all sub-tests, NEVER exit early ---- */
     int f0 = subtest0_transfer_clear(&c);
