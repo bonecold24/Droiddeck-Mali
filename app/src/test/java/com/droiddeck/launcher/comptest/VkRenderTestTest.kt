@@ -27,7 +27,7 @@ class VkRenderTestTest {
         val o = TestOutcome.fromExitCode(13)
         assertTrue(o is TestOutcome.FailExit)
         assertEquals(13, (o as TestOutcome.FailExit).code)
-        assertEquals("FAIL_EXIT(13)", o.label())
+        assertEquals("FAIL_EXIT", o.serialName)
     }
 
     @Test fun exit14IsGeometryFail() {
