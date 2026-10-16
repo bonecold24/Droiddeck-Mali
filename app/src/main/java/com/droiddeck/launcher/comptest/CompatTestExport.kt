@@ -34,16 +34,19 @@ object CompatTestGames {
  *     ├── droiddeck-comptest-<runId>.json
  *     ├── droiddeck-comptest-<runId>.md
  *     └── logs/
- *         ├── comptest-stage0-env.log
+ *         ├── comptest-stage0-env.log   (full output: Android + guest sections)
+ *         ├── comptest-vk-compute-test.log
  *         ├── comptest-vkcube.log
  *         ├── comptest-vulkaninfo.log
  *         ├── comptest-d3d9-cube.log
  *         ├── comptest-d3d11-cube.log
- *         └── comptest-payload-install.log   (when the D3D payload was staged)
+ *         ├── comptest-driver-install.log   (direct Tier-0 driver install)
+ *         └── comptest-driver-import.log   (driver-manager import trace)
  *
- * Per-stage log on-phone path (see GuestCommand):
- *   /data/data/<package>/files/logs/tools/<logName>.log
- * e.g. vulkaninfo: /data/data/com.droiddeck.launcher/files/logs/tools/comptest-vulkaninfo.log
+ * Directive #10 task 4: the zip contains ONLY this run's logs, from
+ * /data/data/<package>/files/comptest/<runId>/logs/. The old shared
+ * <filesDir>/logs/tools/ dir is never zipped, so stale logs from previous
+ * runs cannot leak in.
  *
  * That file's content (from the GuestCommand.run code path):
  *   == <Date string> /usr/bin/vulkaninfo
@@ -56,18 +59,21 @@ object CompatTestExport {
     const val JSON_NAME = "report.json"
     const val MD_NAME = "report.md"
 
-    /** Where GuestCommand writes per-stage logs: <filesDir>/logs/tools/. */
-    fun stageLogDir(context: Context): File =
-        File(File(context.filesDir, "logs"), "tools")
+    /** Run-scoped log dir: <filesDir>/comptest/<runId>/logs/. */
+    fun runLogDir(context: Context, runId: String): File =
+        File(runDir(context, runId), "logs").apply { mkdirs() }
 
     /**
-     * Per-stage log files that exist for this run, in suite order.
+     * Per-stage log files for this run, in suite order.
+     * Directive #10 task 4: reads ONLY this run's log dir
+     * (<filesDir>/comptest/<runId>/logs/) — never the shared tools dir, so
+     * stale logs from previous runs cannot leak into the zip.
      * Pure wrt ordering; file existence is checked on-device.
      */
-    fun stageLogFiles(context: Context, specIds: List<String>): List<File> {
-        val dir = stageLogDir(context)
-        val names = specIds.map { "comptest-$it.log" } + "comptest-payload-install.log"
-        return names.map { File(dir, it) }.filter { it.isFile }
+    fun stageLogFiles(context: Context, runId: String): List<File> {
+        val dir = File(runDir(context, runId), "logs")
+        return dir.listFiles { f -> f.isFile && f.name.endsWith(".log") }
+            ?.sortedBy { it.name } ?: emptyList()
     }
 
     fun runDir(context: Context, runId: String): File =
@@ -108,7 +114,7 @@ object CompatTestExport {
         if (!json.isFile || !md.isFile) return
         val shareDir = File(File(context.cacheDir, "share"), "comptest-$runId").apply { mkdirs() }
         val zipFile = File(shareDir, "droiddeck-comptest-$runId.zip")
-        buildShareZip(zipFile, runId, json, md, stageLogFiles(context, specIds))
+        buildShareZip(zipFile, runId, json, md, stageLogFiles(context, runId))
         val authority = "${context.packageName}.logs"
         val uri = androidx.core.content.FileProvider.getUriForFile(context, authority, zipFile)
         val intent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {

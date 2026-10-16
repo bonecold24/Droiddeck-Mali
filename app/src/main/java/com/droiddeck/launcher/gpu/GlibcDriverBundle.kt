@@ -86,6 +86,24 @@ object GlibcDriverBundle {
     }
 
     /**
+     * Directive #10 task 2: step-by-step import log (asset found, path, size,
+     * SHA ok, ABI read, destination, exception text). The executor snapshots it
+     * into the run's logs as comptest-driver-import.log for the export zip.
+     */
+    private val importLogLines = java.util.Collections.synchronizedList(ArrayList<String>())
+    private fun ilog(s: String) {
+        importLogLines += s
+        Log.i(TAG, s)
+    }
+
+    /** Drain the import log (called by the executor once per run). */
+    fun drainImportLog(): List<String> = synchronized(importLogLines) {
+        val out = importLogLines.toList()
+        importLogLines.clear()
+        out
+    }
+
+    /**
      * Import the bundled driver from APK assets when needed and return its
      * driver id, or null when the APK carries no bundled driver. The recorded
      * id is reused across runs; a missing or non-glibc import is rejected.
@@ -95,14 +113,18 @@ object GlibcDriverBundle {
         val prefs = app.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         val mgr = LinuxVulkanDriverManager(app)
         prefs.getString(KEY_BUNDLED_ID, null)?.let { id ->
-            if (isValidSelection(mgr, id)) return id
-            Log.i(TAG, "recorded bundled driver '$id' no longer valid; re-importing")
+            if (isValidSelection(mgr, id)) {
+                ilog("bundled driver '$id' already imported and valid; reusing")
+                return id
+            }
+            ilog("recorded bundled driver '$id' no longer valid; re-importing")
         }
         val assetFiles = try {
             app.assets.list(ASSET_DIR)?.toList() ?: emptyList()
         } catch (e: Exception) { emptyList() }
+        ilog("asset dir $ASSET_DIR: found=${assetFiles.isNotEmpty()} files=$assetFiles")
         if (assetFiles.isEmpty()) {
-            Log.i(TAG, "no bundled glibc driver in APK assets; skipping")
+            ilog("no bundled glibc driver in APK assets; skipping")
             return null
         }
         // Stage to a temp dir, then import.
@@ -115,15 +137,21 @@ object GlibcDriverBundle {
                     File(stage, n).outputStream().use { inp.copyTo(it) }
                 }
             }
+            ilog("staged ${assetFiles.size} files to ${stage.absolutePath}")
             val id = mgr.importDriverPackageDir(stage)
+            val destDir = mgr.getDriverDir(id)
+            ilog("imported as '$id' -> $destDir")
+            val abi = runCatching { mgr.getAbi(id) }.getOrDefault("?")
+            ilog("ABI read: $abi")
             if (!isValidSelection(mgr, id)) {
-                Log.w(TAG, "bundled driver '$id' failed glibc validation; not selecting it")
+                ilog("bundled driver '$id' failed glibc validation; not selecting it")
                 return null
             }
             prefs.edit().putString(KEY_BUNDLED_ID, id).putBoolean(KEY_IMPORTED, true).apply()
-            Log.i(TAG, "bundled glibc driver imported as $id")
+            ilog("bundled glibc driver imported as $id (destination $destDir)")
             return id
         } catch (e: Exception) {
+            ilog("EXCEPTION ${e.javaClass.simpleName}: ${e.message}")
             Log.w(TAG, "bundled glibc driver import failed: ${e.message}")
             return null
         } finally {

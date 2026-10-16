@@ -116,7 +116,7 @@ internal class CompatTestViewModel(private val activity: CompatTestActivity) {
         val env = environment ?: CompatTestExecutor.environmentOf(activity)
         val games = CompatTestGames.listInstalled(activity)
         val installedIds = games.map { it.gameId }.toSet()
-        val executor = CompatTestExecutor(activity, installedIds) { env }
+        val executor = CompatTestExecutor(activity, installedIds, { env }, runId)
         val results = ArrayList<TestResult>()
         val r = CompatTestRunner(
             executor = executor,

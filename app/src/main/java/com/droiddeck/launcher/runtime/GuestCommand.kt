@@ -42,6 +42,15 @@ object GuestCommand {
             "XDG_DATA_HOME=/root/.local/share", "FLATPAK_BWRAP=${FlatpakManager.BWRAP}",
             "DROIDDECK_BWRAP_SOCKET=${BwrapSpawner.socket(context)}",
             "XDG_DATA_DIRS=/root/.local/share/flatpak/exports/share:/usr/local/share:/usr/share",
+            // Directive #10 task 1: direct Tier-0 driver path. extraEnv on the
+            // host ProcessBuilder NEVER reaches the guest (env -i wipes it), so
+            // the Vulkan driver selection must be injected here, inside the
+            // guest, for every guest command. /opt/comptest/icd.json and
+            // /opt/comptest/libvulkan_panfrost.so are staged from the APK
+            // assets by Tier0DriverDirect before the compute test.
+            "VK_DRIVER_FILES=/opt/comptest/icd.json",
+            "VK_ICD_FILENAMES=/opt/comptest/icd.json",
+            "COMPTEST_DRIVER_SO=/opt/comptest/libvulkan_panfrost.so",
         )
         cmd += argv
         val builder = ProcessBuilder(cmd).directory(root).redirectErrorStream(true)

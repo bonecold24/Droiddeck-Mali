@@ -384,32 +384,31 @@ jobs:
           test -f "app/src/main/assets/linux-drivers/panvk-kbase-glibc/libvulkan_panfrost.so"
           test -f "app/src/main/assets/linux-drivers/panvk-kbase-glibc/panfrost_icd.aarch64.json"
           # The phone-side importer (DriverPackage.verify) requires a versioned
-          # package: MANIFEST.json (binarySha256 + files[]) and meta.json
-          # (name/packageVersion/libraryName/abi). Without them the bundled
-          # glibc driver can never be imported on the phone and the driver
-          # migration silently stays on the old bionic selection (Tier-0
-          # 2026-10-16). Generate them here from the verified bytes.
-          SO_SHA=$(sha256sum app/src/main/assets/linux-drivers/panvk-kbase-glibc/libvulkan_panfrost.so | cut -d' ' -f1)
-          ICD_SHA=$(sha256sum app/src/main/assets/linux-drivers/panvk-kbase-glibc/panfrost_icd.aarch64.json | cut -d' ' -f1)
-          cat > app/src/main/assets/linux-drivers/panvk-kbase-glibc/MANIFEST.json <<EOF
-          {
-            "binarySha256": "$SO_SHA",
-            "files": ["libvulkan_panfrost.so", "panfrost_icd.aarch64.json"]
-          }
-          EOF
-          cat > app/src/main/assets/linux-drivers/panvk-kbase-glibc/meta.json <<EOF
-          {
-            "name": "panvk-kbase-glibc",
-            "packageVersion": "0.1.0-rc3",
-            "libraryName": "libvulkan_panfrost.so",
-            "abi": "linux-aarch64-glibc",
-            "backend": "panvk",
-            "profile": "universal"
-          }
-          EOF
-          printf '%s  %s\n%s  %s\n' "$SO_SHA" "libvulkan_panfrost.so" "$ICD_SHA" "panfrost_icd.aarch64.json" \
-            > app/src/main/assets/linux-drivers/panvk-kbase-glibc/SHA256SUMS.txt
-          ls -la app/src/main/assets/linux-drivers/panvk-kbase-glibc/ | head -8
+          # package: MANIFEST.json must contain binarySha256 AND a non-empty
+          # files[]; meta.json must contain name/packageVersion/libraryName/abi.
+          # The upstream MANIFEST.json ships binarySha256 but NO files array, so
+          # the import threw "MANIFEST.json lists no files." on the phone and
+          # the driver migration silently kept the old bionic selection
+          # (Tier-0 2026-10-16). Merge the files list into the upstream
+          # MANIFEST.json, preserving its metadata (mesaCommit, kbaseUapi...).
+          python3 - <<'PYEOF'
+          import json, os
+          d = "app/src/main/assets/linux-drivers/panvk-kbase-glibc"
+          files = sorted(f for f in os.listdir(d) if os.path.isfile(os.path.join(d, f)))
+          mp = os.path.join(d, "MANIFEST.json")
+          manifest = json.load(open(mp))
+          manifest["files"] = files
+          json.dump(manifest, open(mp, "w"), indent=2)
+          print("MANIFEST.json files[] =", files)
+          # Sanity: the importer's required fields must all be present now.
+          meta = json.load(open(os.path.join(d, "meta.json")))
+          for k in ("name", "packageVersion", "libraryName", "abi"):
+              assert meta.get(k), f"meta.json missing {k}"
+          assert manifest.get("binarySha256", "").strip(), "MANIFEST.json missing binarySha256"
+          assert "glibc" in meta["abi"].lower(), "meta.json abi is not glibc"
+          print("package descriptors OK")
+          PYEOF
+          ls -la app/src/main/assets/linux-drivers/panvk-kbase-glibc/ | head -12
           rm -rf /tmp/glibc-driver-pkg
 
       - name: Build vk-compute-test (aarch64 glibc, headless)

@@ -201,7 +201,7 @@ object CompatReport {
                         appendLine("Env: ${m.entries.joinToString(" ") { (k, v) -> "$k=${cell(v)}" }}")
                     }
                     r.logFile?.let {
-                        appendLine("Full log: `/data/data/com.droiddeck.launcher/files/logs/tools/${cell(it)}`")
+                        appendLine("Full log: `logs/${cell(it)}` (in the share ZIP)")
                     }
                     r.payloadInstall?.let { p ->
                         if (!p.ok) appendLine("Payload install FAILED at ${cell(p.guestPath)}: ${cell(p.reason ?: "?")}")

@@ -39,10 +39,41 @@ class CompatTestExecutor(
     private val context: Context,
     private val installedGameIds: Set<Long>,
     private val environment: () -> EnvironmentInfo,
+    /** Run id (yyyyMMdd-HHmmss); scopes per-run log files for the export zip. */
+    private val runId: String = "",
 ) : CompatTestRunner.TestExecutor {
 
     @Volatile private var comptestPayloadDone = false
     @Volatile private var payloadResult: PayloadInstallResult? = null
+
+    /**
+     * Directive #10 task 4: per-run log directory. Every stage log for this run
+     * lands here; the export zip contains only this directory, never stale
+     * logs from previous runs.
+     */
+    private fun runLogDir(): File {
+        val base = File(context.applicationContext.filesDir, "comptest")
+        return if (runId.isNotEmpty()) File(File(base, runId), "logs").apply { mkdirs() }
+        else File(base, "logs").apply { mkdirs() }
+    }
+
+    /**
+     * Copy a stage log from the shared GuestCommand tools dir into this run's
+     * log dir, or write [fullLines] directly (used for Stage 0's full output
+     * including the Android-side section, and for PREREQ_MISSING logs).
+     */
+    private fun snapshotLog(logName: String, fullLines: List<String>? = null) {
+        runCatching {
+            val dir = runLogDir()
+            val dst = File(dir, "$logName.log")
+            if (fullLines != null) {
+                dst.writeText(fullLines.joinToString("\n") + "\n")
+            } else {
+                val src = File(File(context.applicationContext.filesDir, "logs/tools"), "$logName.log")
+                if (src.isFile) src.copyTo(dst, overwrite = true)
+            }
+        }
+    }
 
     override fun execute(
         spec: TestSpec,
@@ -76,6 +107,25 @@ class CompatTestExecutor(
                 emptyList(), "PREREQ_MISSING: Linux runtime not installed",
             )
         }
+        // Directive #10 task 1: DIRECT Tier-0 driver path, independent of the
+        // driver manager. Copy the glibc driver + ICD from APK assets straight
+        // into <rootfs>/opt/comptest/ and verify its SHA-256. The guest env
+        // (VK_DRIVER_FILES/VK_ICD_FILENAMES/COMPTEST_DRIVER_SO) is injected for
+        // every guest command in GuestCommand.
+        val directInstall = Tier0DriverDirect.install(context)
+        runCatching {
+            File(runLogDir(), "comptest-driver-install.log")
+                .writeText(directInstall.log.joinToString("\n") + "\n")
+        }
+        // Snapshot the driver-manager import log (why the bundled driver did or
+        // did not reach linux_vulkan_drivers) into this run's logs.
+        runCatching {
+            val importLog = com.droiddeck.launcher.gpu.GlibcDriverBundle.drainImportLog()
+            if (importLog.isNotEmpty()) {
+                File(runLogDir(), "comptest-driver-import.log")
+                    .writeText(importLog.joinToString("\n") + "\n")
+            }
+        }
         // BUG-3 diagnostic: the selected Linux driver must be a loadable glibc
         // aarch64 ICD. A bionic selection can never work in the guest — report it
         // as PREREQ_MISSING (not a GPU failure) with the reason spelled out.
@@ -88,23 +138,31 @@ class CompatTestExecutor(
         // glibc driver is kept.
         com.droiddeck.launcher.gpu.GlibcDriverBundle.ensureValidSelection(context)
         val validation = validateLinuxDriver(context)
-        if (validation != null && !validation.usable && spec.id != "stage0-env") {
-            return CompatTestRunner.TestRunOutcome(
-                TestOutcome.PrereqMissing("Selected Linux driver is not guest-usable: ${validation.reason}"),
-                emptyList(),
-                "PREREQ_MISSING: ${validation.detail}",
+        // Directive #10 task 1: the direct driver path bypasses the manager
+        // gate — the guest already has a verified glibc driver via
+        // /opt/comptest, so a stale bionic manager selection must not block
+        // the guest stages. The validation result is still recorded.
+        val driverBlocked = validation != null && !validation.usable && !directInstall.ok
+        if (driverBlocked && spec.id != "stage0-env") {
+            return prereqMissing(
+                "Selected Linux driver is not guest-usable: ${validation!!.reason}",
+                "${validation.detail} — direct driver install: FAILED (${directInstall.log.lastOrNull() ?: "no log"})",
             )
         }
         // Directive #7 Task 6: every PREREQ_MISSING stage gets a log with the reason.
         // Write the reason to the stage log file before returning.
         // The .md "Stage diagnostics" section is populated via withDiagnostics.
+        // Directive #10 task 4: the log goes into this run's log dir (zipped),
+        // with the reason plus the relevant facts — never an empty file.
         fun prereqMissing(reason: String, detail: String): CompatTestRunner.TestRunOutcome {
             val logName = "comptest-${spec.id}"
-            // Write to the shared log dir; the exporter scopes by runId separately.
             runCatching {
-                val logDir = File(context.applicationContext.filesDir, "comptest-logs")
-                logDir.mkdirs()
-                File(logDir, "$logName.log").writeText("PREREQ_MISSING: $detail\n")
+                val dir = runLogDir()
+                File(dir, "$logName.log").writeText(
+                    "PREREQ_MISSING: $detail\n" +
+                        "stage: ${spec.id} (${spec.label})\n" +
+                        "reason: $reason\n",
+                )
             }
             return CompatTestRunner.TestRunOutcome(
                 TestOutcome.PrereqMissing(reason),
@@ -112,7 +170,11 @@ class CompatTestExecutor(
                 "PREREQ_MISSING: $detail",
             ).withDiagnostics(
                 commandLine = "(prereq check, no guest command run)",
-                envVars = emptyMap(),
+                envVars = mapOf(
+                    "VK_DRIVER_FILES" to Tier0DriverDirect.GUEST_ICD,
+                    "VK_ICD_FILENAMES" to Tier0DriverDirect.GUEST_ICD,
+                    "COMPTEST_DRIVER_SO" to Tier0DriverDirect.GUEST_SO,
+                ),
                 exitCode = -1,
                 outputTail = listOf("PREREQ_MISSING: $detail"),
                 outputLinesTotal = 1,
@@ -191,6 +253,8 @@ class CompatTestExecutor(
         }
         // Gate B3: classify the raw exit code; a plain non-zero exit is FAIL_EXIT,
         // 127 is NOT_FOUND, >128 is SIGNAL. Never CRASH.
+        // Directive #10 task 4: snapshot this stage's log into the run's log dir.
+        snapshotLog(logName)
         val outcome = TestOutcome.fromExitCode(exit)
         val tail = lines.takeLast(100)
         val note = buildString {
@@ -394,6 +458,10 @@ class CompatTestExecutor(
         } catch (t: Throwable) {
             out += "  (failed to list driver directories: ${t.message})"
         }
+        // Directive #10 task 4: the log file gets the FULL output — Android-side
+        // section, guest output, validation, driver directories — not just the
+        // guest tail that GuestCommand wrote.
+        snapshotLog(logName, out)
         val outcome = if (exit == 0) TestOutcome.Pass else TestOutcome.fromExitCode(exit)
         return CompatTestRunner.TestRunOutcome(
             outcome, emptyList(),
@@ -469,23 +537,30 @@ echo "--- /dev/mali0 ---"; ls -l /dev/mali0 2>&1
 if command -v python3 >/dev/null 2>&1; then
 python3 -c "
 import os, errno, fcntl, struct
+# kbase UAPI ioctl numbers from mali_kbase_ioctl.h in the panvk-kbase driver
+# source tree (KBASE_IOCTL_TYPE 0x80):
+#   VERSION_CHECK_CSF = _IOWR(0x80, 52, {u16 major; u16 minor}) = 0xC0048034
+#   VERSION_CHECK_JM  = _IOWR(0x80, 0,  {u16 major; u16 minor}) = 0xC0048000
+#   SET_FLAGS         = _IOW(0x80, 1, u32)                     = 0x40048001
+# The G720 is CSF: try the CSF handshake first, then JM. The old probe used
+# type 'm' (0x6d) which the kernel rejects with EPERM before setup completes.
 try:
     fd = os.open('/dev/mali0', os.O_RDWR)
     print('mali0 open: OK fd=%d' % fd)
-    # KBASE_IOCTL_VERSION_CHECK: _IOR('m', 0, struct kbase_ioctl_version_check)
-    # struct: u16 major, u16 minor (4 bytes total)
+    checked = False
+    for name, req in [('VERSION_CHECK_CSF', 0xC0048034), ('VERSION_CHECK_JM', 0xC0048000)]:
+        try:
+            buf = struct.pack('HH', 0, 0)
+            res = fcntl.ioctl(fd, req, buf)
+            major, minor = struct.unpack('HH', res)
+            print('kbase %s: OK major=%d minor=%d' % (name, major, minor))
+            checked = True
+            break
+        except OSError as e:
+            print('kbase %s: FAIL errno=%d (%s)' % (name, e.errno, errno.errorcode.get(e.errno, '?')))
+    # SET_FLAGS is the second handshake step; only meaningful after a version check.
     try:
-        # _IOR('m', 0, 4) = 0x80046d00
-        buf = struct.pack('HH', 0, 0)
-        res = fcntl.ioctl(fd, 0x80046d00, buf)
-        major, minor = struct.unpack('HH', res)
-        print('kbase VERSION_CHECK: OK major=%d minor=%d' % (major, minor))
-    except OSError as e:
-        print('kbase VERSION_CHECK: FAIL errno=%d (%s)' % (e.errno, errno.errorcode.get(e.errno, '?')))
-    # KBASE_IOCTL_SET_FLAGS: _IOW('m', 1, u32) = 0x40046d01
-    # flags: 0x1 = KBASE_REG_MEM_FLAGS_NONE (just probe the ioctl)
-    try:
-        fcntl.ioctl(fd, 0x40046d01, struct.pack('I', 0))
+        fcntl.ioctl(fd, 0x40048001, struct.pack('I', 0))
         print('kbase SET_FLAGS: OK')
     except OSError as e:
         print('kbase SET_FLAGS: FAIL errno=%d (%s)' % (e.errno, errno.errorcode.get(e.errno, '?')))
@@ -522,12 +597,13 @@ echo "--- overlay damage check (Directive #8) ---"
 echo "ldd version:"; ldd --version 2>&1 | head -1
 echo "loader symlink:"; ls -l /lib/ld-linux-aarch64.so.1 /usr/lib/ld-linux-aarch64.so.1 2>&1
 echo "libc:"; ls -l /usr/lib/libc.so.6 2>&1
-if command -v pacman >/dev/null 2>&1; then
-  echo "pacman -Q glibc:"; pacman -Q glibc 2>&1
-  echo "pacman -Qkk glibc (modified files):"; pacman -Qkk glibc 2>&1 | head -20
-else
-  echo "pacman: not found in guest"
-fi
+echo "--- glibc integrity (stat+sha256; pacman is unusable in this guest: DownloadUser 'alpm' missing) ---"
+echo "The overlay-damage repair guard relies on the overlay marker file, not on pacman."
+stat -c '%n size=%s mtime=%y' /usr/lib/libc.so.6 /usr/lib/ld-linux-aarch64.so.1 /lib/ld-linux-aarch64.so.1 2>&1
+echo "sha256 (first 16 hex):"
+for f in /usr/lib/libc.so.6 /usr/lib/ld-linux-aarch64.so.1; do
+  if [ -f "$f" ]; then echo "$f: $(sha256sum "$f" 2>/dev/null | cut -c1-16)"; fi
+done
 echo "--- icd.d ---"; ls -l /usr/share/vulkan/icd.d/ /etc/vulkan/icd.d/ 2>&1 | head -20
 echo "--- implicit_layer.d ---"; ls -l /usr/share/vulkan/implicit_layer.d/ /etc/vulkan/implicit_layer.d/ 2>&1 | head -20
 """
@@ -540,7 +616,10 @@ echo "--- implicit_layer.d ---"; ls -l /usr/share/vulkan/implicit_layer.d/ /etc/
                 appCommit = BuildConfig.SOURCE_COMMIT,
                 driverPackage = driver,
                 protonVersion = defaultProtonLabel(context),
-                kbaseUapi = KbaseUapi.probe(),
+                // Directive #10 task 3: real kbase ioctl handshake in the guest
+                // (CSF first), plus avc-denial capture to separate SELinux from
+                // kernel EPERM. Replaces the old "not implemented" placeholder.
+                kbaseUapi = KbaseUapi.probe(context),
                 deviceModel = "${Build.MANUFACTURER} ${Build.MODEL}".trim(),
                 soc = SocNames.label(),
                 driverValidation = validateLinuxDriver(context),
@@ -785,19 +864,65 @@ fun CompatTestRunner.TestRunOutcome.withPayload(
     payload: PayloadInstallResult?,
 ): CompatTestRunner.TestRunOutcome = copy(payloadInstall = payload)
 
-/** kbase CSF UAPI version probe. Best-effort; never assumed. */
+/**
+ * kbase CSF UAPI version probe. Runs the ioctl handshake in the guest and
+ * reports the outcome for the environment table ("kbase UAPI").
+ *
+ * Ioctl numbers from mali_kbase_ioctl.h in the panvk-kbase driver source tree
+ * (KBASE_IOCTL_TYPE 0x80). The G720 is CSF: VERSION_CHECK_CSF first.
+ * After the probe, Android-side avc denials mentioning mali/gpu are captured
+ * so an SELinux denial can be told apart from a kernel EPERM.
+ */
 object KbaseUapi {
-    fun probe(): String {
-        // The UAPI version is negotiated over the kbase ioctl; there is no stable
-        // sysfs node for it. Report honestly rather than guessing (e.g. Samsung's 1.21).
-        val candidates = listOf(
-            "/sys/module/mali_kbase/version",
-            "/sys/devices/platform/mali_kbase/uapi_version",
-        )
-        for (p in candidates) {
-            val v = runCatching { File(p).readText().trim() }.getOrNull()
-            if (!v.isNullOrEmpty()) return v
+    private const val PROBE = """
+import os, errno, fcntl, struct
+try:
+    fd = os.open('/dev/mali0', os.O_RDWR)
+    ok = None
+    for name, req in [('CSF', 0xC0048034), ('JM', 0xC0048000)]:
+        try:
+            res = fcntl.ioctl(fd, req, struct.pack('HH', 0, 0))
+            major, minor = struct.unpack('HH', res)
+            ok = '%s major=%d minor=%d' % (name, major, minor)
+            break
+        except OSError as e:
+            print('VERSION_CHECK_%s errno=%d' % (name, e.errno))
+    try:
+        fcntl.ioctl(fd, 0x40048001, struct.pack('I', 0))
+        flags = 'SET_FLAGS OK'
+    except OSError as e:
+        flags = 'SET_FLAGS errno=%d' % e.errno
+    os.close(fd)
+    print('RESULT ok=%s %s' % (ok, flags))
+except OSError as e:
+    print('RESULT mali0 open errno=%d' % e.errno)
+"""
+
+    fun probe(context: Context): String {
+        return try {
+            val out = ArrayList<String>()
+            GuestCommand.run(
+                context,
+                listOf("python3", "-c", PROBE.trimIndent()),
+                logName = "comptest-kbase-probe",
+            ) { line -> synchronized(out) { out.add(line) } }
+            // Android side: avc denials mentioning mali/gpu after the probe, so
+            // SELinux can be told apart from a kernel EPERM.
+            val avc = runCatching {
+                val p = Runtime.getRuntime().exec(arrayOf(
+                    "/system/bin/sh", "-c",
+                    "logcat -d -b all 2>/dev/null | grep -i 'avc' | grep -iE 'mali|gpu_device|ioctl' | tail -5",
+                ))
+                val text = p.inputStream.bufferedReader().readText().trim()
+                p.waitFor()
+                text
+            }.getOrDefault("")
+            val result = out.firstOrNull { it.startsWith("RESULT") }?.removePrefix("RESULT ")?.trim()
+                ?: out.joinToString("; ").ifEmpty { "no probe output" }.take(200)
+            val avcNote = if (avc.isBlank()) "no avc denials" else "avc: ${avc.take(200)}"
+            "$result | $avcNote"
+        } catch (t: Throwable) {
+            "probe failed: ${t.javaClass.simpleName}: ${t.message}"
         }
-        return "unknown (kbase ioctl probe not implemented; see vulkaninfo capture)"
     }
 }
