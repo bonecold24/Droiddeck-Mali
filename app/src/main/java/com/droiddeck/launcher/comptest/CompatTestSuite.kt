@@ -27,6 +27,14 @@ object CompatTestSuite {
             timeoutSec = 60,
         ),
         TestSpec(
+            id = "vk-render-test", label = "vk-render-test (headless graphics, B0)", kind = TestKind.SYSTEM_CHECK,
+            description = "Directive #11 B0: headless Vulkan graphics test. No display, " +
+                "no WSI, no swapchain — offscreen render of a known triangle with " +
+                "pixel verification, plus separate geometry/tessellation shader tests. " +
+                "Proves the graphics path (tiler/fragment/rasterization) separately from compute.",
+            timeoutSec = 60,
+        ),
+        TestSpec(
             id = "vkcube", label = "vkcube (Vulkan cube)", kind = TestKind.SYSTEM_CHECK,
             description = "Renders the Vulkan cube through the active ICD for ~10s. " +
                 "Requires a working display; reports PREREQ_MISSING if none.",

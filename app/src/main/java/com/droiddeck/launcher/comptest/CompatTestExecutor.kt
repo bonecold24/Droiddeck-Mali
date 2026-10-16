@@ -233,7 +233,10 @@ class CompatTestExecutor(
             )
         // BUG-5: the D3D payload install is no longer silent. If it failed, the
         // D3D stages cannot run — PREREQ_MISSING with the recorded reason.
-        val payload = if (spec.id == "d3d9-cube" || spec.id == "d3d11-cube") {
+        // Directive #11 B0: vk-render-test also needs the payload (binary in assets).
+        // vk-compute-test is also ensured here for robustness.
+        val payload = if (spec.id == "d3d9-cube" || spec.id == "d3d11-cube" ||
+            spec.id == "vk-render-test" || spec.id == "vk-compute-test") {
             ensureComptestPayload()
         } else null
         if (payload != null && !payload.ok) {
@@ -869,6 +872,12 @@ echo "--- implicit_layer.d ---"; ls -l /usr/share/vulkan/implicit_layer.d/ /etc/
             "vk-compute-test" -> listOf(
                 "/bin/sh", "-c",
                 "VK_LOADER_DEBUG=driver exec /opt/comptest/vk-compute-test"
+            )
+            // Directive #11 B0: headless graphics test. No DISPLAY/WAYLAND_DISPLAY,
+            // no WSI, no swapchain — offscreen render only. Must run before B1.
+            "vk-render-test" -> listOf(
+                "/bin/sh", "-c",
+                "VK_LOADER_DEBUG=driver exec /opt/comptest/vk-render-test"
             )
             // vkcube: run N frames offscreen-ish; parse its fps readout into frame times.
             // Requires a display; the executor probes for one first (see runSystemCheck).

@@ -418,7 +418,7 @@ jobs:
           # runs before vkcube in Tier 0 to separate GPU bring-up from display bring-up.
           # Vulkan is dlopen()ed at runtime, so only the headers are needed at build time.
           sudo apt-get update -qq
-          sudo apt-get install -y -qq gcc-aarch64-linux-gnu libvulkan-dev
+          sudo apt-get install -y -qq gcc-aarch64-linux-gnu libvulkan-dev glslang-tools
           mkdir -p app/src/main/assets/comptest
           aarch64-linux-gnu-gcc -O2 -Wall -Wextra -o app/src/main/assets/comptest/vk-compute-test \
             tools/comptest/vk-compute-test.c -ldl
@@ -426,6 +426,52 @@ jobs:
           file app/src/main/assets/comptest/vk-compute-test
           # Sanity: must be an aarch64 glibc (SYSV) binary, not bionic/Android.
           aarch64-linux-gnu-readelf -d app/src/main/assets/comptest/vk-compute-test | grep -i NEEDED
+          ls -la app/src/main/assets/comptest/
+
+      - name: Build vk-render-test (aarch64 glibc, headless, B0)
+        run: |
+          set -euo pipefail
+          # Directive #11 B0: headless Vulkan graphics smoke test. No display
+          # server, no WSI, no swapchain — offscreen render into a VkImage.
+          # Tests the graphics path (tiler/fragment/rasterization) separately
+          # from compute. GLSL shaders are compiled to SPIR-V at build time.
+          mkdir -p app/src/main/assets/comptest
+          cd tools/comptest/shaders
+          for sh in triangle.vert triangle.frag passthrough.geom passthrough.tesc passthrough.tese; do
+            glslangValidator -V $sh -o $sh.spv
+          done
+          python3 - << 'PYEOF'
+          def to_c_array(path, name):
+              with open(path, 'rb') as f:
+                  data = f.read()
+              words = [int.from_bytes(data[i:i+4], 'little') for i in range(0, len(data), 4)]
+              lines = [f"static const uint32_t {name}[] = {{"]
+              for i in range(0, len(words), 6):
+                  chunk = words[i:i+6]
+                  lines.append("    " + ", ".join(f"0x{w:08x}u" for w in chunk) + ",")
+              lines.append("};")
+              return "\n".join(lines)
+          shaders = [
+              ('triangle.vert.spv', 'kTriangleVertSpv'),
+              ('triangle.frag.spv', 'kTriangleFragSpv'),
+              ('passthrough.geom.spv', 'kPassthroughGeomSpv'),
+              ('passthrough.tesc.spv', 'kPassthroughTescSpv'),
+              ('passthrough.tese.spv', 'kPassthroughTeseSpv'),
+          ]
+          with open('all_spv.h', 'w') as f:
+              f.write("/* Auto-generated via glslangValidator. DO NOT EDIT. */\n")
+              f.write("#pragma once\n#include <stdint.h>\n#include <stddef.h>\n\n")
+              for path, name in shaders:
+                  f.write(to_c_array(path, name) + "\n\n")
+          print("Generated all_spv.h")
+          PYEOF
+          cd ../../..
+          aarch64-linux-gnu-gcc -O2 -Wall -Wextra -o app/src/main/assets/comptest/vk-render-test \
+            tools/comptest/vk-render-test.c -ldl -I tools/comptest/shaders
+          aarch64-linux-gnu-strip --strip-unneeded app/src/main/assets/comptest/vk-render-test
+          file app/src/main/assets/comptest/vk-render-test
+          aarch64-linux-gnu-readelf -d app/src/main/assets/comptest/vk-render-test | grep -i NEEDED
+          # Verify the binary is in the asset payload check
           ls -la app/src/main/assets/comptest/
 
       - name: Verify payload manifest (fail if assets missing)
@@ -513,7 +559,7 @@ jobs:
           # runs before vkcube in Tier 0 to separate GPU bring-up from display bring-up.
           # Vulkan is dlopen()ed at runtime, so only the headers are needed at build time.
           sudo apt-get update -qq
-          sudo apt-get install -y -qq gcc-aarch64-linux-gnu libvulkan-dev
+          sudo apt-get install -y -qq gcc-aarch64-linux-gnu libvulkan-dev glslang-tools
           mkdir -p app/src/main/assets/comptest
           aarch64-linux-gnu-gcc -O2 -Wall -Wextra -o app/src/main/assets/comptest/vk-compute-test \
             tools/comptest/vk-compute-test.c -ldl
@@ -521,6 +567,41 @@ jobs:
           file app/src/main/assets/comptest/vk-compute-test
           # Sanity: must be an aarch64 glibc (SYSV) binary, not bionic/Android.
           aarch64-linux-gnu-readelf -d app/src/main/assets/comptest/vk-compute-test | grep -i NEEDED
+          # Directive #11 B0: headless Vulkan graphics test (offscreen render).
+          cd tools/comptest/shaders
+          for sh in triangle.vert triangle.frag passthrough.geom passthrough.tesc passthrough.tese; do
+            glslangValidator -V $sh -o $sh.spv
+          done
+          python3 - << 'PYEOF'
+          def to_c_array(path, name):
+              with open(path, 'rb') as f:
+                  data = f.read()
+              words = [int.from_bytes(data[i:i+4], 'little') for i in range(0, len(data), 4)]
+              lines = [f"static const uint32_t {name}[] = {{"]
+              for i in range(0, len(words), 6):
+                  chunk = words[i:i+6]
+                  lines.append("    " + ", ".join(f"0x{w:08x}u" for w in chunk) + ",")
+              lines.append("};")
+              return "\n".join(lines)
+          shaders = [
+              ('triangle.vert.spv', 'kTriangleVertSpv'),
+              ('triangle.frag.spv', 'kTriangleFragSpv'),
+              ('passthrough.geom.spv', 'kPassthroughGeomSpv'),
+              ('passthrough.tesc.spv', 'kPassthroughTescSpv'),
+              ('passthrough.tese.spv', 'kPassthroughTeseSpv'),
+          ]
+          with open('all_spv.h', 'w') as f:
+              f.write("/* Auto-generated via glslangValidator. DO NOT EDIT. */\n")
+              f.write("#pragma once\n#include <stdint.h>\n#include <stddef.h>\n\n")
+              for path, name in shaders:
+                  f.write(to_c_array(path, name) + "\n\n")
+          PYEOF
+          cd ../../..
+          aarch64-linux-gnu-gcc -O2 -Wall -Wextra -o app/src/main/assets/comptest/vk-render-test \
+            tools/comptest/vk-render-test.c -ldl -I tools/comptest/shaders
+          aarch64-linux-gnu-strip --strip-unneeded app/src/main/assets/comptest/vk-render-test
+          file app/src/main/assets/comptest/vk-render-test
+          aarch64-linux-gnu-readelf -d app/src/main/assets/comptest/vk-render-test | grep -i NEEDED
           ls -la app/src/main/assets/comptest/
 
       - name: Bundle the droiddeck-esync packs
