@@ -48,6 +48,7 @@ static PFN_vkGetInstanceProcAddr real_gipa = NULL;
 /* Real vkGetPhysicalDeviceProperties2 captured when vkGetInstanceProcAddr
  * is asked for it (per instance); plus a dlsym fallback for NULL instance. */
 static PFN_WrappedGetProps2 real_getProps2 = NULL;
+static PFN_WrappedGetProps2 real_getProps2KHR = NULL;
 static int logged_no_dev = 0;
 
 static void fill_drm_props(VkPhysicalDeviceProperties2 *pProperties)
@@ -110,6 +111,24 @@ static void VKAPI_CALL wrapped_vkGetPhysicalDeviceProperties2(
     fill_drm_props(pProperties);
 }
 
+static void VKAPI_CALL wrapped_vkGetPhysicalDeviceProperties2KHR(
+    VkPhysicalDevice physicalDevice,
+    VkPhysicalDeviceProperties2 *pProperties)
+{
+    if (!real_getProps2KHR) {
+        real_getProps2KHR =
+            (PFN_WrappedGetProps2)dlsym(RTLD_NEXT,
+                                        "vkGetPhysicalDeviceProperties2KHR");
+        if (!real_getProps2KHR) {
+            fprintf(stderr,
+                "drm-shim: no real vkGetPhysicalDeviceProperties2KHR available\n");
+            return;
+        }
+    }
+    real_getProps2KHR(physicalDevice, pProperties);
+    fill_drm_props(pProperties);
+}
+
 __attribute__((constructor))
 static void init(void)
 {
@@ -147,7 +166,29 @@ VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL vkGetInstanceProcAddr(
         /* instance==NULL or unknown instance: nothing to wrap. */
         return fn;
     }
+    if (pName && strcmp(pName, "vkGetPhysicalDeviceProperties2KHR") == 0) {
+        if (fn) {
+            real_getProps2KHR = (PFN_WrappedGetProps2)fn;
+            fprintf(stderr,
+                "drm-shim: intercepting vkGetPhysicalDeviceProperties2KHR\n");
+            return (PFN_vkVoidFunction)wrapped_vkGetPhysicalDeviceProperties2KHR;
+        }
+        return fn;
+    }
     return fn;
+}
+
+/*
+ * vk_icdGetInstanceProcAddr: the ICD-level entry point. Some loaders/drivers
+ * route through this instead of vkGetInstanceProcAddr. Apply the same
+ * interception here for robustness.
+ */
+VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL vk_icdGetInstanceProcAddr(
+    VkInstance instance,
+    const char *pName)
+{
+    /* Delegate to our vkGetInstanceProcAddr wrapper, which does the real work. */
+    return vkGetInstanceProcAddr(instance, pName);
 }
 
 /*
@@ -160,4 +201,60 @@ VKAPI_ATTR void VKAPI_CALL vkGetPhysicalDeviceProperties2(
     VkPhysicalDeviceProperties2 *pProperties)
 {
     wrapped_vkGetPhysicalDeviceProperties2(physicalDevice, pProperties);
+}
+
+VKAPI_ATTR void VKAPI_CALL vkGetPhysicalDeviceProperties2KHR(
+    VkPhysicalDevice physicalDevice,
+    VkPhysicalDeviceProperties2 *pProperties)
+{
+    wrapped_vkGetPhysicalDeviceProperties2KHR(physicalDevice, pProperties);
+}
+
+/*
+ * drmGetDeviceFromDevId interposition: Gamescope may call libdrm's
+ * drmGetDeviceFromDevId(makedev(primaryMajor, primaryMinor)) after reading
+ * VkPhysicalDeviceDrmPropertiesEXT. libdrm rejects devices whose major is
+ * not DRM_MAJOR (226) or that lack /sys/dev/char/.../device/drm. On Android
+ * kbase, /dev/mali0 is major=10 (misc), so libdrm would fail. We interpose
+ * and return success (0) for the mali device, letting Gamescope proceed
+ * with the DRM properties we already filled.
+ *
+ * Signature: int drmGetDeviceFromDevId(dev_t dev_id, uint32_t flags,
+ *                                      drmDevicePtr *device)
+ * We return 0 without populating *device (Gamescope only checks the return
+ * value for the primary-node validation path). If the real libdrm can handle
+ * it (e.g., a real /dev/dri/card0), delegate to the real function.
+ */
+int drmGetDeviceFromDevId(unsigned long long dev_id, uint32_t flags,
+                           void **device)
+{
+    static int (*real_drmGetDeviceFromDevId)(unsigned long long, uint32_t,
+                                             void **) = NULL;
+    if (!real_drmGetDeviceFromDevId) {
+        real_drmGetDeviceFromDevId =
+            dlsym(RTLD_NEXT, "drmGetDeviceFromDevId");
+    }
+
+    /* Check if this is our mali device (major=10) */
+    unsigned int maj = (unsigned int)(dev_id >> 8) & 0xfff;
+    /* Actually use gnu_dev_makedev decoding: major is bits 8-19 */
+    maj = ((dev_id >> 8) & 0xfff) | ((dev_id >> 32) & ~0xfff);
+
+    struct stat st;
+    int is_mali = 0;
+    if (stat("/dev/mali0", &st) == 0 && st.st_rdev == (dev_t)dev_id) {
+        is_mali = 1;
+    }
+
+    if (is_mali) {
+        fprintf(stderr,
+            "drm-shim: drmGetDeviceFromDevId intercepted for /dev/mali0, returning success\n");
+        if (device) *device = NULL;
+        return 0;
+    }
+
+    if (real_drmGetDeviceFromDevId) {
+        return real_drmGetDeviceFromDevId(dev_id, flags, device);
+    }
+    return -1;
 }

@@ -39,7 +39,7 @@ object ProtonManager {
     const val GUEST_PROTON_DIR = "/opt/proton"
 
     /** Guest-side wine binary (relative to GUEST_PROTON_DIR). */
-    const val WINE_BIN = "bin/wine64"
+    const val WINE_BIN = "files/bin-arm64/wine"
 
     /** Subdirectory containing DXVK DLLs. */
     const val DXVK_DIR = "lib64/dxvk"
@@ -155,6 +155,9 @@ object ProtonManager {
         "VK_ICD_FILENAMES=/opt/comptest/icd.json",
         // DXVK HUD for visual confirmation.
         "DXVK_HUD=1",
+        // Force DXVK's native d3d9/d3d11/dxgi over WineD3D (OpenGL).
+        // Without this, Wine defaults to WineD3D which fails without GLX/EGL.
+        "WINEDLLOVERRIDES=d3d9,d3d10core,d3d11,dxgi=n,b",
         // Silence Wine debug output (we want clean logs).
         "WINEDEBUG=-all",
         // Proton/Wine prefix location.

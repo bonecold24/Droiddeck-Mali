@@ -248,7 +248,35 @@ class CompatTestExecutor(
         // Directive #9.E: D3D cubes are Windows .exe files needing Wine/Proton.
         // The Arch guest (linuxfs-r9) has no Wine/Proton installed. Report
         // PREREQ_MISSING with the missing pieces, not a GPU failure.
+        // Directive #6.1: Auto-download and install Proton if not present.
+        // This wires ProtonManager into the Tier 0 runner (no dead code).
         if (spec.id == "d3d9-cube" || spec.id == "d3d11-cube") {
+            if (!ProtonManager.isInstalled(context)) {
+                android.util.Log.i("CompatTest", "Proton not installed, auto-downloading...")
+                val downloadResult = ProtonManager.ensureDownloaded(context) { downloaded, total ->
+                    // Progress callback - could update UI here
+                    android.util.Log.d("CompatTest", "Proton download: $downloaded / $total bytes")
+                }
+                when (downloadResult) {
+                    is com.droiddeck.launcher.runtime.DownloadManager.Result.Success -> {
+                        android.util.Log.i("CompatTest", "Proton downloaded, extracting to guest...")
+                        if (!ProtonManager.extractToGuest(context)) {
+                            return prereqMissing(
+                                "Proton extraction failed",
+                                "DroidDeck-Proton downloaded but failed to extract to /opt/proton in guest.",
+                            )
+                        }
+                    }
+                    is com.droiddeck.launcher.runtime.DownloadManager.Result.Failure -> {
+                        return prereqMissing(
+                            "Proton download failed: ${downloadResult.message}",
+                            "D3D cubes need DroidDeck-Proton (ARM64 Wine + DXVK) to run Windows .exe files. " +
+                            "Download failed: ${downloadResult.message}. " +
+                            "Manually download from: ${ProtonManager.PROTON_URL}",
+                        )
+                    }
+                }
+            }
             val wineCheck = checkWineAvailable()
             if (!wineCheck.available) {
                 return prereqMissing(
