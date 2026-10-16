@@ -27,17 +27,18 @@ class ProtonManagerTest {
     @Test fun wineCommandIncludesDxvkHud() {
         val cmd = ProtonManager.wineCommand("/opt/comptest/d3d11-cube.exe")
         val flat = cmd.joinToString(" ")
-        assertTrue(flat.contains("DXVK_HUD=1"))
+        assertTrue(flat.contains("DXVK_HUD=devinfo,fps,api"))
         assertTrue(flat.contains("WINEDEBUG=-all"))
         assertTrue(flat.contains("VK_DRIVER_FILES=/opt/comptest/icd.json"))
         assertTrue(flat.contains("/opt/comptest/d3d11-cube.exe"))
     }
 
-    @Test fun wineCommandIncludesDrmShim() {
+    @Test fun wineCommandUsesX11NotDrmShim() {
         val cmd = ProtonManager.wineCommand("/opt/comptest/d3d9-cube.exe")
         val flat = cmd.joinToString(" ")
-        // The DRM shim must be active for Wine's Vulkan calls too.
-        assertTrue(flat.contains("LD_PRELOAD=/opt/comptest/drm-shim.so"))
+        // Mali uses X11 presentation (like PanPlay), not DRM Gamescope.
+        // DISPLAY must be set; drm-shim LD_PRELOAD is not used for Wine.
+        assertTrue(flat.contains("DISPLAY=:0"))
     }
 
     @Test fun wineEnvHasRequiredVars() {
@@ -45,8 +46,10 @@ class ProtonManagerTest {
         val flat = env.joinToString(" ")
         assertTrue(flat.contains("VK_DRIVER_FILES="))
         assertTrue(flat.contains("VK_ICD_FILENAMES="))
-        assertTrue(flat.contains("DXVK_HUD=1"))
+        assertTrue(flat.contains("DXVK_HUD=devinfo,fps,api"))
         assertTrue(flat.contains("WINEDEBUG=-all"))
         assertTrue(flat.contains("WINEPREFIX="))
+        assertTrue(flat.contains("WINEDLLOVERRIDES="))
+        assertTrue(flat.contains("DISPLAY=:0"))
     }
 }
