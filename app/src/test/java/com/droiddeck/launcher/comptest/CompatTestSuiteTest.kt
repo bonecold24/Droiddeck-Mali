@@ -35,7 +35,7 @@ class CompatTestSuiteTest {
         val suite = CompatTestSuite.build(games)
         assertEquals(11, suite.size)
         assertEquals(systemIds, suite.take(9).map { it.id })
-        val gameSpecs = suite.drop(6)
+        val gameSpecs = suite.drop(9)
         assertTrue(gameSpecs.all { it.kind == TestKind.GAME_TEST })
         assertEquals(listOf(11L, 22L), gameSpecs.map { it.gameId })
         assertEquals(listOf("Hollow Knight", "Stardew Valley"), gameSpecs.map { it.label })
