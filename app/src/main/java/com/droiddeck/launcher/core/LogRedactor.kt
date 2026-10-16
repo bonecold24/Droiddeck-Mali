@@ -8,7 +8,7 @@ object LogRedactor {
     private val SECRET_KV = Regex(
         "(?i)(?<![A-Za-z0-9])(__token__|access[_-]?token|refresh[_-]?token|auth[_-]?token|authtoken|token|authcode|" +
             "auth[_-]?ticket|ticket|sessionid|steamloginsecure|webapikey|api[_-]?key|" +
-            "machine[_-]?auth(?:[_-]?token)?|machineauth|password|passwd|pwd|secret)(__)?" +
+            "machine[_-]?auth(?:[_-]?token)?|machineauth|password|passwd|pwd|secret)(?:__)?" +
             "(\\s*[=:]\\s*|=)([^\\s\"'<>&;,]{4,})"
     )
     private val GUARD_CODE = Regex(
