@@ -125,13 +125,22 @@ object ProtonManager {
         }
         Log.i(TAG, "Extracting Proton to guest $GUEST_PROTON_DIR...")
         // Stage the tarball where the guest can see it, then extract via proot.
+        // Directive: Master Autonomous Phase 3 — verify exact paths from tarball
+        // inspection: wine is at files/bin-arm64/wine (not bin/wine64).
+        // Also seed WINEPREFIX from default_pfx_arm64 with DXVK DLLs.
         val exit = GuestCommand.run(
             context,
             listOf(
                 "/bin/sh", "-c",
                 "mkdir -p '$GUEST_PROTON_DIR' && " +
                 "tar -xzf '${tarball.path}' -C '$GUEST_PROTON_DIR' --strip-components=1 && " +
-                "ls '$GUEST_PROTON_DIR/bin/wine64' && " +
+                "ls '$GUEST_PROTON_DIR/files/bin-arm64/wine' && " +
+                // Seed WINEPREFIX from default_pfx_arm64 (contains DXVK DLLs)
+                "mkdir -p '/opt/proton/prefix' && " +
+                "cp -a '$GUEST_PROTON_DIR/files/share/default_pfx_arm64/.' '/opt/proton/prefix/' && " +
+                // Verify DXVK DLLs are present
+                "ls '/opt/proton/prefix/drive_c/windows/system32/d3d11.dll' && " +
+                "ls '/opt/proton/prefix/drive_c/windows/syswow64/d3d11.dll' && " +
                 "echo 'PROTON_EXTRACT_OK'",
             ),
             logName = "proton-extract",
@@ -141,7 +150,7 @@ object ProtonManager {
             return false
         }
         markerFile(context).writeText(PROTON_VERSION)
-        Log.i(TAG, "Proton $PROTON_VERSION ready in guest")
+        Log.i(TAG, "Proton $PROTON_VERSION ready in guest with DXVK prefix")
         return true
     }
 
@@ -153,17 +162,17 @@ object ProtonManager {
         // Point Wine at our Vulkan driver.
         "VK_DRIVER_FILES=/opt/comptest/icd.json",
         "VK_ICD_FILENAMES=/opt/comptest/icd.json",
-        // DXVK HUD for visual confirmation.
-        "DXVK_HUD=1",
+        // DXVK HUD: devinfo, fps, api for visual confirmation.
+        "DXVK_HUD=devinfo,fps,api",
         // Force DXVK's native d3d9/d3d11/dxgi over WineD3D (OpenGL).
         // Without this, Wine defaults to WineD3D which fails without GLX/EGL.
         "WINEDLLOVERRIDES=d3d9,d3d10core,d3d11,dxgi=n,b",
         // Silence Wine debug output (we want clean logs).
         "WINEDEBUG=-all",
-        // Proton/Wine prefix location.
+        // Proton/Wine prefix location (seeded from default_pfx_arm64).
         "WINEPREFIX=/opt/proton/prefix",
-        // Ensure the DRM shim is active for any Vulkan calls.
-        "LD_PRELOAD=/opt/comptest/drm-shim.so",
+        // X11 display for Wine windows (Mali uses X11, not Wayland/DRM).
+        "DISPLAY=:0",
     )
 
     /**

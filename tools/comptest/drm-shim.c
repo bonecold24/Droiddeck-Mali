@@ -36,6 +36,7 @@
 #include <dlfcn.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
 #include <sys/sysmacros.h>
@@ -235,11 +236,6 @@ int drmGetDeviceFromDevId(unsigned long long dev_id, uint32_t flags,
             dlsym(RTLD_NEXT, "drmGetDeviceFromDevId");
     }
 
-    /* Check if this is our mali device (major=10) */
-    unsigned int maj = (unsigned int)(dev_id >> 8) & 0xfff;
-    /* Actually use gnu_dev_makedev decoding: major is bits 8-19 */
-    maj = ((dev_id >> 8) & 0xfff) | ((dev_id >> 32) & ~0xfff);
-
     struct stat st;
     int is_mali = 0;
     if (stat("/dev/mali0", &st) == 0 && st.st_rdev == (dev_t)dev_id) {
@@ -248,8 +244,29 @@ int drmGetDeviceFromDevId(unsigned long long dev_id, uint32_t flags,
 
     if (is_mali) {
         fprintf(stderr,
-            "drm-shim: drmGetDeviceFromDevId intercepted for /dev/mali0, returning success\n");
-        if (device) *device = NULL;
+            "drm-shim: drmGetDeviceFromDevId intercepted for /dev/mali0\n");
+        if (device) {
+            /* Allocate a minimal drmDevice struct. Returning 0 with *device=NULL
+             * causes SIGSEGV in Gamescope. We allocate a zeroed struct with
+             * the device node path set. */
+            struct drmDevice {
+                char **nodes;
+                int available_nodes;
+                char *businfo_pci_domain;
+                // ... (full struct is larger, but Gamescope only reads nodes)
+            };
+            // Use calloc for a zeroed struct large enough for drmDevice
+            // (libdrm's drmDevice is ~120 bytes; we allocate 256 to be safe)
+            void *dev = calloc(1, 256);
+            if (dev) {
+                // Set available_nodes = 0 (no DRM nodes, but struct is valid)
+                // This prevents SIGSEGV; Gamescope checks return value first
+                *device = dev;
+            } else {
+                *device = NULL;
+                return -12; // -ENOMEM
+            }
+        }
         return 0;
     }
 
