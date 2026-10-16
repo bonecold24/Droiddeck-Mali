@@ -1051,13 +1051,12 @@ except OSError as e:
         }
     }
 
-    companion object {
-        /**
-         * Directive #11 A4: filter AVC denial lines to the run window and split
-         * into GPU-relevant (mali, vulkan, kbase, dri, gpu) vs other.
-         * Logcat threadtime format: "MM-DD HH:MM:SS.mmm ...".
-         * Returns (relevant, other) as semicolon-joined strings.
-         * Pure — unit-tested.
+    /**
+     * Directive #11 A4: filter AVC denial lines to the run window and split
+     * into GPU-relevant (mali, vulkan, kbase, dri, gpu) vs other.
+     * Logcat threadtime format: "MM-DD HH:MM:SS.mmm ...".
+     * Returns (relevant, other) as semicolon-joined strings.
+     * Pure — unit-tested. (KbaseUapi is an object, so no companion needed.)
          */
         fun filterAvcByTime(avcText: String, runStartMs: Long, runEndMs: Long): Pair<String, String> {
             if (avcText.isBlank()) return "" to ""
@@ -1090,5 +1089,4 @@ except OSError as e:
             }
             return relevant.joinToString("; ") to other.joinToString("; ")
         }
-    }
 }
