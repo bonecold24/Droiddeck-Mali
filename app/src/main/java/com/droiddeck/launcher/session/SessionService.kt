@@ -513,18 +513,23 @@ class SessionService : Service() {
         ))
         guest.add("TZ=" + java.util.TimeZone.getDefault().id)
         guest.add("XDG_RUNTIME_DIR=" + LinuxRuntime.GUEST_RUNTIME_DIR)
-        // Directive: Master Autonomous Phase 2 — Mali G720 uses X11 presentation
-        // (like PanPlay), NOT Wayland/Gamescope headless. The X11 server (Xlorie
-        // on Android) provides DISPLAY=:0; Vulkan presents via VK_KHR_xcb_surface.
+        // Mali G720 display chain (corrected per display-chain investigation):
+        // Android SurfaceView <- native WaylandCompositor (wayland-0) <-
+        //   gamescope --backend wayland (in guest) <- X11 DISPLAY=:0 <-
+        //   Steam/Wine. Gamescope is the REQUIRED bridge to the Android screen;
+        //   skipping it leaves DISPLAY=:0 with no output. On Mali, gamescope
+        //   must use the PanVK ICD (not Zink) via VK_DRIVER_FILES.
         val isMali = com.droiddeck.launcher.core.DeviceSupport.mali()
         if (isMali) {
-            guest.add("XDG_SESSION_TYPE=x11")
-            guest.add("DISPLAY=:0")
-            // PanVK ICD directly — no Zink, no Gamescope, no DRM faking.
-            // The ICD JSON at /opt/comptest/icd.json points to the glibc
-            // libvulkan_panfrost.so (0.1.0-rc3).
+            guest.add("XDG_SESSION_TYPE=wayland")
+            guest.add("WAYLAND_DISPLAY=wayland-0")
+            // PanVK ICD for gamescope and all Vulkan clients. This overrides
+            // the zink default in droiddeck-gpu script.
             guest.add("VK_DRIVER_FILES=/opt/comptest/icd.json")
             guest.add("VK_ICD_FILENAMES=/opt/comptest/icd.json")
+            // Prevent droiddeck-gpu script from forcing zink on Mali.
+            guest.add("MESA_LOADER_DRIVER_OVERRIDE=")
+            guest.add("GALLIUM_DRIVER=")
         } else {
             guest.add("XDG_SESSION_TYPE=wayland")
             guest.add("WAYLAND_DISPLAY=wayland-0")
