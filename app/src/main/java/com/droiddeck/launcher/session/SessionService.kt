@@ -291,6 +291,32 @@ class SessionService : Service() {
         val runtimeDir = File(filesDir, ".wayland-rt").apply { mkdirs() }
         killStragglers()
         SessionFiles.stage(this, root)
+        // Directive #9 Fix 1: Patch droiddeck-gpu in the guest rootfs for Mali.
+        // The script forces MESA_LOADER_DRIVER_OVERRIDE=zink which clobbers
+        // PanVK. On Mali, patch it to skip zink and use drm-shim for gamescope.
+        patchDroiddeckGpuForMali(root)
+        // Directive #9 Fix 2: Ensure /opt/comptest driver files exist for Mali
+        // before Play. Tier0DriverDirect copies libvulkan_panfrost.so + icd.json
+        // from APK assets into linuxfs/opt/comptest/. Without this, the main
+        // Play button's VK_DRIVER_FILES points at a missing file.
+        if (com.droiddeck.launcher.core.DeviceSupport.mali()) {
+            try {
+                val result = com.droiddeck.launcher.comptest.Tier0DriverDirect.install(this)
+                Log.i(TAG, "Mali driver direct install: success=${result.success}")
+            } catch (e: Exception) {
+                Log.e(TAG, "Mali driver direct install failed", e)
+            }
+            // Also ensure drm-shim.so is in the guest for gamescope.
+            try {
+                val guestComptest = File(filesDir, "linuxfs/opt/comptest").apply { mkdirs() }
+                assets.open("comptest/drm-shim.so").use { inp ->
+                    File(guestComptest, "drm-shim.so").outputStream().use { inp.copyTo(it) }
+                }
+                Log.i(TAG, "drm-shim.so staged for Mali gamescope")
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to stage drm-shim.so", e)
+            }
+        }
         com.droiddeck.launcher.agent.AgentGuest.reset(this)
         com.droiddeck.launcher.stores.gog.GogComet.begin()
         com.droiddeck.launcher.stores.StoreLaunchRequests.start(this)
@@ -496,6 +522,47 @@ class SessionService : Service() {
         NetworkReport.write(this, File(sessionDir, "network.txt"))
         SessionLogCapture.start(File(sessionDir, "app.log"))
         return sessionDir
+    }
+
+    /**
+     * Directive #9 Fix 1: Patch /usr/local/bin/droiddeck-gpu in the guest rootfs
+     * for Mali. The stock script forces MESA_LOADER_DRIVER_OVERRIDE=zink, which
+     * would clobber PanVK. On Mali (/dev/mali0 present on the Android host),
+     * rewrite the script to skip the zink override and LD_PRELOAD drm-shim.so
+     * for gamescope's DRM query.
+     */
+    private fun patchDroiddeckGpuForMali(root: File) {
+        if (!com.droiddeck.launcher.core.DeviceSupport.mali()) return
+        val script = File(root, "usr/local/bin/droiddeck-gpu")
+        if (!script.exists()) {
+            Log.w(TAG, "droiddeck-gpu not found in rootfs, skipping Mali patch")
+            return
+        }
+        try {
+            var text = script.readText()
+            // Replace the unconditional zink export with a Mali-aware conditional.
+            val oldExport = "export MESA_LOADER_DRIVER_OVERRIDE=zink GALLIUM_DRIVER=zink LIBGL_KOPPER_DRI2=true"
+            if (text.contains(oldExport)) {
+                val newBlock = """# Mali G720: use PanVK via VK_DRIVER_FILES, not zink.
+if [ -e /dev/mali0 ] && [ -n "${'$'}{VK_DRIVER_FILES:-}" ]; then
+    echo "== droiddeck-gpu: Mali detected, using PanVK (${'$'}{VK_DRIVER_FILES}), skipping zink override"
+    unset MESA_LOADER_DRIVER_OVERRIDE GALLIUM_DRIVER
+    if [ -f /opt/comptest/drm-shim.so ]; then
+        export LD_PRELOAD="/opt/comptest/drm-shim.so${'$'}{LD_PRELOAD:+:${'$'}LD_PRELOAD}"
+        echo "== droiddeck-gpu: LD_PRELOAD drm-shim for gamescope"
+    fi
+else
+    export MESA_LOADER_DRIVER_OVERRIDE=zink GALLIUM_DRIVER=zink LIBGL_KOPPER_DRI2=true
+fi"""
+                text = text.replace(oldExport, newBlock)
+                script.writeText(text)
+                Log.i(TAG, "Patched droiddeck-gpu for Mali (PanVK, drm-shim)")
+            } else {
+                Log.i(TAG, "droiddeck-gpu already patched or different version, skipping")
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to patch droiddeck-gpu for Mali", e)
+        }
     }
 
     private fun addClientEnvironment(guest: MutableList<String>, steamHere: Boolean) {

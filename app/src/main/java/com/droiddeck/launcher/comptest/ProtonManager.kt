@@ -182,12 +182,35 @@ object ProtonManager {
      */
     fun wineCommand(exeGuestPath: String): List<String> {
         val wine = "$GUEST_PROTON_DIR/$WINE_BIN"
-        // Note: Xvfb is NOT installed in the guest rootfs (only Xwayland).
-        // Tier 0 D3D tests require a display; if none is available, Wine will
-        // fail with "Cannot open display" — this is honest, not a silent pass.
-        // The main Play session provides DISPLAY=:0 via gamescope --backend wayland.
+        // Directive #9 Fix 3: Tier 0 D3D cubes need a display. Launch gamescope
+        // --backend headless (with drm-shim + PanVK) in the background, wait for
+        // the X11 socket, then run wine on that DISPLAY. Gamescope's built-in
+        // Xwayland provides the X11 server (Xvfb is not in the guest rootfs).
         return listOf("/bin/sh", "-c",
+            // Start headless gamescope if no X11 socket exists yet.
+            "if [ ! -S /tmp/.X11-unix/X0 ] && [ ! -S /tmp/.X11-unix/X1 ]; then " +
+            "  LD_PRELOAD=/opt/comptest/drm-shim.so " +
+            "  VK_DRIVER_FILES=/opt/comptest/icd.json " +
+            "  VK_ICD_FILENAMES=/opt/comptest/icd.json " +
+            "  gamescope --backend headless -w 1280 -h 720 -- sleep 120 & " +
+            "  GS_PID=$!; " +
+            // Wait up to 5s for the X11 socket to appear.
+            "  for i in 1 2 3 4 5 6 7 8 9 10; do " +
+            "    if [ -S /tmp/.X11-unix/X0 ]; then export DISPLAY=:0; break; fi; " +
+            "    if [ -S /tmp/.X11-unix/X1 ]; then export DISPLAY=:1; break; fi; " +
+            "    sleep 0.5; " +
+            "  done; " +
+            "fi; " +
+            // If gamescope already running, detect the display.
+            "if [ -z \"${'$'}DISPLAY\" ]; then " +
+            "  if [ -S /tmp/.X11-unix/X0 ]; then export DISPLAY=:0; " +
+            "  elif [ -S /tmp/.X11-unix/X1 ]; then export DISPLAY=:1; " +
+            "  else export DISPLAY=:0; fi; " +
+            "fi; " +
             wineEnv().joinToString(" ") { "export $it;" } +
+            // Override DISPLAY with the gamescope one (wineEnv sets :0, but
+            // gamescope might be on :1).
+            "export DISPLAY=${'$'}DISPLAY; " +
             " exec '$wine' '$exeGuestPath'")
     }
 }
