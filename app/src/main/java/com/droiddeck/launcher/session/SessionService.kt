@@ -302,7 +302,7 @@ class SessionService : Service() {
         if (com.droiddeck.launcher.core.DeviceSupport.mali()) {
             try {
                 val result = com.droiddeck.launcher.comptest.Tier0DriverDirect.install(this)
-                Log.i(TAG, "Mali driver direct install: success=${result.success}")
+                Log.i(TAG, "Mali driver direct install: ok=${result.ok}")
             } catch (e: Exception) {
                 Log.e(TAG, "Mali driver direct install failed", e)
             }
