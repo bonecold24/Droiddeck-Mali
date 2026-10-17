@@ -172,10 +172,11 @@ android {
 // so CI logs show the exact failing test without needing admin API access.
 tasks.withType(Test) {
     // Directive #6.4: Fix Gradle test executor OOM (exit value 2) on push builds.
-    // 1249 tests in parallel exhaust the default JVM heap on GitHub runners.
-    maxHeapSize = "2048m"
-    maxParallelForks = 2
-    forkEvery = 200
+    // 1256 tests exhaust the default JVM heap on GitHub runners.
+    // Use single fork to avoid parallel OOM; increase heap.
+    maxHeapSize = "3072m"
+    maxParallelForks = 1
+    forkEvery = 100
     testLogging {
         events "failed"
         exceptionFormat "full"
