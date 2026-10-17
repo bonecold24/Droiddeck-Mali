@@ -182,7 +182,14 @@ object ProtonManager {
      */
     fun wineCommand(exeGuestPath: String): List<String> {
         val wine = "$GUEST_PROTON_DIR/$WINE_BIN"
+        // Directive #8 Step 2: Ensure X11 server is running before Wine.
+        // Start Xvfb on :0 if the socket doesn't exist (headless Tier 0).
+        // On-device, Xlorie provides :0; Xvfb is a fallback.
         return listOf("/bin/sh", "-c",
+            "if [ ! -S /tmp/.X11-unix/X0 ]; then " +
+            "  Xvfb :0 -screen 0 1280x720x24 +extension MIT-SHM +extension GLX +extension RENDER & " +
+            "  sleep 2; " +
+            "fi; " +
             wineEnv().joinToString(" ") { "export $it;" } +
             " exec '$wine' '$exeGuestPath'")
     }

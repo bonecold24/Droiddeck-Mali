@@ -171,10 +171,11 @@ android {
 // Directive #11: always print test failures with full stacktraces to stdout,
 // so CI logs show the exact failing test without needing admin API access.
 tasks.withType(Test) {
-    // Directive #6.4: Fix Gradle test executor OOM (exit value 2) on push builds.
-    // 1256 tests exhaust the default JVM heap on GitHub runners.
-    // Use single fork to avoid parallel OOM; increase heap.
-    maxHeapSize = "3072m"
+    // Directive #8: exit value 2 is NOT heap OOM (that's 137). 3072m starves
+    // the 7GB runner when combined with Gradle + Kotlin daemons. Use 1536m,
+    // single fork. CI runs testDebugUnitTest only (not Release) to avoid
+    // executing all 1256 tests twice.
+    maxHeapSize = "1536m"
     maxParallelForks = 1
     forkEvery = 100
     testLogging {

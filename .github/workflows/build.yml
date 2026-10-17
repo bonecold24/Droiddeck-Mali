@@ -810,7 +810,7 @@ jobs:
 
       - name: Unit tests
         if: ${{ github.event.inputs.skip_tests != 'true' }}
-        run: ./gradlew testReleaseUnitTest --console=plain -PndkVersion="$NDK_VERSION"
+        run: ./gradlew testDebugUnitTest --console=plain -PndkVersion="$NDK_VERSION"
 
       - name: Dump test failures (if Unit tests failed)
         if: failure()
